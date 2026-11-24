@@ -54,7 +54,7 @@ curl -s -H "Authorization: token <TOKEN>" "https://gitee.com/api/v5/repos/..."
 | 更新 PR 描述 | `PATCH /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>` | JSON body：`body`（新描述全文，**整段替换**）；首行写 `Closes #IKxxxxx`；分支每新增提交都要刷新，多提交需全列 |
 | 审批 PR | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/review` | body 带 `event=APPROVE`；成功返回 204 |
 | 查 PR 状态 | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>` | 看 `state`（`open`/`merged`/`closed`）、`mergeable`、**`close_related_issue`** |
-| 合并 PR | `PUT /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/merge` | body 带 `merge_style=merge`；**须先过 review + testers 两道门禁**（见下） |
+| 合并 PR | `PUT /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/merge` | body 带 `merge_method=squash`（**参数名是 `merge_method`，不是 `merge_style`**）；**须先过 review + testers + test 三道门禁**（见下） |
 | 指定测试人 | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/testers` | body 带 `testers=<用户名>`（复数）；成功返回 201 |
 | 提交测试通过 | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/test` | body 带 `event=APPROVE`；成功返回 204 |
 | 关闭 issue | `PATCH /api/v5/repos/nextpilot/issues/<num>` | **由 AI 显式执行**：表单参数必须带 `repo=nextpilot-advance-plotscope` + `state=closed`；只关目标 issue |
@@ -71,10 +71,12 @@ curl -s -H "Authorization: token <TOKEN>" "https://gitee.com/api/v5/repos/..."
   1. `POST /repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/review`（body 带 `event=APPROVE`）→ 204
   2. `POST /repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/testers`（body 带 `testers=<用户名>`，**字段名是 `testers` 复数**，写 `tester` 会返回 400 `testers is missing`）→ 201
   3. `POST /repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/test`（body 带 `event=APPROVE`）→ 204
-  4. `PUT /repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/merge`（body 带 `merge_style=merge`）→ 200
+  4. `PUT /repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/merge`（body 带 `merge_method=squash`）→ 200
 
   三道门禁的报错分别是 405「未通过设置的审查」（缺第 1 步）、405「未通过设置的测试」（缺第 2 或第 3 步）。第 2 步是「指定测试人」、第 3 步是「测试通过」，**两者都要做**，只做其一时 `can_merge_check` 仍为 `False`。
-  合并参数用 `merge_style=merge`（保留原始提交与 `Refs:` footer）；用 squash 会把各提交的 `Refs:` 吃掉，历史里查不到追溯线索。
+- **合并参数名是 `merge_method`，不是 `merge_style`**：写 `merge_style=squash` / `merge_style=rebase` / `merge_style=fast-forward` 一律返回 405「当前仓库 Pull Request 已关闭 merge 合并，请使用其他合并方式」。正确写法是 `merge_method=squash`，返回 200 与 `merged: true`。
+- **本仓库已关闭 merge 合并方式**：仓库「功能设置」只开放 squash 与 rebase。传 `merge_method=merge` 同样被 405 拦下。当前用 `merge_method=squash`。
+- **squash 会把各提交的 `Refs:` footer 吃掉**：合并后 main 上是单个压缩提交，历史里查不到原始提交的 `Refs:`。追溯线索因此必须由 PR 描述的「提交清单」承载，commit footer 只作过程记录。同理不要为补 `PR:` footer 而 amend 已推送的提交。
 - **issue 关闭由 AI 显式执行，不由平台自动关**：仓库设置已关闭「合并时自动关闭关联 issue」，建 PR 时仍显式传 `close_related_issue: 0`，避免仓库设置被改回后无声失效。该字段为 `1` 时，平台在 PR 合并时会把描述中**所有**带 `#` 的 issue ident 一并关闭——不只 `Closes #` 那一个，仅作引用、来源说明、评审裁定的 ident 同样会被连带关闭。为 `0` 时平台不关闭任何 issue，关闭动作由 AI 在合并后显式执行。
 
   **建 PR 时必传**：

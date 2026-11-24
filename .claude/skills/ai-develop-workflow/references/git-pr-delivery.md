@@ -42,7 +42,7 @@ BREAKING CHANGE: <影响与迁移方式>
 
 - type 表达改动性质而非分支归属：`fix/` 分支上顺手补的文档用 `docs`，不硬写成 `fix`。
 - `Refs:` 开工前就已确定，所以能强制；`PR:` 提交时不可预知，**禁止为补它而 amend 已推送提交或强推**。
-- PR ↔ 提交的完整映射由 PR 描述的「提交清单」承担，不靠 commit 单点承载；issue ↔ PR 由 `Closes #IKxxxxx` 关联，形成三方可回溯。
+- PR ↔ 提交的完整映射由 PR 描述的「提交清单」承担，不靠 commit 单点承载；issue ↔ PR 由 `Closes #IKxxxxx` 关联，形成三方可回溯。squash 合并后 commit footer 不留在 main 上，追溯只能靠 PR 描述与 issue 评论。
 - 本规范只约束之后的提交；历史提交不回改（改写历史禁止）。
 
 推送前格式自查：
@@ -130,7 +130,7 @@ git push origin <特性分支>
    - PR 内每个提交符合 Conventional Commits 且 footer 含 `Refs:`（自查见“提交信息格式”）；
    - PR 描述与实际提交一致（多提交逐条列出）；
    - Gitee 侧 review 已通过、CI 门禁已过（操作见 `references/gitee-operations.md`）。
-5. 合并方式：普通 merge 或 squash（保持 `main` 历史线性、每节点语义完整）。
+5. 合并方式：本仓库只开放 squash 与 rebase，用 squash（保持 `main` 历史线性、每节点语义完整）。squash 会把各提交的 `Refs:` footer 吃掉，追溯线索由 PR 描述的「提交清单」承载。
 6. 合并由 PM 或用户执行；Dev 不自行合并。
 7. 合并后按 `references/gitee-operations.md` 关闭目标 issue、校验源分支是否已删，缺失项才手动兜底；本地分支始终手动删。
 
