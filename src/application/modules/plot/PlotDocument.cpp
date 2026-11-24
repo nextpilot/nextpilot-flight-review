@@ -1,4 +1,4 @@
-#include "PlotLayout.h"
+#include "PlotDocument.h"
 
 #include <QJsonArray>
 

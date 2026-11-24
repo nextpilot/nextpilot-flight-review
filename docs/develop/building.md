@@ -60,7 +60,7 @@ Debug / Release 两种配置都要过。测试用 `assert` 驱动，多配置生
 
 | 产物 | 路径 |
 |---|---|
-| CLI（headless） | `build/src/application/shell/plotscope` |
+| CLI（headless） | `build/src/application/app/plotscope` |
 | GUI | `build/src/application/gui/plotscope-gui` |
 | 测试 | `build/tests/ps_test_*` |
 
@@ -68,7 +68,7 @@ Debug / Release 两种配置都要过。测试用 `assert` 驱动，多配置生
 
 ```bash
 ./build/src/application/gui/plotscope-gui
-./build/src/application/shell/plotscope --info tests/fixture/demo_flight.csv
+./build/src/application/app/plotscope --info tests/fixture/demo_flight.csv
 ```
 
 无显示器环境用 Xvfb 做 GUI 冒烟：

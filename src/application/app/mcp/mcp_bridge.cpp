@@ -1,6 +1,6 @@
 #include "mcp_bridge.h"
 
-#include "App.h"
+#include "../core/App.h"
 #include "Intent.h"
 
 #include <QJsonArray>

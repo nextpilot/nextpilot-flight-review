@@ -1017,7 +1017,7 @@ UI 排布顺序不依赖绑定/装载先后，全部由 order 字段显式表达
 ## 8. 分层与依赖
 
 ```
-application/shell    组合根：App 装配 · CLI（纯 Core）· GUI 入口 · 脚本/MCP 驱动
+application/app      组合根：App 装配(core) · CLI(cli) · MCP 桥(mcp) · 诊断(diag)
   ↓
 application/gui      GUI（仅 GUI 进程）
   shell/               外壳：MainWindow · ShellBinder · GuiContext · 对话框

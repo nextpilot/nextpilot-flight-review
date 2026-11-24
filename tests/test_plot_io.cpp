@@ -7,7 +7,7 @@
 #include "MainWindow.h"
 #include "AxesView.h"
 #include "PlotWorkspace.h"
-#include "PlotLayout.h"
+#include "PlotDocument.h"
 #include "ShellBinder.h"
 
 #include "Dataset.h"

@@ -1,6 +1,6 @@
 #include "PlotModule.h"
 
-#include "PlotLayout.h"
+#include "PlotDocument.h"
 
 #include "BuiltinModuleHub.h"
 #include "ChannelTransformConfig.h"

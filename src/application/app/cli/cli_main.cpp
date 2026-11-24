@@ -1,11 +1,11 @@
 // PlotScope — headless CLI。验证新架构：统一数据模型 + 模块装载 + 意图执行。
 // GUI 点击、脚本调用、Job 回放三条路径共用同一个执行器（意图是公共货币）。
 #include <type_traits>
-#include "App.h"
+#include "../core/App.h"
 #include "Intent.h"
 #include "Dataset.h"
-#include "mcp_bridge.h"
-#include "diagnostics.h"
+#include "../mcp/mcp_bridge.h"
+#include "../diag/diagnostics.h"
 
 #include <QCoreApplication>
 #include <QDir>
