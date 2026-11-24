@@ -3,6 +3,7 @@
 #include "SettingsStore.h"
 #include "Intent.h"
 #include "Result.h"
+#include "Contribution.h"
 
 #include <QColor>
 #include <QObject>
@@ -45,6 +46,11 @@ public:
     // --- 当前主题状态 ---
     Theme current() const { return m_current; }
     QString currentName() const;
+
+    // 扩展包声明的语义色（ThemeTokenSpec）：表里没有的 token 才用它，
+    // 于是内置色永远优先、包色不会覆盖产品外观。fallback 非法时按洋红处理，
+    // 与"未知 token"一致——不能悄悄退化成黑/白。
+    void setExtensionTokens(const QList<nextpilot::plotscope::registry::ThemeTokenSpec> &tokens);
     void setTheme(Theme theme);
     void toggle();
 
@@ -102,6 +108,7 @@ private:
 
     nextpilot::plotscope::context::SettingsStore &m_settings;
     Theme m_current = Theme::Light;
+    QHash<QString, QColor> m_extTokens;
 };
 
 } // namespace nextpilot::plotscope::gui

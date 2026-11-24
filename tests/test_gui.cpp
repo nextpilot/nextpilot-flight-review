@@ -3136,6 +3136,75 @@ int main(int argc, char *argv[])
         CHECK(diag->refresh() == application.context().registryTree().nodes().size());
         OK("诊断面板：注册树 11 类节点齐全，面板行数==树上节点数（diag.registries 同路）");
     }
+    // --- c3b-2c/d 设置页与主题令牌：声明 → 壳排序 → 实际可解析 ---
+    {
+        using nextpilot::plotscope::registry::Pack;
+        using nextpilot::plotscope::registry::SettingsPageSpec;
+        using nextpilot::plotscope::registry::ThemeTokenSpec;
+        using nextpilot::plotscope::gui::ThemeManager;
+        Pack pack;
+        pack.id = QStringLiteral("pack.c3b-page");
+        SettingsPageSpec later;
+        later.id = QStringLiteral("test.page.later");
+        later.title = QStringLiteral("靠后页");
+        later.order = 20;
+        later.create = [](QWidget *parent) { return new QWidget(parent); };
+        SettingsPageSpec first = later;
+        first.id = QStringLiteral("test.page.first");
+        first.title = QStringLiteral("靠前页");
+        first.order = 10;
+        pack.settingsPages << later << first; // 故意乱序：排序由壳做
+        ThemeTokenSpec token;
+        token.id = QStringLiteral("plot.testToken");
+        token.fallback = QStringLiteral("#123456");
+        pack.themeTokens << token;
+        auto &toolbox = application.context().toolbox();
+        CHECK(toolbox.mount(std::move(pack)));
+        const auto pages = toolbox.settingsPagesSorted();
+        CHECK(pages.size() == 2 && pages.first().id == QStringLiteral("test.page.first"));
+        // 用窗口持有的实例：ThemeManager 的静态 activeTheme 指向在册实例，
+        // 测试里另造一个再析构会留下悬空指针，后续绘制才崩（踩过）。
+        ThemeManager *theme = window.themeManager();
+        CHECK(theme != nullptr);
+        theme->setExtensionTokens(toolbox.themeTokensAll());
+        // 包声明的兜底色能被解析出来；内置 token 不被包覆盖
+        CHECK(theme->color(QStringLiteral("plot.testToken")) == QColor(QStringLiteral("#123456")));
+        CHECK(theme->color(QStringLiteral("app.bg")) ==
+              ThemeManager::color(ThemeManager::Theme::Light, QStringLiteral("app.bg")));
+        CHECK(toolbox.unmount(QStringLiteral("pack.c3b-page")));
+        OK("设置页与主题令牌：壳按 order 排页，包兜底色可解析且不覆盖内置色");
+    }
+
+    // --- c3b-2b 条目右键声明：View 作用域的 item.* + 命令接缝 ---
+    {
+        using nextpilot::plotscope::registry::ItemContextSpec;
+        using nextpilot::plotscope::registry::Pack;
+        Pack pack;
+        pack.id = QStringLiteral("pack.c3b-item");
+        ItemContextSpec spec;
+        spec.viewId = QStringLiteral("dataset-tree");
+        spec.commandId = QStringLiteral("figure.addAxes");
+        spec.when = QStringLiteral("item.kind == 'column' && !item.multiSelect");
+        spec.domain = QStringLiteral("data");
+        spec.order = 1;
+        pack.itemContexts << spec;
+        auto &toolbox = application.context().toolbox();
+        CHECK(toolbox.mount(std::move(pack)));
+        CHECK(toolbox.itemContextsFor(QStringLiteral("dataset-tree")).size() == 1);
+        // item.* 只对本次求值可见：值一变表达式立刻失效，没有写进全局上下文
+        QHash<QString, QVariant> itemCtx;
+        itemCtx.insert(QStringLiteral("item.kind"), QStringLiteral("column"));
+        itemCtx.insert(QStringLiteral("item.multiSelect"), false);
+        CHECK(application.context().evaluateWhen(spec.when, itemCtx));
+        itemCtx.insert(QStringLiteral("item.kind"), QStringLiteral("table"));
+        CHECK(!application.context().evaluateWhen(spec.when, itemCtx));
+        // 命令接缝有拒绝语义：未注册的命令明确失败，而不是静默无反应
+        CHECK(!application.context().invokeCommand(QStringLiteral("no.such.command")));
+        CHECK(toolbox.unmount(QStringLiteral("pack.c3b-item")));
+        CHECK(toolbox.itemContextsFor(QStringLiteral("dataset-tree")).isEmpty());
+        OK("条目右键声明：item.* 按 View 作用域求值，命令接缝未接通时明确拒绝");
+    }
+
     // --- c3b-2a 视图标题栏动作：声明 → QAction → ADS 标题栏 ---
     {
         using nextpilot::plotscope::registry::Pack;

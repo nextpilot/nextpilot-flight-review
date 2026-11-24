@@ -267,9 +267,29 @@ QColor ThemeManager::themeColor(const QString &token)
     return color(g_activeTheme, token);
 }
 
+void ThemeManager::setExtensionTokens(
+    const QList<nextpilot::plotscope::registry::ThemeTokenSpec> &tokens)
+{
+    m_extTokens.clear();
+    for (const auto &spec : tokens)
+    {
+        QColor c(spec.fallback);
+        if (!c.isValid())
+            continue; // 兜底色非法就不登记：宁可不出现，也不登记一个洋红
+        m_extTokens.insert(spec.id, c);
+    }
+}
+
 QColor ThemeManager::color(const QString &token) const
 {
-    return color(m_current, token);
+    const QColor base = color(m_current, token);
+    // 内置色优先：table() 命中即返回；没命中才看包声明的兜底色。
+    if (base != QColor(QStringLiteral("#FF00FF")))
+        return base;
+    auto it = m_extTokens.constFind(token);
+    if (it != m_extTokens.constEnd())
+        return it.value();
+    return base;
 }
 
 QColor ThemeManager::color(Theme theme, const QString &token)

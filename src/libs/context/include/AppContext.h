@@ -15,6 +15,8 @@
 #include "Transform.h"
 
 #include <QHash>
+#include <QVariant>
+#include <functional>
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
@@ -117,6 +119,22 @@ public:
     void appendMessage(const QString &level, const QString &source, const QString &text,
                        const QString &locator = QString());
 
+    // === 命令接缝（外壳注入；headless 不注入即为空）===
+    //
+    // 模块的呈现层要执行"命令"（右键、标题栏、设置页的按钮），但命令层
+    // 属于外壳（快捷键、Ribbon、命令面板共用一份注册表）。模块不能反向
+    // 依赖 ps_gui，于是外壳把两个能力注入到这里：
+    //   invoke：按命令 id 执行（与按钮/快捷键同一条路径）；
+    //   when ：按表达式求值，extra 是被求值点的局部键（如 item.* 的 View 作用域）。
+    // 二者为空时模块应把声明当作不可用，而不是自己重造一套解析。
+    void setCommandHooks(std::function<bool(const QString &, QString *)> invoke,
+                         std::function<bool(const QString &, const QHash<QString, QVariant> &)> when);
+    bool invokeCommand(const QString &commandId, QString *error = nullptr) const;
+    // extra 里给出的键**只对本次求值可见**：item.* 之类按 View 作用域临时合入，
+    // 不写进全局上下文，切视图自然失效（D19）。
+    bool evaluateWhen(const QString &when,
+                      const QHash<QString, QVariant> &extra = {}) const;
+
     // === 当前活动视图（指针，不是副本）===
     //
     // "用户正在看哪个源、哪条通道"是跨前端共享的运行态：
@@ -210,6 +228,8 @@ private:
     PersistentStateHub m_states;  // 结构化状态的登记表（收集/恢复由外壳驱动）
     TransformHub m_transforms;
     DerivedSeriesHub m_derivedHub; // 派生序列注册表：独立派生字段
+    std::function<bool(const QString &, QString *)> m_invokeCommand;
+    std::function<bool(const QString &, const QHash<QString, QVariant> &)> m_evalWhen;
     Selection m_selection;       // 当前统一选中对象
 
     int m_activeSourceId = -1;   // 数据源 id（SourceHub 键）

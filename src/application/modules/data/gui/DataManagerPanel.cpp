@@ -1562,13 +1562,42 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
     openFilter->setToolTip(QStringLiteral("有状态 Lua 过滤器（滑窗/微分/积分/缩放等），只读叠加到画布"));
     QAction *openState = menu.addAction(QStringLiteral("状态视图显示…"));
     openState->setToolTip(QStringLiteral("bool/枚举通道按状态着色画成顶部色带（对齐 PJ4 状态转换视图）"));
-    QAction *chosen = menu.exec(globalPos);
+        // 扩展包声明的条目动作（ItemContextSpec）：模块自己把声明铺成菜单项，
+    // 外壳只提供命令接缝（AppContext::invokeCommand / evaluateWhen）。
+    // item.* 键在这里临时给出——View 作用域，只本次求值可见，不进全局上下文。
+    QHash<QString, QVariant> itemCtx;
+    itemCtx.insert(QStringLiteral("item.kind"), QStringLiteral("column"));
+    itemCtx.insert(QStringLiteral("item.multiSelect"), false);
+    itemCtx.insert(QStringLiteral("item.id"), QStringLiteral("%1/%2/%3")
+                                                   .arg(dsId.toInt())
+                                                   .arg(table.toString(), column.toString()));
+    for (const nextpilot::plotscope::registry::ItemContextSpec &spec :
+         m_appCtx.toolbox().itemContextsFor(QStringLiteral("dataset-tree")))
+    {
+        if (spec.domain.isEmpty())
+            continue; // 没写键空间归属就没法求值 item.*，宁可不显示
+        itemCtx.insert(QStringLiteral("item.domain"), spec.domain);
+        if (!m_appCtx.evaluateWhen(spec.when, itemCtx))
+            continue;
+        QAction *packAction = menu.addAction(spec.commandId);
+        packAction->setData(QStringLiteral("pack:") + spec.commandId);
+    }
+
+QAction *chosen = menu.exec(globalPos);
     if (!chosen)
         return;
 
     const int datasetId = dsId.toInt();
     const QString tableName = table.toString();
     const QString columnName = column.toString();
+    const QString packCommand = chosen->data().toString();
+    if (packCommand.startsWith(QStringLiteral("pack:")))
+    {
+        QString error;
+        if (!m_appCtx.invokeCommand(packCommand.mid(5), &error))
+            QMessageBox::information(this, QStringLiteral("扩展动作"), error);
+        return;
+    }
     if (chosen == plot)
     {
         const int sourceId = m_sources.sourceOfDataset(datasetId);

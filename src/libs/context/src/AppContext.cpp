@@ -69,6 +69,35 @@ void AppContext::clearSelection()
     Q_EMIT selectionChanged(m_selection.toJson());
 }
 
+void AppContext::setCommandHooks(
+    std::function<bool(const QString &, QString *)> invoke,
+    std::function<bool(const QString &, const QHash<QString, QVariant> &)> when)
+{
+    m_invokeCommand = std::move(invoke);
+    m_evalWhen = std::move(when);
+}
+
+bool AppContext::invokeCommand(const QString &commandId, QString *error) const
+{
+    if (!m_invokeCommand)
+    {
+        if (error)
+            *error = QStringLiteral("命令层未接入（headless 或外壳未完成装配）");
+        return false;
+    }
+    return m_invokeCommand(commandId, error);
+}
+
+bool AppContext::evaluateWhen(const QString &when,
+                              const QHash<QString, QVariant> &extra) const
+{
+    if (when.isEmpty())
+        return true; // 空表达式恒真：声明不带 when 就是"总是出现"
+    if (!m_evalWhen)
+        return false; // 没有求值器时不要把声明当可见，避免出现"点了没事发生"的菜单项
+    return m_evalWhen(when, extra);
+}
+
 void AppContext::appendMessage(const QString &level, const QString &source, const QString &text,
                                const QString &locator)
 {

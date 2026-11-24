@@ -64,6 +64,21 @@ void PreferencesDialog::buildUi()
     m_pages->addWidget(buildTimelinePage());
     m_pages->addWidget(buildDataPage());
 
+    // 扩展包设置页（SettingsPageSpec）：只有模块知道自己有哪些设置项，所以页由
+    // 模块建（壳只给 parent）；壳负责按 order 追加左栏条目并塞进 stack。
+    // create 为空或返回空指针视为未实现——不占位，免得左栏出现点不开的空白页。
+    for (const nextpilot::plotscope::registry::SettingsPageSpec &spec :
+         m_appCtx.toolbox().settingsPagesSorted())
+    {
+        if (!spec.create)
+            continue;
+        QWidget *page = spec.create(m_pages);
+        if (!page)
+            continue;
+        m_sections->addItem(spec.title.isEmpty() ? spec.id : spec.title);
+        m_pages->addWidget(page);
+    }
+
     body->addWidget(m_sections);
     body->addWidget(m_pages, 1);
     root->addLayout(body, 1);

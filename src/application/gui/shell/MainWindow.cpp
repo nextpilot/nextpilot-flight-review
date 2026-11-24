@@ -109,6 +109,10 @@ MainWindow::~MainWindow()
     // 关窗时保存窗口状态：几何 + ADS 布局 + ribbon 页签。
     // 声明式快照，重启后可恢复；数据/扩展缺失时安全降级。
     saveState();
+    // 必须撤掉命令接缝：注入的 lambda 捕获 this 与 m_commands（都是窗口的成员）。
+    // AppContext 的生命周期比窗口长（测试/多窗口场景会先于窗口存在），
+    // 留着悬空捕获会让窗口销毁后的求值/执行直接崩。
+    m_appCtx.setCommandHooks(nullptr, nullptr);
 }
 
 void MainWindow::declareStandardSlots()
@@ -514,6 +518,8 @@ void MainWindow::build(RuntimeHost &host)
     //    SARibbon/ADS 的地方"。注册为系统级 handler，theme.* 意图走与按钮/脚本
     //    同一条执行路径；headless 无此 handler，会诚实报"无模块能处理意图"。
     m_theme = new ThemeManager(host.app().settings(), &host);
+    // 包声明的语义色灌进主题：内置 token 优先，缺的才用包兜底色。
+    m_theme->setExtensionTokens(m_appCtx.toolbox().themeTokensAll());
     host.registerSystemHandler(QStringLiteral("@system/theme"), m_theme);
     QObject::connect(m_theme, &ThemeManager::themeChanged, this,
                      [this](ThemeManager::Theme theme) {
@@ -1276,6 +1282,22 @@ void MainWindow::buildCommandLayer(RuntimeHost &host)
         return;
 
     m_commands = std::make_unique<CommandRegistry>();
+
+    // 命令接缝注入上下文：模块呈现层（右键/标题栏/设置页）没法反向依赖外壳，
+    // 由外壳把"执行"与"when 求值"两个能力挂到 AppContext 上。
+    // extra 键只参与本次求值：item.* 是 View 作用域，不进全局上下文。
+    m_appCtx.setCommandHooks(
+        [this](const QString &id, QString *error) {
+            return m_commands ? m_commands->execute(id, error) : false;
+        },
+        [this](const QString &when, const QHash<QString, QVariant> &extra) {
+            if (!m_commands)
+                return false;
+            QHash<QString, QVariant> values = m_commands->contextValues();
+            for (auto it = extra.constBegin(); it != extra.constEnd(); ++it)
+                values.insert(it.key(), it.value());
+            return CommandRegistry::evaluateWhen(when, values);
+        });
     m_keybindings = std::make_unique<KeybindingRegistry>();
 
     m_commandPalette = new CommandPalette(this);
