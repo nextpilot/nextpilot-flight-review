@@ -27,7 +27,7 @@ namespace nextpilot::plotscope::gui
 //
 // 每组都必须有**真实消费方**（与数据设置同一纪律，不上假开关）：
 //   app/theme            → ThemeManager::apply（全局 QSS / ribbon / dock 样式）
-//   plot.time.format     → PlotWorkspace::makeCell 的 X 轴刻度文本
+//   plot.time.format     → 绘图视图 X 轴刻度文本格式（消费方在绘图模块）
 //   export.csv.maxPoints → data.export 采样上限（0 = 不限）
 //   derive.maxPoints     → data.derive 重算上限（0 = 不限）
 //   解析缓存              → data.cache.stats 展示 + data.clearCache 一键清
