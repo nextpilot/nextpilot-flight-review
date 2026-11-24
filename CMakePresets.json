@@ -12,6 +12,7 @@
         "CMAKE_PREFIX_PATH": "$env{PS_QT_DIR}"
       },
       "environment": {
+        "PATH": "$env{HOME}/.ps-deps/toolchain/ccache/bin:$penv{PATH}",
         "CCACHE_BASEDIR": "${sourceDir}"
       }
     },
