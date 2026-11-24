@@ -77,7 +77,7 @@ L6  app                    组合根：创建并装配 AppContext + RuntimeHost 
 | 可依赖 | Qt::Core、系统库 |
 | 禁依赖 | 除 Qt/系统外的一切（含其他 L1 库） |
 
-### L1 `libs/{dataset,registry,intent,parser,protocol,uischema,fastplot,context,module,recording}`
+### L1 `libs/{dataset,registry,intent,parser,protocol,uischema,fastplot,context,module,command,recording}`
 
 | 项 | 内容 |
 |---|---|
@@ -101,6 +101,7 @@ L6  app                    组合根：创建并装配 AppContext + RuntimeHost 
 | `fastplot` | 通用绘图能力库（将来独立为 Qwt-like 库） |
 | `context` | AppContext 运行态容器 + 设置 + 摄取 + 交互注册（唯一实例在 app，构造注入） |
 | `module` | 模块契约：IModule / ModuleInfo / IUiContext（纯接口面，运行时在 host） |
+| `command` | 命令注册表 / 键位绑定 / when 表达式求值：ContextStack 三层作用域、when 编译缓存、白名单语法；registry 只存 when 串，求值在本层 |
 | `recording` | 流录制机制：Recorder / RecordingFormat / RecordingBackend / Sink / Mcap+Raw 编解码 |
 
 ### L2（已消亡）
@@ -170,10 +171,27 @@ core 过渡层已整体删除，目录不存在。任何新增代码**禁止重�
 
 **写 UI 的两条通道**（模块/扩展永不直接碰 MainWindow）：
 
-1. **声明式**（IUiContext 契约，`libs/module`）：`onAttach` 里 `ui()->addAction(...) / declareSlot(...)`——只声明动作与面板位，零 Widgets 依赖
-2. **工厂式**（PanelFactory，`libs/registry`）：视图 TU 里 `PS_REGISTER_PANEL(type, ...)` 静态自注册工厂函数；运行期 `ui()->requestPanel(area, type)` 按字符串创建、经 ShellBinder 放置。工厂签名带 `AppContext + IIntentExecutor`——**视图取数与 CLI/脚本走同一条意图路径**，没有第二条取数通道
+1. **声明式**（IUiContext 契约，`libs/module`）：`onAttach` 里 `ui()->addAction(...) / declareRibbonPage(...) / declareRibbonGroup(...)`——只声明动作与面板位，零 Widgets 依赖
+2. **工厂式**（PanelFactory，`libs/registry`）：视图 TU 里 `PS_REGISTER_PANEL(type, ...)` 静态自注册工厂函数；运行期 `ui()->requestPanel(Region, type)` 按枚举区域创建、经 ShellBinder 放置。工厂签名带 `AppContext + IIntentExecutor`——**视图取数与 CLI/脚本走同一条意图路径**，没有第二条取数通道
 
 **装载链**（谁装载）：GUI 可执行文件链接各 `*_gui` OBJECT 库 → 进程启动时静态注册对象构造、工厂表自动填好 → `host.activate()` → 模块 `onAttach` 请求面板/动作 → `GuiContext` 路由 → `PanelFactory::create` → `ShellBinder` 放置（带去重复用）。CLI 只链 headless 目标，UI 通道整体缺席。
+
+### when 可见条件与三层作用域
+
+动作/面板/视图标题项的可见性用 `when` 串表达（`UiAction::when` / `PanelSpec::when` / `ViewTitleActionSpec::when`）。**registry 只存字符串**，不认识求值器；求值统一归 `libs/command` 的 `WhenExpression`，外壳装配时调用命令层求值器，机制层不得反向依赖命令库。
+
+- **白名单语法**：`!`（非）、`&&`、`||`、括号分组；比较 `==` `!=` `<` `<=` `>` `>=`；集合 `in` / `not in`；正则 `=~` / `not =~`。未定义键求值为假（不报错）；解析失败折成恒假并带 error。
+- **三层作用域**（`ContextStack`，从最内层往外查，先命中者胜）：
+
+| 层 | 内容 | 典型键 |
+|---|---|---|
+| `Shell` | 壳级键，全局生效 | `region.active`、`document.kind`、`busy` |
+| `Panel` | 当前面板的键 | `view.active`、本域面板状态 |
+| `View` | 当前视图实例的键，最易变 | `selection.kind`、`dataset.count`、游标/临时态 |
+
+**同名键内层覆盖外层**：`View` 盖 `Panel`，`Panel` 盖 `Shell`；清空某层后逐级回退到外层（D15）。模块只能写自己域内声明的键；跨域键经 adapter 转换。
+
+- **编译缓存**：同一 `when` 串启动期只解析一次，重复求值走缓存；上下文变化只重算结论，不重新解析。缓存计数与大小由 `CommandRegistry` 暴露给架构测试核对。
 
 **禁止**：
 

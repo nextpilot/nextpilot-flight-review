@@ -12,7 +12,7 @@ class AppContext;
 namespace nextpilot::plotscope::gui
 {
 
-// 输出面板（dock.bottom）：**全量**消息流。
+// 输出面板（Region::Panel）：**全量**消息流。
 //
 // 与终端的分工：终端是交互式 REPL（能输入、能求值），输出是只读的进程日志视图
 // （脚本 print、外壳提示、调试事件全收）。与问题的分工：问题只留 warn/error，

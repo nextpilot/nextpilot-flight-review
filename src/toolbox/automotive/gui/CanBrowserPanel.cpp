@@ -10,7 +10,7 @@
 //   实现在这里（GUI 侧）。
 //
 // 它与通用视图共用同一张工厂表（PanelFactoryHub，在 core），
-// 所以模块调用 requestPanel("dock.right", "car.can-browser") 就能拿到它，
+// 所以模块调用 requestPanel(Region::SecondarySidebar, "car.can-browser") 就能拿到它，
 // 不必知道它是领域面板还是通用面板。
 
 #include "CanBrowserPanel.h"

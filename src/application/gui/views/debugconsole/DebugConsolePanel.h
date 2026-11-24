@@ -13,7 +13,7 @@ class AppContext;
 namespace nextpilot::plotscope::gui
 {
 
-// 调试控制台（dock.bottom）：调试会话的输出 + 求值入口。
+// 调试控制台（Region::Panel）：调试会话的输出 + 求值入口。
 //
 // 与「终端」的分工：终端是独立 REPL（新引擎、不参与当前调试会话）；调试控制台
 // 走 script.workbench.repl —— 该意图在调试暂停时优先交给**当前调试引擎**求值

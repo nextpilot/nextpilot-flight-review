@@ -4,7 +4,7 @@
 
 ## 本目录是什么
 
-可复用的**机制与契约**库：foundation / dataset / registry / intent / parser / protocol / uischema / fastplot / context / module / recording。谁用谁实例化——库自身**没有进程语义**（不装载、不启动、不持有会话）。
+可复用的**机制与契约**库：foundation / dataset / registry / intent / parser / protocol / uischema / fastplot / context / module / command / recording。谁用谁实例化——库自身**没有进程语义**（不装载、不启动、不持有会话）。
 
 ## 允许放
 

@@ -554,7 +554,7 @@ PS_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
 | | `PanelFactory` | `StaticRegistry<工厂>` | 面板实现工厂（编译期自注册） |
 | | `TransformHub` | `Registry<TransformDescriptor>`（静态） | 内置算子不可覆盖（领域语义）；保序=all() 顺序 |
 | | `ModuleFactory` | `Registry<ModuleEntry>`（静态） | 模块工厂（编译期自注册），与包自注册同构不再复写 |
-| | `UiSlotHub` | 插槽声明 + 绑定视图 | 骨架槽唯一声明处、动作→槽绑定 |
+| | `UiSlotHub` | 插槽声明 + 绑定视图 | Ribbon 页/组/动作声明与动作→槽绑定；壳级容器在 `ShellContributions` 一处声明 |
 | **运行态**（会话实例） | `DatasetHub` | `TypedRegistry<Dataset,int>`（薄壳继承，kind=Dataset） | id 分配、datasetAdded/Removed 信号 |
 | | `SourceHub` | `Registry<DataSourceInfo,int>` | id 分配、信号、解析器绑定关系、dataset 反查 |
 | | `DerivedSeriesHub` | `Registry<Entry,QString>` | 同名覆盖刷新缓存、水位推进、按 dataset 级联清理 |
@@ -618,14 +618,14 @@ PS_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
 外壳只保留**一个绑定器**：
 
 ```
-registry::UiSlotHub（纯数据：有哪些页签/分组/面板/动作）
+registry::UiSlotHub（纯数据：有哪些 Ribbon 页签/分组/动作；面板走 PanelFactory + Region）
         ↓
 gui::ShellBinder（唯一知道 SARibbon / ADS 的地方）
    ribbon.page  → SARibbonCategory
    ribbon.group → SARibbonPanel
    action       → QAction → SARibbonToolButton
-   dock.*       → ads::CDockWidget
-   canvas.*     → 中央 dock
+   Region::PrimarySidebar / SecondarySidebar / Panel → ads::CDockWidget
+   Region::Editor                                      → 中央页签
 ```
 
 插槽是**纯数据**（在 core，无 QWidget），所以：
@@ -634,23 +634,22 @@ gui::ShellBinder（唯一知道 SARibbon / ADS 的地方）
 - 业务 UI 随扩展装卸，app 骨架不动；
 - 第三方组件可整体替换，只改绑定器。
 
-#### 骨架槽：唯一声明处
+#### 槽容器：壳声明壳的，模块声明模块的
 
-骨架槽（ribbon 页签/分组、左右停靠区、中央画布、画布工具、菜单）是 app 自己
-提供的**容器**，声明在 `UiSlotHub::declareSkeletonSlots()` —— **一处**。
+注册表只承载 **RibbonPage / RibbonGroup** 两类有真实消费者的容器；逻辑区域
+（`ActivityBar / PrimarySidebar / SecondarySidebar / Panel / Editor`）是壳的代码常量
+（`registry::Region` 枚举），**不进** slot 注册表。
 
-为什么必须一处（这是一次真实缺陷换来的）：`declareSlot` 是幂等的（先到者为准），
-若让 host 层与 GUI 层各自声明：
+- **壳级容器**：文件 / 视图两页（外加暂留壳的开始聚合页）及其分组，声明在 host 层
+  `ShellContributions::declareShellContributions()`——一处，headless 与 GUI 同一份。
+- **业务容器**：数据 / 绘图 / 脚本 / 协议 / 分析 / 报告等页与分组，由各模块在
+  `onAttach` 里经 `IUiContext::declareRibbonPage / declareRibbonGroup` 自声明；
+  壳不预置业务页。
 
-| 后果 | 说明 |
-|---|---|
-| **信息更全的那份被丢弃** | host 层先声明（构造即跑），但它不知道 GUI 的容器语义——没有 `kind`、没有父槽、label 也不准；GUI 层那份更完整却被静默挡掉 |
-| **label 不准** | `dock.left` 显示"左侧面板"而非"数据集"，`dock.right` 显示"右侧面板"而非"属性" |
-| **幽灵槽** | 只在 host 层声明、GUI 层无容器实现的槽，其 `kind` 落成默认值；扩展往里填的动作因此没有真实去处 |
-| **headless 看到残缺的骨架** | 只在 GUI 层声明的槽（ribbon 页签/分组、中央画布）在 CLI 里完全不可见 —— 槽集变成半套 |
-
-单一来源同时解决"重复"与"残缺"：GUI 与 headless 拿到**同一份**完整槽集。
-契约测试钉死它（`test_architecture`：槽齐备、kind/父槽/label 完整、无未归属贡献）。
+历史教训（仍成立）：`declareRibbonPage/declareRibbonGroup` 幂等（先到者为准），若同一容器在 host 与 GUI
+两处声明，信息更全的那份会被静默丢弃。因此壳级容器只在 `ShellContributions` 一处；
+模块容器只在该模块 `onAttach` 一处。`test_architecture` 死槽检查钉死：注册表内
+kind 仅限 RibbonPage/RibbonGroup，旧 Dock/Canvas/Menu 槽与方位名槽归零。
 
 ### 6.1 按功能分组，不产生上帝类
 
@@ -674,7 +673,7 @@ gui/
 
 **plot 的演进方向**：绘图会被抽取成一个类似 Qwt 的独立库（`modules/plot/gui/` 是它的
 前身），所以它**不属于任何模块、不聚合进 `modules/`**——它是能力库，模块
-（`PlotModule`）只是通过 `requestPanel("canvas.center", "plot.axes")` 使用它。
+（`PlotModule`）只是通过 `requestPanel(Region::Editor, "plot.axes")` 使用它。
 这也决定了它必须留在 `gui/views/`（或未来的 `libs/plot/`），而非功能目录。
 
 #### 统一定则：物理位置与逻辑位置正交
@@ -760,7 +759,7 @@ QWidget *createDatasetTreePanel(AppContext &, IIntentExecutor &, QWidget *);
 PS_REGISTER_PANEL("dataset-tree", datasetTree, createDatasetTreePanel)
 ```
 
-模块只声明类型字符串（`ui.requestPanel("dock.left", "dataset-tree")`），
+模块只声明类型字符串（`ui.requestPanel(Region::PrimarySidebar, "dataset-tree")`），
 不依赖 Qt Widgets——CLI 保持纯 Core。
 
 **工程要点**：`ps_gui` 必须是 **OBJECT 库**。静态库中未被引用的目标文件会被
@@ -802,7 +801,7 @@ QWidget *p = ui.requestPanel(spec.area, spec.id);
 ```
 
 `requestPanel` 在工厂缺标题/图标时回退 `PanelSpec::label/icon`——
-领域面板的形态（含标题）由扩展决定，而不是被 `dock.right` 的"属性"覆盖掉。
+领域面板的形态（含标题）由扩展决定，而不是被 `SecondarySidebar` 的"属性"覆盖掉。
 
 **两条工程不变量**（都在契约测试里钉死）：
 
@@ -992,7 +991,7 @@ headless 也能查到。
 
 UI 排布顺序不依赖绑定/装载先后，全部由 order 字段显式表达：
 
-- **`UiSlot.order`**：`slotsOfKind(RibbonPage)` 按 (order,label) 排 → 8 页顺序固定；
+- **`UiSlot.order`**：`slotsOfKind(RibbonPage)` 按 (order,label) 排 → 9 页顺序固定；
   `childrenOf(page)` 按 group.order 排 → 同页面板左右顺序固定。
 - **`UiAction.order`**：`actionsIn(area)` 按 (order,id) 稳定排 → 组内按钮顺序、gallery 分类
   出现顺序都固定。`ShellBinder` 按 `actionsIn` 返回顺序聚合 `galleryOrder`，于是图库分类
@@ -1001,6 +1000,20 @@ UI 排布顺序不依赖绑定/装载先后，全部由 order 字段显式表达
   绘图页 7 组顺序、分组归属、组内升序、gallery 分类顺序），GUI 表现即可复现。
 - 不靠 `QList::append` 先后决定顺序——否则插件加载顺序一变，按钮位置就跳；
   order 字段使顺序稳定且不写死在外壳。
+
+### 6.10 可见性 when 与三层作用域
+
+动作/面板/视图标题项的可见条件用 `when` 串表达，挂在对应贡献数据上。registry 只存
+字符串，求值统一归 `libs/command`（`WhenExpression` / `ContextStack`），外壳装配时调
+命令层求值器，机制层不反向依赖命令库。
+
+- 白名单语法：`!`、`&&`、`||`、括号；`==` `!=` `<` `<=` `>` `>=`；`in` / `not in`；
+  `=~` / `not =~`。未定义键求值为假，解析失败折成恒假。
+- 三层作用域 `Shell / Panel / View`：求值从最内层 View 往外查，先命中者胜；**同名键
+  内层覆盖外层**（View 盖 Panel、Panel 盖 Shell），清空内层逐级回退（D15）。
+- 同一 `when` 串启动期只解析一次，重复求值走编译缓存；上下文变化只重算结论。
+- 键名空间按域划分，模块只能写自己域内声明的键。细则见 `LAYERS.md`「when 可见条件
+  与三层作用域」。
 
 ## 7. 视图层：可插拔，而非模式枚举
 
@@ -1099,7 +1112,7 @@ ai.status / ai.tools.list / ai.tool.call   （MCP 桥消费）
 
 | 命令 | 归属 | 底层支撑 |
 |---|---|---|
-| `file.open` / `data.quickOpen` | `data.load`（已有）+ 骨架 `app.action.openData` | 格式驱动 + 摄取管道 |
+| `file.open` / `data.quickOpen` | `data.load`（已有）+ 开始页 `app.action.openData`（DataModule 贡献到壳声明的 home.data 组） | 格式驱动 + 摄取管道 |
 | `data.reload` | `data.reload`（宿主） | `sources` + `data.load`，**稳定 id 保持数据集不换 id** |
 | `data.exportSnapshot` | `data.export`（宿主） | `Dataset::channel` 有界取数写 CSV |
 | `data.recent` | `data.recent`（宿主）+ `data.load` 成功自动记入 | `SettingsStore` 持久化 |
@@ -1141,9 +1154,9 @@ ai.status / ai.tools.list / ai.tool.call   （MCP 桥消费）
 **脚本工作台**：四个独立 ADS 停靠面板（`ScriptPanels.cpp`，视图层自注册
 `PS_REGISTER_PANEL_T`，`ps_module_script_gui` 目标库）——
 
-- `script-files`（dock.left，脚本库）/ `script-editor`（中央页签，**按需创建**，
-  不与画布争位）/ `script-debug`（dock.right，调用栈+变量+API 速查）/
-  `script-console`（dock.bottom，持久 VM REPL）；
+- `script-files`（`Region::PrimarySidebar`，脚本库）/ `script-editor`（中央页签，**按需创建**，
+  不与画布争位）/ `script-debug`（`Region::SecondarySidebar`，调用栈+变量+API 速查）/
+  `script-console`（`Region::Panel`，持久 VM REPL）；
 - 面板间协作零新机制：全部走 `InteractionHub` 的 viewAction 通道
   （`script.open/.new/.goto/.console.append/.debug.update/...`）。
 

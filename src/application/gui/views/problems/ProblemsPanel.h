@@ -13,7 +13,7 @@ class AppContext;
 namespace nextpilot::plotscope::gui
 {
 
-// 问题面板（dock.bottom）：消息流里**只留 warn/error** 的那一部分。
+// 问题面板（Region::Panel）：消息流里**只留 warn/error** 的那一部分。
 //
 // 为什么和输出分开：输出是流（按时间看全部），问题是清单（按严重度收敛，
 // 可逐条定位）。脚本错误的定位串是 "name:line"，双击直接跳到编辑器对应行，

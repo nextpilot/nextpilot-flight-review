@@ -4,7 +4,7 @@
 
 ## 本目录是什么
 
-**唯一的 Qt Widgets 装配层**：shell/（MainWindow、Ribbon/Dock 容器、外壳装配、IUiContext 实现）、views/（绘图视图与功能视图）、其余共享 UI 基础设施。
+**Qt Widgets 装配层**：shell/（MainWindow、Ribbon/Dock 容器、外壳装配、IUiContext 实现）、views/（绘图视图与功能视图）、其余共享 UI 基础设施。注意：模块 `*_gui` 与 `uischema_widgets`/`fastplot` 同样构造控件，本层不是唯一控件来源。
 
 ## 允许放
 

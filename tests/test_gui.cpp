@@ -3089,7 +3089,7 @@ int main(int argc, char *argv[])
     // 打开「诊断」dock 面板（按需创建），断言：
     //   1) diag.registries 枚举到 panel-factory / builtin-module（R4 static 节点上树）；
     //   2) 面板行数 == 组合根树上节点数（面板与 diag.registries 同一条数据路径）；
-    //   3) SkeletonSlots 的 dock 插槽「诊断」已声明（单一来源）。
+    //   3) 诊断面板归 Region::Panel（壳级 diagnostics Activity 入口，单一来源）。
     {
         // 诊断面板归 Region::Panel（底部面板组），不再是注册表插槽；
         // 插槽只剩 RibbonPage / RibbonGroup 两类（见 test_architecture 死槽检查）。

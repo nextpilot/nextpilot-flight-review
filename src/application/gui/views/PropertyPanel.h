@@ -14,7 +14,7 @@ class QVBoxLayout;
 namespace nextpilot::plotscope::gui
 {
 
-// 通用属性面板：dock.right 的唯一内容（替换原 CAN 面板的默认占用）。
+// 通用属性面板：SecondarySidebar 的唯一内容（替换原 CAN 面板的默认占用）。
 //
 // 它是 PropertySchema 契约的**纯视图**：
 //   · 不知道任何业务类型，只按 schema 画对象树 + 属性行；

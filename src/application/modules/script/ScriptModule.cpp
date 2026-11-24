@@ -453,7 +453,7 @@ void ScriptModule::registerWorkbenchActions(RuntimeHost &host, ScriptFacade::Vie
                     Result<QVariant> out{QVariant()};
                     dbgReg->dispatchViewAction(QStringLiteral("script.debug.update"), up, out);
                     // 暂停时把调试面板顶到前台（re-request 复用 = 聚焦语义）；
-                    // 否则 dock.right 上并列的属性页签会挡住变量/调用栈。
+                    // 否则 SecondarySidebar 上并列的属性页签会挡住变量/调用栈。
                     if (m_ui)
                         m_ui->requestPanel(nextpilot::plotscope::registry::Region::SecondarySidebar,
                                            QStringLiteral("script-debug"));
@@ -527,7 +527,7 @@ void ScriptModule::registerWorkbenchActions(RuntimeHost &host, ScriptFacade::Vie
             return out;
         });
 
-    // script.workbench.console：确保控制台面板存在（常驻 dock.bottom，请求即置前）。
+    // script.workbench.console：确保控制台面板存在（常驻 Region::Panel，请求即置前）。
     host.app().interactions().registerViewAction(
         QStringLiteral("script.workbench.console"),
         [this](const QVariantMap &) -> Result<QVariant> {

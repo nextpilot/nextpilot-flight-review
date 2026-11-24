@@ -85,6 +85,6 @@ int DiagnosticsPanel::refresh()
 
 } // namespace nextpilot::plotscope::gui
 
-// 面板自注册：骨架槽（dock.diagnostics）+ 页签标题「诊断」。
+// 面板自注册：底部面板组（Region::Panel）+ 页签标题「诊断」。
 PS_REGISTER_PANEL_TI("diagnostics", diagnosticsPanel,
                     ::nextpilot::plotscope::gui::createDiagnosticsPanel, "诊断", "diagnostics")

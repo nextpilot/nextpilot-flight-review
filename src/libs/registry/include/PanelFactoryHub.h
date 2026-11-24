@@ -23,7 +23,7 @@ namespace nextpilot::plotscope::registry
 // 部件工厂表：把"部件类型标识"映射到具体的 QWidget 构造过程。
 //
 // 这是 app 骨架与模块之间的解耦点：
-//   模块只说"我需要一个 dataset-tree 面板"（requestPanel("dock.left", "dataset-tree")），
+//   模块只说"我需要一个 dataset-tree 面板"（requestPanel(Region::PrimarySidebar, "dataset-tree")），
 //   视图层自己注册实现。模块因此不需要依赖 Qt Widgets，
 //   headless（CLI）构建保持纯净；新增模块自带界面也不用改 GUI 层。
 //

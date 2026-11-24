@@ -34,10 +34,10 @@ class LuaHighlighter;
 // ============================================================================
 // 脚本工作台：四个独立 ADS 停靠面板（挂 app 主窗口，可自由停靠/浮动/分页）。
 //
-//   script-files   dock.left    File Explorer（脚本库 + 新建/删除）
-//   script-editor  dock.right   Code Editor（多标签；文档模型/运行/调试都在这）
-//   script-debug   dock.right   Stack + Variables + API 速查
-//   script-console dock.bottom  Command/REPL（持久 VM）
+//   script-files   PrimarySidebar    File Explorer（脚本库 + 新建/删除）
+//   script-editor  Editor            Code Editor（多标签；文档模型/运行/调试都在这）
+//   script-debug   SecondarySidebar  Stack + Variables + API 速查
+//   script-console Panel             Command/REPL（持久 VM）
 //
 // 面板间协作零新机制：全部走既有 viewAction 通道
 // （InteractionHub::registerViewAction / dispatchViewAction）：
