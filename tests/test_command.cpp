@@ -68,10 +68,12 @@ static void testGrammar()
     CHECK(!evalWith(QStringLiteral("selection.kind in (\"axes\", \"table\")"), ctx));
     CHECK(evalWith(QStringLiteral("selection.kind not in (\"axes\", \"table\")"), ctx));
 
-    // 数值比较
+    // 数值比较：< <= > >= 各至少一条
     CHECK(evalWith(QStringLiteral("dataset.count > 1"), ctx));
     CHECK(evalWith(QStringLiteral("dataset.count >= 3"), ctx));
     CHECK(!evalWith(QStringLiteral("dataset.count < 2"), ctx));
+    CHECK(evalWith(QStringLiteral("dataset.count <= 3"), ctx));
+    CHECK(!evalWith(QStringLiteral("dataset.count <= 2"), ctx));
 
     // 正则
     CHECK(evalWith(QStringLiteral("selection.kind =~ \"ser.*\""), ctx));
@@ -107,6 +109,32 @@ static void testScopeOverride()
     CHECK(evalWith(QStringLiteral("region.active == \"editor\""), ctx));
     ctx.set(ContextScope::View, QStringLiteral("region.active"), QStringLiteral("panel"));
     CHECK(!evalWith(QStringLiteral("region.active == \"editor\""), ctx));
+}
+
+static void testThreeLayerScope()
+{
+    // 三层作用域（shell / panel / view）：同名键内层覆盖外层，
+    // 求值从最内层 View 往外查，先命中者胜；清空内层后逐级回退。
+    ContextStack ctx;
+    ctx.set(ContextScope::Shell, QStringLiteral("sel"), QStringLiteral("shell"));
+    ctx.set(ContextScope::Panel, QStringLiteral("sel"), QStringLiteral("panel"));
+    ctx.set(ContextScope::View, QStringLiteral("sel"), QStringLiteral("view"));
+
+    // View 覆盖 Panel、Panel 覆盖 Shell。
+    CHECK(ctx.value(QStringLiteral("sel")).toString() == QStringLiteral("view"));
+    CHECK(evalWith(QStringLiteral("sel == \"view\""), ctx));
+    CHECK(!evalWith(QStringLiteral("sel == \"panel\""), ctx));
+    CHECK(!evalWith(QStringLiteral("sel == \"shell\""), ctx));
+
+    // 清空 View → 回退到 Panel。
+    ctx.clear(ContextScope::View);
+    CHECK(ctx.value(QStringLiteral("sel")).toString() == QStringLiteral("panel"));
+    CHECK(evalWith(QStringLiteral("sel == \"panel\""), ctx));
+
+    // 再清空 Panel → 回退到 Shell。
+    ctx.clear(ContextScope::Panel);
+    CHECK(ctx.value(QStringLiteral("sel")).toString() == QStringLiteral("shell"));
+    CHECK(evalWith(QStringLiteral("sel == \"shell\""), ctx));
 }
 
 static void testCache()
@@ -187,6 +215,7 @@ int main()
 {
     testGrammar();
     testScopeOverride();
+    testThreeLayerScope();
     testCache();
     testKeybindings();
 
