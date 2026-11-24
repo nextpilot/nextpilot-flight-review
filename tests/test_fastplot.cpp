@@ -418,7 +418,39 @@ int main(int argc, char **argv)
             CHECK(hits == 0);
         }
 
-        fprintf(stdout, "[ok] NaN gap：全null桶/空桶/稀疏NaN 全部断线，正常数据无假 gap\n");
+        // E) 稀疏路径静默缺测（无 NaN 标记，仅 x 时间跳跃）：同样断开。
+        // 与 LOD 路径同阈值（正常间距中位数 × 3），两条路径行为一致。
+        {
+            const int n = 40;
+            std::vector<double> xs(n), ys(n);
+            for (int i = 0; i < n; ++i)
+            {
+                xs[i] = (i < 20) ? (0.08 * i) : (3.52 + 0.08 * (i - 20));
+                ys[i] = 0.5 * std::sin(0.7 * i); // 全部有效，无 NaN
+            }
+            nextpilot::plotscope::fastplot::ArrayData data(xs.data(), ys.data(), n);
+
+            nextpilot::plotscope::fastplot::PlotWidget plot;
+            plot.resize(800, 400);
+            plot.addCurve(nextpilot::plotscope::fastplot::Curve::fromData(&data, ink, 1.4));
+            plot.setXRange(0.0, 4.0);
+            plot.setYRange(-1.0, 1.0);
+
+            const QImage img = plot.grabImage();
+            const auto &vp = plot.viewport();
+            // 缺测区间 (1.6, 3.4) 内不允许任何曲线像素
+            const int hits = inkPixelsBetween(img, vp.xToPixel(1.6), vp.xToPixel(3.4),
+                                              vp.plotRect().top(), vp.plotRect().bottom());
+            CHECK(hits == 0);
+            // 两侧曲线本体还在
+            const int bodyL = inkPixelsBetween(img, vp.xToPixel(0.1), vp.xToPixel(1.4),
+                                               vp.plotRect().top(), vp.plotRect().bottom());
+            const int bodyR = inkPixelsBetween(img, vp.xToPixel(3.6), vp.xToPixel(3.9),
+                                               vp.plotRect().top(), vp.plotRect().bottom());
+            CHECK(bodyL > 0 && bodyR > 0);
+        }
+
+        fprintf(stdout, "[ok] NaN gap：全null桶/空桶/稀疏NaN/稀疏静默缺测 全部断线，正常数据无假 gap\n");
     }
 
     // 7) 交互部件：缩放锚点不动、框选铺满、读数取最近样本

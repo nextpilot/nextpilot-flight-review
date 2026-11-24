@@ -1038,6 +1038,8 @@ int main(int argc, char *argv[])
         vp16.insert(QStringLiteral("x"), QJsonArray{0.4, 0.9}); // 深缩放（相对秒视口）
         CHECK(c16->restoreViewState(vp16));
         c16->setLegendCorner(2);                    // 左下（PR 3a）
+        c16->setLegendVisible(false);               // 图例整体显隐（单一状态通道）
+        c16->setReferenceTime(0.6);                 // 参考线（相对轴值，随视图状态持久化）
 
         // round-trip ×2：第一次 apply 落运行时，第二次验证幂等（不再丢字段）。
         const QJsonObject doc1 = workspace->toDocumentSpec().toJson();
@@ -1059,6 +1061,8 @@ int main(int argc, char *argv[])
         CHECK(s16->color == color16);
         CHECK(s16->visible == false);
         CHECK(c16b->legendCorner() == 2);
+        CHECK(c16b->legendVisible() == false);
+        CHECK(c16b->hasReference()); // 参考线经全文档 round-trip 仍在（AxesView 无值读口，存档侧含 0.6）
         double vx0 = 0.0, vx1 = 0.0;
         CHECK(c16b->visibleTimeRange(&vx0, &vx1));
         CHECK(std::fabs(vx0 - 0.4) < 1e-9 && std::fabs(vx1 - 0.9) < 1e-9);

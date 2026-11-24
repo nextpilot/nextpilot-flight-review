@@ -13,6 +13,7 @@
 #include <QResizeEvent>
 
 #include <algorithm>
+#include <limits>
 #include <vector>
 #include <cmath>
 #include <limits>
@@ -792,9 +793,34 @@ void Axes::paintCurves(QPainter &painter)
         {
             // 稀疏数据不聚合：逐点折线更真实（聚合会把峰值"抹平"到列内）。
             // NaN / 非有限 y 是缺测信号：在此断开分段，不跨缺测连线。
+            // 静默缺测（数据源未采样、无 NaN 标记，仅 x 时间跳跃）也是缺测：
+            // x 间距超"正常间距中位数 × 3"即断开，与 LOD 路径 drawEnvelope
+            // 同一阈值逻辑，两条路径行为一致（#IKXFP8 补漏）。
             const double *px = nullptr;
             const double *py = nullptr;
             const bool direct = data->directAccess(&px, &py);
+            auto xAt = [&](qsizetype i) { return direct ? px[i] : data->xAt(i); };
+
+            double gapThreshold = 0.0;
+            if (data->size() > 2)
+            {
+                std::vector<double> gaps;
+                gaps.reserve(size_t(data->size() - 1));
+                for (qsizetype i = 1; i < data->size(); ++i)
+                {
+                    const double g = xAt(i) - xAt(i - 1);
+                    if (g > 0.0)
+                        gaps.push_back(g);
+                }
+                if (!gaps.empty())
+                {
+                    std::sort(gaps.begin(), gaps.end());
+                    const double median = gaps[gaps.size() / 2];
+                    if (median > 0.0)
+                        gapThreshold = median * 3.0;
+                }
+            }
+
             QPolygonF poly;
             poly.reserve(data->size());
             auto flushSparse = [&]() {
@@ -811,16 +837,23 @@ void Axes::paintCurves(QPainter &painter)
                 painter.setRenderHint(QPainter::Antialiasing, false);
                 poly.clear();
             };
+            double prevX = std::numeric_limits<double>::quiet_NaN();
             for (qsizetype i = 0; i < data->size(); ++i)
             {
-                const double x = direct ? px[i] : data->xAt(i);
+                const double x = xAt(i);
                 const double y = direct ? py[i] : data->yAt(i);
                 if (!std::isfinite(x) || !std::isfinite(y))
                 {
                     flushSparse(); // 缺测点：结束当前段，不连线
+                    prevX = std::numeric_limits<double>::quiet_NaN();
                     continue;
                 }
+                // 静默缺测：相邻有效点 x 间距远超正常采样间隔 —— 断开。
+                // prevX 为 NaN（缺测点后首个有效点）时不重复触发，flush 已断过。
+                if (gapThreshold > 0.0 && std::isfinite(prevX) && (x - prevX) > gapThreshold)
+                    flushSparse();
                 poly.push_back(QPointF(m_vp.xToPixel(x), yToPixel(c.m_yAxis, y)));
+                prevX = x;
             }
             flushSparse();
             continue;
