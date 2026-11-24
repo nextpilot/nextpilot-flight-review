@@ -54,7 +54,8 @@ curl -s -H "Authorization: token <TOKEN>" "https://gitee.com/api/v5/repos/..."
 | 更新 PR 描述 | `PATCH /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>` | JSON body：`body`（新描述全文，**整段替换**）；首行写 `Closes #IKxxxxx`；分支每新增提交都要刷新，多提交需全列 |
 | 审批 PR | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/review` | body 带 `event=APPROVE`；成功返回 204 |
 | 查 PR 状态 | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>` | 看 `state`（`open`/`merged`/`closed`）、`mergeable` |
-| 合并 PR | `PUT /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/merge` | body 带 `merge_method=merge` |
+| 合并 PR | `PUT /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/merge` | body 带 `merge_style=merge`；**须先过 review + testers 两道门禁**（见下） |
+| 指定测试人 | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/testers` | body 带 `testers=<用户名>`（复数）；成功返回 201 |
 | 关闭 issue | `PATCH /api/v5/repos/nextpilot/issues/<num>` | **兜底用**：正常由 PR 合并自动关闭，`state` 仍为 open 时才调；表单参数必须带 `repo=nextpilot-advance-plotscope` + `state=closed` |
 | 删文件（免强推） | `DELETE /api/v5/repos/nextpilot/nextpilot-advance-plotscope/contents/<path>` | body 带 `sha`/`branch`/`message`；清理误传文件用，绕过保护分支 |
 
@@ -64,7 +65,13 @@ curl -s -H "Authorization: token <TOKEN>" "https://gitee.com/api/v5/repos/..."
 - **项目型仓库 issue 只走扁平路径**：`POST/PATCH /repos/nextpilot/issues`（仓库名放表单参数 `repo`）。标准路径 `POST/PATCH /repos/nextpilot/nextpilot-advance-plotscope/issues/<num>` → 404/「project or enterprise」——项目型仓库的 issue 编号是 `IKxxxxx` 标识串，不是纯数字。
 - 关闭 issue **只能**用 `PATCH /repos/nextpilot/issues/<num>` + `repo=`。`PATCH /enterprises/nextpilot/issues/<num>` → 403「仓库级私人令牌无权」。
 - `main` 是保护分支：**任何直推**（哪怕带令牌）都返回 `No permission to push this protected branch`。改动只能经 PR；清理误传文件用 contents API（见上表），不强推。
-- PR 合并可能被门禁拦截：`未通过设置的审查`（需先 approve）或 `未通过设置的测试`（CI 门禁）。遇此先排查 review 与 status，不绕过。
+- PR 合并可能被门禁拦截：`未通过设置的审查`（需先 approve）或 `未通过设置的测试`（需先指定 tester）。遇此先走下面的三步合并顺序，不绕过。
+- **合并的完整三步顺序**（本仓库两道门禁，缺一步都会被拦）：
+  1. `POST /repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/review`（body 带 `event=APPROVE`）→ 204
+  2. `POST /repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/testers`（body 带 `testers=<用户名>`，**字段名是 `testers` 复数**，写 `tester` 会返回 400 `testers is missing`）→ 201
+  3. `PUT /repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/merge`（body 带 `merge_style=merge`）→ 200
+  合并参数用 `merge_style=merge`（保留原始提交与 `Refs:` footer）；用 squash 会把各提交的 `Refs:` 吃掉，历史里查不到追溯线索。
+- **⚠️ 描述里的 `#IKxxxxx` 字样会被连带关闭**：本仓库 `close_related_issue=1`，PR 合并时会把描述中**所有**带 `#` 的 issue ident 一并关闭——不只 `Closes #` 那一个。踩坑实录：PR !45 只打算关 `#IKXG0M`，但描述正文里为了说明来源写了「按 IKXGYH 评审裁定」，加上 `#` 后 IKXGYH 在同一秒被误关。**规则**：PR 描述里凡是"仅作引用、不该被关闭"的 issue，去掉 `#` 写成纯文本（`IKXGYH`）；只有真正要关的那个才带 `#`。合并后若发现 issue 被误关（`updated_at` 与合并时刻同秒），用 `PATCH /repos/nextpilot/issues/<num>` + `repo=` + `state=open` 重新打开，并同步修正 PR 描述。
 - **自动关闭只认 `merged`**：PR 描述写 `Closes #IKxxxxx`（ident 带 `#`）后，合并时 issue 自动变 `closed`；PR 被**关闭但未合并**不触发，issue 保持 open。合并后仍要 `GET` 核实，未关才手动 PATCH。
 - **源分支自动删除看仓库设置**：设置「合并后删除源分支」开启才会自动删；未开启时远端分支仍在，需手动 `git push origin --delete`。本地分支任何情况下都手动删。
 - **不要把调试/截图图片传进仓库**。评论框「上传图片」是图床（存服务器、不进仓库），但只认网页登录 cookie，令牌调用返回 401；v5 API 无开放图床上传端点。需要内嵌图片时用网页登录后上传或外链，禁止 `git add` 截图。
