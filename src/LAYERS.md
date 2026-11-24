@@ -168,7 +168,7 @@ core 过渡层已整体删除，目录不存在。任何新增代码**禁止重�
 
 **写 UI 的两条通道**（模块/扩展永不直接碰 MainWindow）：
 
-1. **声明式**（IUiContext 契约，`libs/module`）：`onAttach` 里 `ui()->addAction(...) / placePanel(...) / declareSlot(...)`——只声明动作与面板位，零 Widgets 依赖
+1. **声明式**（IUiContext 契约，`libs/module`）：`onAttach` 里 `ui()->addAction(...) / declareSlot(...)`——只声明动作与面板位，零 Widgets 依赖
 2. **工厂式**（PanelFactory，`libs/registry`）：视图 TU 里 `PS_REGISTER_PANEL(type, ...)` 静态自注册工厂函数；运行期 `ui()->requestPanel(area, type)` 按字符串创建、经 ShellBinder 放置。工厂签名带 `AppContext + IIntentExecutor`——**视图取数与 CLI/脚本走同一条意图路径**，没有第二条取数通道
 
 **装载链**（谁装载）：GUI 可执行文件链接各 `*_gui` OBJECT 库 → 进程启动时静态注册对象构造、工厂表自动填好 → `host.activate()` → 模块 `onAttach` 请求面板/动作 → `GuiContext` 路由 → `PanelFactory::create` → `ShellBinder` 放置（带去重复用）。CLI 只链 headless 目标，UI 通道整体缺席。

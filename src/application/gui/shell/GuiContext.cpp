@@ -30,13 +30,8 @@ GuiContext::GuiContext(QMainWindow *window, UiSlotHub &slotReg, ShellBinder *bin
       m_executor(executor)
 {}
 
-void GuiContext::placePanel(QWidget *widget, const QString &area, const QString &titleOverride)
-{
-    placePanelWithKey(widget, area, titleOverride, QString());
-}
-
-void GuiContext::placePanelWithKey(QWidget *widget, const QString &area, const QString &title,
-                                   const QString &pageKey)
+void GuiContext::dockWidget(QWidget *widget, const QString &area, const QString &title,
+                            const QString &pageKey)
 {
     if (!widget || !m_binder)
         return;
@@ -49,11 +44,11 @@ void GuiContext::placePanelWithKey(QWidget *widget, const QString &area, const Q
             resolved = slot->label;
     }
     // pageKey = 面板类型 id：视图页逐页开关按钮按它定位页签（稳定键，
-    // 不随显示标题改动而失效）。领域面板等无类型 id 的调用方留空即可。
+    // 不随显示标题改动而失效）。
     m_binder->dock(area, resolved, widget, m_panelIcon.take(widget), pageKey);
 }
 
-void GuiContext::placeCanvas(QWidget *widget, const QString &titleOverride)
+void GuiContext::dockCentral(QWidget *widget, const QString &titleOverride)
 {
     if (!widget || !m_window)
         return;
@@ -146,9 +141,9 @@ QWidget *GuiContext::requestPanel(const QString &area, const QString &panelType)
     // 标题用面板自注册的显示名（"脚本调试"/"数据源"…），不能用区域标签——
     // 否则同区多面板全是"属性"/"数据源"，页签没法分辨。
     if (area == QStringLiteral("canvas.center"))
-        placeCanvas(widget, PanelFactoryHub::title(panelType));
+        dockCentral(widget, PanelFactoryHub::title(panelType));
     else
-        placePanelWithKey(widget, area, PanelFactoryHub::title(panelType), panelType);
+        dockWidget(widget, area, PanelFactoryHub::title(panelType), panelType);
     return widget;
 }
 
@@ -204,12 +199,12 @@ QWidget *GuiContext::requestDomainPanel(const QString &area, const QString &pane
         m_panelIcon.insert(widget, iconName);
 
     // 中央画布区走 setCentralContent，其余区域走停靠。
-    // 把面板自己的描述传给 placePanel 作标题——领域面板的形态（含标题）
+    // 把面板自己的描述传给 dockWidget 作标题——领域面板的形态（含标题）
     // 由扩展包决定，而不是被通用插槽的"属性"覆盖掉。
     if (area == QStringLiteral("canvas.center"))
-        placeCanvas(widget, title);
+        dockCentral(widget, title);
     else
-        placePanel(widget, area, title);
+        dockWidget(widget, area, title, panelId);
     return widget;
 }
 

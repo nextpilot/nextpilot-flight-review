@@ -27,10 +27,10 @@
 - `ps_module_<x>`：headless 部分，只链 Qt Core，CLI/GUI 都装载
 - `ps_module_<x>_gui`：Qt Widgets 部分，**只被 GUI 可执行文件链接**（OBJECT 库，静态自注册依赖 TU 构造函数），CLI 二进制里物理不存在
 
-写 UI 走两条通道：① `onAttach` 里 `ui()->addAction/placePanel/declareSlot` 声明；② 面板实现 `PS_REGISTER_PANEL(type, ...)` 自注册进 PanelFactoryHub，模块用 `ui()->requestPanel(area, type)` 按字符串请求。**headless target 严禁链 Qt Widgets 或 include 本模块 `*_gui` 头**。
+写 UI 走两条通道：① `onAttach` 里 `ui()->addAction/declareSlot` 声明；② 面板实现 `PS_REGISTER_PANEL(type, ...)` 自注册进 PanelFactoryHub，模块用 `ui()->requestPanel(area, type)` 按字符串请求。**headless target 严禁链 Qt Widgets 或 include 本模块 `*_gui` 头**。
 
 ## 动手前自查
 
 1. 新意图 op：别的模块也会处理它吗？会 → 归 host 系统级处理器；只本模块 → 放这里
-2. 需要一个新面板：经 IUiContext.placePanel/requestPanel 声明，不直接操作 MainWindow
+2. 需要一个新面板：经 IUiContext.requestPanel 走工厂表，不直接操作 MainWindow
 3. 想链接另一个模块？停下来，用意图或 host 注册机制重新设计

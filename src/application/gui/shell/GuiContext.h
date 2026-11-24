@@ -32,12 +32,6 @@ public:
                QObject *parent = nullptr);
 
     // nextpilot::plotscope::host::IUiContext
-    void placePanel(QWidget *widget, const QString &area,
-                    const QString &titleOverride = QString()) override;
-    // 带稳定 pageKey 的放置（面板类型 id）：视图页逐页开关按钮按它定位页签。
-    void placePanelWithKey(QWidget *widget, const QString &area, const QString &title,
-                           const QString &pageKey);
-    void placeCanvas(QWidget *widget, const QString &titleOverride = QString()) override;
     void declareSlot(const QString &area, const QString &label, nextpilot::plotscope::registry::SlotKind kind,
                      const QString &parentArea = QString()) override;
     void declareActivity(const nextpilot::plotscope::registry::ActivitySpec &activity) override;
@@ -68,6 +62,14 @@ public:
     nextpilot::plotscope::context::AppContext &app() { return m_appCtx; }
 
 private:
+    // 壳内部装配路径（不进 IUiContext 接口面）：模块只能经 requestPanel 走工厂表，
+    // 不允许自己造 QWidget 直接递进来。
+    // dockWidget：停靠到指定区域；pageKey = 面板类型 id（视图页开关按钮按它定位页签）。
+    void dockWidget(QWidget *widget, const QString &area, const QString &title,
+                    const QString &pageKey);
+    // dockCentral：放进中央画布区（首到者占位，后来者并成页签）。
+    void dockCentral(QWidget *widget, const QString &titleOverride = QString());
+
     QMainWindow *m_window = nullptr;
     nextpilot::plotscope::registry::UiSlotHub &m_slots;
     ShellBinder *m_binder = nullptr;
@@ -79,8 +81,8 @@ private:
     // QPointer 兜底：页签被用户关掉后自动清空，下次请求重新创建。
     QHash<QString, QPointer<QWidget>> m_panels;
 
-    // 面板图标（widget -> 图标名）：requestPanel/requestDomainPanel 从
-    // PanelFactoryHub / PanelSpec 取到图标后先记这里，placePanel/placeCanvas
+    // 面板图标（widget -> 图标名）：requestPanel 从
+    // PanelFactoryHub / PanelSpec 取到图标后先记这里，dockWidget/dockCentral
     // 放下时消费掉（take），所以不会长期持有裸指针。
     QHash<const QWidget *, QString> m_panelIcon;
 };
