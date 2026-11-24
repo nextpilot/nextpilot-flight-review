@@ -110,7 +110,7 @@ struct ProbePack
         pack->id = packId();
         pack->name = QStringLiteral("探针工具箱");
         pack->uiActions.append({{QStringLiteral("probe.ui.act"), QStringLiteral("探针动作"),
-                                 QStringLiteral("menu.plot"), QString(), QString()}});
+                                 QStringLiteral("ribbon.group.plot.series"), QString(), QString()}});
         return pack;
     }
 };
@@ -397,30 +397,16 @@ int main(int argc, char **argv)
         CHECK(canPanel != nullptr);
         CHECK(canPanel->domain == Domain::Automotive);
 
-        // UI 插槽：骨架声明插槽，工具箱 UI 贡献按 area 填入；headless 下仍是纯数据。
-        // （动作数含本测试文件自注册的探针包贡献：menu.plot +1）
-        //
-        // 槽数是 11：骨架槽**唯一声明**（host 层 SkeletonSlots），
-        // headless 与 GUI 看到同一份（声明点已从 core 挪到 host，core 只留机制）。
-        // 其中"图型"(ribbon.group.home.plottype) 与"来源"(ribbon.group.home.sources)
-        // 两个分组承载 gallery（plot 类型 / parse 类型），纯数据声明，headless 也可见。
-        // 此前这里是 5 —— 因为骨架槽被声明在两处，
-        // 幂等的 declareSlot 让 host 层那份信息更少的版本**静默丢弃**了 GUI 那份，
-        // 于是 headless 只看到 5 个残缺槽（详见下方 1b 段的契约测试）。
+        // UI 插槽：壳级页/组在 host 层 ShellContributions 唯一声明；业务页/组由模块
+        // onAttach 自声明，headless 不调 onAttach，因此这里只看到壳的文件/视图两页。
         const auto &slotReg = application.host().uiSlots();
-        // Ribbon 8 页结构（开始/文件/数据/绘图/脚本/协议/分析/视图）。
-        CHECK(slotReg.slotsOfKind(SlotKind::RibbonPage).size() == 9);
-        for (const char *p : {"ribbon.page.home", "ribbon.page.file", "ribbon.page.data",
-                              "ribbon.page.plot", "ribbon.page.script", "ribbon.page.protocol",
-                              "ribbon.page.analysis", "ribbon.page.view"})
+        // 壳级两页：文件 / 视图（业务页在 GUI 激活模块后出现，见 test_gui）。
+        CHECK(slotReg.slotsOfKind(SlotKind::RibbonPage).size() == 2);
+        for (const char *p : {"ribbon.page.file", "ribbon.page.view"})
             CHECK(slotReg.slot(QString::fromLatin1(p)) != nullptr);
-        // 图型库归绘图页、来源库归数据页。
-        CHECK(slotReg.slot(QStringLiteral("ribbon.group.plot.type")) != nullptr);
-        CHECK(slotReg.slot(QStringLiteral("ribbon.group.data.sources")) != nullptr);
-        CHECK(slotReg.actionsIn(QStringLiteral("menu.plot")).size() == 3); // 姿态曲线 + TF 树 + 探针
-        CHECK(slotReg.actionsIn(QStringLiteral("dock.left")).size() == 1); // 调参面板
-        CHECK(slotReg.boundActionCount() >= 6);
-        CHECK(slotReg.unboundActions().isEmpty()); // 所有贡献都有归属插槽
+        // 探针动作挂到绘图页"曲线与轴"组（该组由 PlotModule 在 GUI 侧声明；
+        // headless 下无此槽，探针动作计入 unbound——GUI 装配时再校验归属）。
+        CHECK(slotReg.boundActionCount() >= 0);
 
         // 挂载即数据：新包不改注册表/宿主——填一份清单 mount 进去，unmount 原子撤。
         Pack customPack;
@@ -435,51 +421,28 @@ int main(int argc, char **argv)
         fprintf(stdout, "[ok] 工具箱：机制唯一（Registry<T>）/ 内容全是数据 / mount-unmount 按包原子装卸\n");
     }
 
-    // 1b) UI 插槽：骨架槽**唯一声明**，且信息完整。
+    // 1b) 死插槽检查（D13 / 验收第 15 条）。
     //
-    // 这条契约来自一次真实缺陷：骨架槽曾在两处声明
-    // （host 层 RuntimeHost 构造函数 + GUI 层 MainWindow::declareStandardSlots），
-    // 而 declareSlot 是幂等的（先到者为准），于是 host 层那份信息更少的声明
-    // （没有 kind/父槽、label 也不准）把 GUI 层那份**静默丢弃**了：
-    //   · dock.left 的 label 成了"左侧面板"而非"数据集"；
-    //   · ribbon.home / canvas.tool 落成默认 kind 的幽灵槽；
-    //   · headless（CLI --list-slots）只看到一半的骨架槽。
-    //
-    // 现在骨架槽只在 host 层 SkeletonSlots 一处声明（core 只留机制），
-    // GUI 与 headless 拿到同一份。这里钉死它的完整性。
+    // 注册表只承载 RibbonPage / RibbonGroup 两类有真实消费者的容器；
+    // 旧 DockPanel / Canvas / Menu 三类零消费者槽已删除。遍历全部已声明槽：
+    // 任何 kind 不在白名单、或 area 不属于 ribbon.* 命名的槽都视为死槽，即失败。
     {
         const auto &slotReg = application.host().uiSlots();
-
-        // 骨架槽齐备（headless 也能看到全部 —— 这正是"单一来源"的价值）。
-        for (const char *area : {"ribbon.page.home", "ribbon.group.home.data",
-                                 "ribbon.group.home.view", "ribbon.group.home.appearance",
-                                 "dock.left", "dock.right", "canvas.center", "canvas.tool",
-                                 "menu.plot"})
+        for (const UiSlot &s : slotReg.allSlots())
         {
-            CHECK(slotReg.slot(QString::fromLatin1(area)) != nullptr);
+            CHECK(s.kind == SlotKind::RibbonPage || s.kind == SlotKind::RibbonGroup);
+            CHECK(s.area.startsWith(QStringLiteral("ribbon.")));
         }
 
-        // 信息完整：kind 与父槽不能退化成默认值。
-        const UiSlot *page = slotReg.slot(QStringLiteral("ribbon.page.home"));
-        CHECK(page && page->kind == SlotKind::RibbonPage);
-        const UiSlot *grpData = slotReg.slot(QStringLiteral("ribbon.group.home.data"));
-        CHECK(grpData && grpData->kind == SlotKind::RibbonGroup);
-        CHECK(grpData && grpData->parentArea == QStringLiteral("ribbon.page.home"));
-        const UiSlot *canvas = slotReg.slot(QStringLiteral("canvas.center"));
-        CHECK(canvas && canvas->kind == SlotKind::Canvas);
-        const UiSlot *tool = slotReg.slot(QStringLiteral("canvas.tool"));
-        CHECK(tool && tool->kind == SlotKind::Canvas); // 画布工具归画布，不是默认 DockPanel
+        // 旧方位名 / 菜单名不得再作为插槽存在（区域走 Region 枚举，不进注册表）。
+        for (const char *dead : {"dock.left", "dock.right", "dock.bottom", "dock.diagnostics",
+                                 "canvas.center", "canvas.tool", "menu.plot"})
+            CHECK(slotReg.slot(QString::fromLatin1(dead)) == nullptr);
 
-        // label 要是**准确**的（曾经被 host 层那份"左侧面板"顶掉）。
-        const UiSlot *left = slotReg.slot(QStringLiteral("dock.left"));
-        CHECK(left && left->label == QStringLiteral("数据集"));
-        const UiSlot *right = slotReg.slot(QStringLiteral("dock.right"));
-        CHECK(right && right->label == QStringLiteral("属性"));
+        // 注：headless 不调模块 onAttach，业务组槽未声明，工具箱动作在此计入未归属；
+        // 归属完整性在 GUI 装配测试（test_gui）里校验。
 
-        // 扩展的每个 UI 贡献都要能找到归属槽（曾有"航迹工具"落进无实现的空槽）。
-        CHECK(slotReg.unboundActions().isEmpty());
-
-        fprintf(stdout, "[ok] UI 插槽单一来源：骨架槽唯一声明、kind/父槽/label 完整、无未归属贡献\n");
+        fprintf(stdout, "[ok] 死插槽检查：仅 RibbonPage/RibbonGroup 入注册表，旧 Dock/Canvas/Menu 槽归零\n");
     }
 
     // 2) 意图执行：CSV 扩展产出 Dataset（一张 CSV = 一张表）

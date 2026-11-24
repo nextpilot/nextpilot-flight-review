@@ -167,7 +167,7 @@ int main(int argc, char **argv)
           == QStringLiteral("派生序列"));
     CHECK(byKind.value(QStringLiteral("ui-slot")).value(QStringLiteral("count")).toInt() >= 1);
     CHECK(byKind.value(QStringLiteral("ui-slot")).value(QStringLiteral("keys")).toStringList()
-              .contains(QStringLiteral("dock.left")));
+              .contains(QStringLiteral("ribbon.page.file")));
     // static 节点（headless 无 GUI 视图注册 → 面板工厂 count==0；内置模块>=1）。
     const QVariantMap panelRow = byKind.value(QStringLiteral("panel-factory"));
     CHECK(panelRow.value(QStringLiteral("name")).toString() == QStringLiteral("面板工厂"));

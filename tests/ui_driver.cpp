@@ -517,7 +517,7 @@ int main(int argc, char *argv[])
         else if (op == QStringLiteral("panel"))
         {
             const bool created = window.context()->requestPanel(
-                step.value(QStringLiteral("slot")).toString(),
+                toRegion(step.value(QStringLiteral("slot")).toString()),
                 step.value(QStringLiteral("panel")).toString());
             if (!created)
             {
@@ -532,7 +532,7 @@ int main(int argc, char *argv[])
             const QString area = step.value(QStringLiteral("area")).toString();
             const QString cls = step.value(QStringLiteral("class")).toString();
             bool raised = false;
-            for (QWidget *p : window.binder()->panelWidgets(area))
+            for (QWidget *p : window.binder()->panelWidgets(toRegion(area)))
             {
                 // 类名可能带命名空间前缀，按后缀匹配
                 if (QString::fromLatin1(p->metaObject()->className()).endsWith(cls)

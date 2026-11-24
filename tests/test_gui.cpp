@@ -489,24 +489,24 @@ int main(int argc, char *argv[])
                 canSpec = &s;
         CHECK(canSpec != nullptr);
         CHECK(canSpec->label == QStringLiteral("CAN 报文"));
-        CHECK(canSpec->area == QStringLiteral("dock.right"));
+        CHECK(canSpec->area == Region::SecondarySidebar);
 
         // 模块按清单里的 id 请求面板——它不知道这是领域面板还是通用面板，
         // 两者走同一个 requestPanel 入口。
         QWidget *canPanel = ui->requestPanel(canSpec->area, canSpec->id);
         CHECK(canPanel != nullptr);
         // CAN 面板能力仍在（工厂 + 清单 + 可请求），但不再占据 dock.right 主位。
-        CHECK(binder->panelTitles(QStringLiteral("dock.right")).contains(QStringLiteral("属性"))); // 页签集里有属性面板（同区多面板后主位概念已废）
+        CHECK(binder->panelTitles(Region::SecondarySidebar).contains(QStringLiteral("属性"))); // 页签集里有属性面板（同区多面板后主位概念已废）
         OK("模块侧闭环：按领域查清单 -> 按 id 请求面板成功；dock.right 主位归属性面板");
     }
 
     // --- 3d) 属性面板：dock.right 页签之一 + 统一 selection 联动 ---
     {
-        CHECK(binder->panelWidget(QStringLiteral("dock.right")) != nullptr);
+        CHECK(binder->panelWidget(Region::SecondarySidebar) != nullptr);
         // dock.right 可能并列多个页签（属性 + 脚本调试等，模块激活顺序不定），
         // 按类型查找属性面板，不依赖注册先后。
         PropertyPanel *propPanel = nullptr;
-        for (QWidget *w : binder->panelWidgets(QStringLiteral("dock.right")))
+        for (QWidget *w : binder->panelWidgets(Region::SecondarySidebar))
         {
             if (!propPanel)
                 propPanel = qobject_cast<PropertyPanel *>(w);
@@ -529,8 +529,8 @@ int main(int argc, char *argv[])
 
     // --- 4) 停靠区就位（Qt-ADS）---
     CHECK(binder->panelCount() >= 1);
-    CHECK(binder->panelWidget(QStringLiteral("dock.left")) != nullptr);
-    CHECK(!binder->panelTitle(QStringLiteral("dock.left")).isEmpty());
+    CHECK(binder->panelWidget(Region::PrimarySidebar) != nullptr);
+    CHECK(!binder->panelTitle(Region::PrimarySidebar).isEmpty());
     OK("停靠区就位：左栏有数据集面板且标题正确");
 
     // --- 4a) ADS 几何：左右全高、Panel 只挂 Editor 下方、状态栏全宽 ---
@@ -592,7 +592,7 @@ int main(int argc, char *argv[])
         QMainWindow isolated;
         ShellBinder binder2{&isolated, *slotHub};
         auto *bottom = new QLabel(QStringLiteral("底部面板"));
-        binder2.dock(QStringLiteral("dock.bottom"), QStringLiteral("底部"), bottom);
+        binder2.dock(Region::Panel, QStringLiteral("底部"), bottom);
         isolated.resize(900, 640);
         isolated.show();
         QEventLoop waitLoop;
@@ -614,11 +614,11 @@ int main(int argc, char *argv[])
     {
         // 侧栏三面板随 attach 挂上（与既有面板同侧并成页签，顺序不定，按类型查）。
         bool hasFiles = false, hasConsole = false, hasDebug = false;
-        for (QWidget *w : binder->panelWidgets(QStringLiteral("dock.left")))
+        for (QWidget *w : binder->panelWidgets(Region::PrimarySidebar))
             hasFiles = hasFiles || qobject_cast<nextpilot::plotscope::script::ScriptFilesPanel *>(w) != nullptr;
-        for (QWidget *w : binder->panelWidgets(QStringLiteral("dock.bottom")))
+        for (QWidget *w : binder->panelWidgets(Region::Panel))
             hasConsole = hasConsole || qobject_cast<nextpilot::plotscope::script::ScriptConsolePanel *>(w) != nullptr;
-        for (QWidget *w : binder->panelWidgets(QStringLiteral("dock.right")))
+        for (QWidget *w : binder->panelWidgets(Region::SecondarySidebar))
             hasDebug = hasDebug || qobject_cast<nextpilot::plotscope::script::ScriptDebugPanel *>(w) != nullptr;
         CHECK(hasFiles);
         CHECK(hasConsole);
@@ -682,15 +682,15 @@ int main(int argc, char *argv[])
         CHECK(binder->sideBarSectionActivity(QStringLiteral("script-files")) == QStringLiteral("script"));
 
         // Activity Bar 不再把左栏做成互斥页签：两个面板同属一个 section 栈。
-        const QStringList leftTitles = binder->panelTitles(QStringLiteral("dock.left"));
+        const QStringList leftTitles = binder->panelTitles(Region::PrimarySidebar);
         CHECK(leftTitles.contains(QStringLiteral("数据源")));
         CHECK(leftTitles.contains(QStringLiteral("脚本文件")));
-        CHECK(binder->panelWidgets(QStringLiteral("dock.left")).size() == 2);
+        CHECK(binder->panelWidgets(Region::PrimarySidebar).size() == 2);
 
         // 视图可挂到 Activity Bar：映射改到目标 Activity，视图仍在左槽。
         CHECK(binder->pinViewToActivity(QStringLiteral("dataset-tree"), QStringLiteral("analysis")));
         CHECK(binder->sideBarSectionActivity(QStringLiteral("dataset-tree")) == QStringLiteral("analysis"));
-        CHECK(binder->panelTitles(QStringLiteral("dock.left")).contains(QStringLiteral("数据源")));
+        CHECK(binder->panelTitles(Region::PrimarySidebar).contains(QStringLiteral("数据源")));
         CHECK(binder->pinViewToActivity(QStringLiteral("dataset-tree"), QStringLiteral("data")));
         CHECK(binder->sideBarSectionActivity(QStringLiteral("dataset-tree")) == QStringLiteral("data"));
 
@@ -751,7 +751,7 @@ int main(int argc, char *argv[])
     // MainWindow 不认识它，这里从插槽区取回（dock.left 可能并列脚本文件
     // 面板且顺序不定，按类型查找）。
     DataManagerPanel *panel = nullptr;
-    for (QWidget *w : binder->panelWidgets(QStringLiteral("dock.left")))
+    for (QWidget *w : binder->panelWidgets(Region::PrimarySidebar))
     {
         if (!panel)
             panel = qobject_cast<DataManagerPanel *>(w);
@@ -3091,14 +3091,8 @@ int main(int argc, char *argv[])
     //   2) 面板行数 == 组合根树上节点数（面板与 diag.registries 同一条数据路径）；
     //   3) SkeletonSlots 的 dock 插槽「诊断」已声明（单一来源）。
     {
-        // slot 声明（骨架槽单一来源）
-        bool hasDiagDock = false;
-        for (const auto &s : slotReg.slotsOfKind(SlotKind::DockPanel))
-        {
-            if (s.area == QStringLiteral("dock.diagnostics"))
-                hasDiagDock = true;
-        }
-        CHECK(hasDiagDock);
+        // 诊断面板归 Region::Panel（底部面板组），不再是注册表插槽；
+        // 插槽只剩 RibbonPage / RibbonGroup 两类（见 test_architecture 死槽检查）。
 
         // diag.registries：11 类节点齐全（遗留4/遗留5 收口：全量上树无盲区）
         Result<QVariant> out{QVariant()};
@@ -3130,7 +3124,7 @@ int main(int argc, char *argv[])
 
         // 打开诊断面板（首次按需创建），面板行数 == 树上节点数
         QWidget *diagWidget = window.context()->requestPanel(
-            QStringLiteral("dock.diagnostics"), QStringLiteral("diagnostics"));
+            Region::Panel, QStringLiteral("diagnostics"));
         CHECK(diagWidget != nullptr);
         auto *diag = qobject_cast<nextpilot::plotscope::gui::DiagnosticsPanel *>(diagWidget);
         CHECK(diag != nullptr);
@@ -3228,7 +3222,7 @@ int main(int argc, char *argv[])
         pack.viewTitleActions << shown << hidden;
         auto &toolbox = application.context().toolbox();
         CHECK(toolbox.mount(std::move(pack)));
-        QWidget *panel = window.context()->requestPanel(QStringLiteral("dock.left"),
+        QWidget *panel = window.context()->requestPanel(Region::PrimarySidebar,
                                                        QStringLiteral("test.title-view"));
         CHECK(panel != nullptr);
         // when 不命中的那条不挂；命中的挂上去（数量是唯一可断言的口径）
@@ -3270,9 +3264,9 @@ int main(int argc, char *argv[])
             QStringLiteral("test.multi"),
             [](AppContext &, IIntentExecutor &, QWidget *parent) { return new QWidget(parent); },
             QStringLiteral("多实例"), QString(), 0, false);
-        QWidget *m1 = window.context()->requestPanel(QStringLiteral("dock.diagnostics"),
+        QWidget *m1 = window.context()->requestPanel(Region::Panel,
                                                      QStringLiteral("test.multi"));
-        QWidget *m2 = window.context()->requestPanel(QStringLiteral("dock.diagnostics"),
+        QWidget *m2 = window.context()->requestPanel(Region::Panel,
                                                      QStringLiteral("test.multi"));
         CHECK(m1 != nullptr);
         CHECK(m2 != nullptr);
@@ -3282,9 +3276,9 @@ int main(int argc, char *argv[])
             QStringLiteral("test.single"),
             [](AppContext &, IIntentExecutor &, QWidget *parent) { return new QWidget(parent); },
             QStringLiteral("单例"));
-        QWidget *s1 = window.context()->requestPanel(QStringLiteral("dock.diagnostics"),
+        QWidget *s1 = window.context()->requestPanel(Region::Panel,
                                                      QStringLiteral("test.single"));
-        QWidget *s2 = window.context()->requestPanel(QStringLiteral("dock.diagnostics"),
+        QWidget *s2 = window.context()->requestPanel(Region::Panel,
                                                      QStringLiteral("test.single"));
         CHECK(s1 != nullptr);
         CHECK(s1 == s2);
@@ -3442,10 +3436,10 @@ int main(int argc, char *argv[])
     // --- dock 页签：页签序与内容栈序必须一致（修"点页签内容不切"）---
     {
         CHECK(binder != nullptr);
-        const QStringList leftTitles = binder->panelTitles(QStringLiteral("dock.left"));
+        const QStringList leftTitles = binder->panelTitles(Region::PrimarySidebar);
         CHECK(leftTitles.size() >= 2); // 数据源 + 脚本文件
-        const QStringList leftOrder = binder->contentsOrder(QStringLiteral("dock.left"));
-        const QString act0 = binder->activePanelTitle(QStringLiteral("dock.left"));
+        const QStringList leftOrder = binder->contentsOrder(Region::PrimarySidebar);
+        const QString act0 = binder->activePanelTitle(Region::PrimarySidebar);
         fprintf(stdout, "[dock] tabs=%s contents=%s active=%s\n",
                 leftTitles.join(QLatin1Char(',')).toUtf8().constData(),
                 leftOrder.join(QLatin1Char(',')).toUtf8().constData(),
@@ -3463,11 +3457,11 @@ int main(int argc, char *argv[])
         CHECK(binder->dockPageTitle(QStringLiteral("dataset-tree")) != QStringLiteral("侧栏"));
         // 聚焦：每个面板都能定位到自己的 dock 页签（focusPanel 返回 true），
         // 且聚焦后 active 落在该面板所在页签上。
-        const QList<QWidget *> leftPanels = binder->panelWidgets(QStringLiteral("dock.left"));
+        const QList<QWidget *> leftPanels = binder->panelWidgets(Region::PrimarySidebar);
         CHECK(leftPanels.size() >= 2);
         for (QWidget *w : leftPanels)
             CHECK(binder->focusPanel(w));
-        const QString act1 = binder->activePanelTitle(QStringLiteral("dock.left"));
+        const QString act1 = binder->activePanelTitle(Region::PrimarySidebar);
         CHECK(leftTitles.contains(act1));
         OK("dock 页签：页签序=内容栈序、两个面板都可聚焦（修点页签内容不切换）");
     }
