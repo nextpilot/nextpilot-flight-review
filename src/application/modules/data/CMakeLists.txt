@@ -24,18 +24,6 @@ target_include_directories(ps_data_tablemodel PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 target_link_libraries(ps_data_tablemodel PUBLIC ps_dataset Qt6::Core)
 set_target_properties(ps_data_tablemodel PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
 
-# 功能专属视图：聚合在本功能目录，但独立 target、只被 GUI 可执行文件链接。
-# DataManagerPanel 通过 PS_REGISTER_PANEL("dataset-tree") 自注册到 core 的工厂表，
-# 与器官解耦（器官只发字符串 id，不 include 本头文件）。
-find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
-add_library(ps_module_data_gui OBJECT DataManagerPanel.cpp DataManagerPanel.h
-                                      LiveConnectDialog.cpp LiveConnectDialog.h
-                                      DataTablePanel.cpp DataTablePanel.h)
-target_include_directories(ps_module_data_gui PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
-    # 通道拖拽协议（纯头文件）：数据树 encode、画布 decode，共享同一张约定。
-    ${CMAKE_CURRENT_SOURCE_DIR}/../../gui/views/plot)
-# 主题是横向 GUI 基础设施（状态点等取色走它），单独成库，谁需要谁链——
-# 不必为此链接整个外壳库 ps_gui。
-target_link_libraries(ps_module_data_gui PUBLIC ps_context ps_data_tablemodel ps_gui_theme ps_gui_transform Qt6::Widgets Qt6::Gui Qt6::Core)
-set_target_properties(ps_module_data_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
+# 呈现层（领域专属面板的 QWidget 实现）：单独一个产物，只被 GUI 链接。
+# 见 gui/CMakeLists.txt 的说明。
+add_subdirectory(gui)

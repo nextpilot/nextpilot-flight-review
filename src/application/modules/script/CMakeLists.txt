@@ -49,14 +49,7 @@ qt_add_resources(ps_module_script "ps_python_bridge"
     FILES resources/nextpilot_bridge.py
 )
 
-# 功能专属视图：四个工作台停靠面板（files/editor/console/debug），
-# 独立 target、只被 GUI 与 GUI 测试链接——headless（CLI）不碰 Widgets。
-# ScriptPanels 通过 PS_REGISTER_PANEL_T 自注册到 core 的工厂表，与器官解耦；
-# 层契约：不链接 ps_module_script（同层横向禁止）——执行/REPL 经 viewAction
-# script.workbench.* 回模块，面板只依赖 ps_context 的机制头。
-find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
-add_library(ps_module_script_gui OBJECT ScriptPanels.cpp ScriptPanels.h
-    BatchPanel.cpp BatchPanel.h)
-target_include_directories(ps_module_script_gui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ps_module_script_gui PUBLIC ps_context Qt6::Widgets Qt6::Gui Qt6::Core)
-set_target_properties(ps_module_script_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
+# 呈现层（工作台停靠面板的 QWidget 实现）：单独一个产物，
+# 只被 GUI 与 GUI 测试链接——headless（CLI）不碰 Widgets。
+# 见 gui/CMakeLists.txt 的说明。
+add_subdirectory(gui)
