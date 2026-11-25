@@ -36,7 +36,7 @@ namespace nextpilot::plotscope::gui
 // 与 CLI/脚本同一条出口；保存末尾 flush 落盘到 AppData 下的 settings.json。
 //
 // 放 shell/ 而非 views/：偏好是**系统级**外壳能力，不属于任何功能模块，
-// 与 ProtocolEditorDialog / ImportDialog 同层。
+// 与导入对话框同层：都是壳自己的系统级对话框，不属于任何业务模块。
 class PreferencesDialog final : public QDialog
 {
     Q_OBJECT

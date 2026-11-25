@@ -76,10 +76,8 @@ add_library(ps_gui OBJECT
     shell/KeybindingDialog.h
     shell/ImportDialog.cpp
     shell/ImportDialog.h
-    shell/ProtocolInspectorDialog.cpp
-    shell/ProtocolInspectorDialog.h
-    shell/ProtocolEditorDialog.cpp
-    shell/ProtocolEditorDialog.h
+    # 协议编辑器/检查器对话框已迁至 modules/protocol/gui（D18a）：
+    # 外壳零业务对话框，只通过意图触发；ps_gui 不再编译任何协议 UI。
     # 全局偏好设置（App 作用域，跨工作区持久）：外壳级系统能力，不属于任何功能模块。
     shell/PreferencesDialog.cpp
     shell/PreferencesDialog.h

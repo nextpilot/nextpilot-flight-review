@@ -130,19 +130,10 @@ private:
     // 选中的文件逐条走 data.load 意图——与通用导入、CLI/脚本同一条加载路径。
     void openDataWithFormat(nextpilot::plotscope::host::RuntimeHost &host, const QString &formatId);
 
-    // 骨架自带的"协议检查器"入口：按 IMessageParser 自述列协议、配参数、逐帧看字段。
-    // 纯 GUI 检查能力（产 DecodedFrame，不入 Dataset），故按 id 特判弹对话框，
-    // 与"打开数据"同级处理；不占用任何可卸载模块。
-    void openProtocolInspector();
-
     // 工作区预设：保存 = 输入名字后把源清单与画布布局写进 .psw；
     // 打开 = 列出现有预设选一个，按名整体重建。两步都落到 mod.workspace 的意图。
     void saveWorkspacePreset(nextpilot::plotscope::host::RuntimeHost &host);
     void openWorkspacePreset(nextpilot::plotscope::host::RuntimeHost &host);
-
-    // 骨架自带的"协议编辑器"入口：创建/编辑/校验 .psproto 模板并试算单帧。
-    // 纯 GUI 工具（编辑配置文档，不入 Dataset），按 id 特判弹对话框。
-    void openProtocolEditor();
 
     // 「网格」大按钮的下拉菜单：每次展开前按当前画布状态重建勾选项。
     void rebuildGridMenu();

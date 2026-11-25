@@ -11,8 +11,7 @@
 #include "command/KeybindingRegistry.h"
 #include "ImportDialog.h"
 #include "PreferencesIntentHandler.h"
-#include "ProtocolInspectorDialog.h"
-#include "ProtocolEditorDialog.h"
+#include "DialogLauncherHub.h"
 #include "ReportExporter.h"
 #include "ShellBinder.h"
 #include "theme/PlotThumbnails.h"
@@ -484,9 +483,16 @@ void MainWindow::build(RuntimeHost &host)
             openDataFile(host);
             return;
         }
-        if (actionId == QStringLiteral("app.action.protocolInspector"))
+        // 协议对话框归模块呈现层（D18a）：外壳只把 id 交给启动器表，不 include、
+        // 不构造任何业务对话框。未注册（裸壳/headless）时 launch 为 no-op。
+        if (actionId == QStringLiteral("app.action.protocolInspector")
+            || actionId == QStringLiteral("app.action.protocolEditor")
+            || actionId == QStringLiteral("protocol.new")
+            || actionId == QStringLiteral("protocol.open")
+            || actionId == QStringLiteral("protocol.validate")
+            || actionId == QStringLiteral("protocol.editor"))
         {
-            openProtocolInspector();
+            registry::DialogLauncherHub::launch(actionId, this, m_appCtx, host);
             return;
         }
         // 工作区预设：需要输入/选择预设名，外壳按 id 特判，落盘与重建仍走意图层。
@@ -498,15 +504,6 @@ void MainWindow::build(RuntimeHost &host)
         if (actionId == QStringLiteral("workspace.save"))
         {
             saveWorkspacePreset(host);
-            return;
-        }
-        if (actionId == QStringLiteral("app.action.protocolEditor")
-            || actionId == QStringLiteral("protocol.new")
-            || actionId == QStringLiteral("protocol.open")
-            || actionId == QStringLiteral("protocol.validate")
-            || actionId == QStringLiteral("protocol.editor"))
-        {
-            openProtocolEditor();
             return;
         }
         // 报告导出：选保存路径 → QPdfWriter 矢量管线（画布+元数据+结论）。
@@ -933,21 +930,6 @@ void MainWindow::openDataWithFormat(RuntimeHost &host, const QString &formatId)
         const int dsId = r.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
         statusBar()->showMessage(QStringLiteral("已载入数据集 #%1").arg(dsId));
     }
-}
-
-void MainWindow::openProtocolInspector()
-{
-    // 专用协议检查对话框：消费工具箱里 IMessageParser 的自述信息。
-    // 与 openDataFile 的区别：这里产的是可读字段帧（检查用），不是 Dataset（画图用）。
-    ProtocolInspectorDialog::run(m_appCtx.toolbox(), this);
-}
-
-void MainWindow::openProtocolEditor()
-{
-    // 协议编辑器：编辑 .psproto 模板 + 校验 + 试算。
-    // 校验/试算走 protocol.* 意图（m_host 即 RuntimeHost，同时实现 IIntentExecutor），
-    // 与脚本、CLI 用的是同一份实现；appCtx 供 checksum 变换在线调试。
-    ProtocolEditorDialog::run(this, &m_appCtx, m_host);
 }
 
 void MainWindow::closeEvent(QCloseEvent *event)

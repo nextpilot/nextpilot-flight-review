@@ -17,7 +17,7 @@ class QPlainTextEdit;
 class QTreeWidget;
 class QWidget;
 
-namespace nextpilot::plotscope::gui
+namespace nextpilot::plotscope::protocol
 {
 
 // 专用协议检查对话框——消费 IMessageParser 的自述信息，不认识任何具体协议。
@@ -66,4 +66,4 @@ private:
     nextpilot::plotscope::uischema::FormSchema m_paramFormModel;
 };
 
-} // namespace nextpilot::plotscope::gui
+} // namespace nextpilot::plotscope::protocol

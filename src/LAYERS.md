@@ -154,7 +154,7 @@ core 过渡层已整体删除，目录不存在。任何新增代码**禁止重�
 > 不按产品名分支。完整产品与裸壳（`ps_shell_bare`，零模块第二产品）共用同一份
 > `ps_gui`，差别只在装配层给哪份 spec、链哪些模块。
 
-> 留在 gui 的共享 UI 基础设施：`ps_gui_theme`（主题状态、QSS/palette 生成、图标与缩略图渲染）与 `ps_gui_transform`（`TransformEditorDialog`/`FilterEditorDialog` 等变换/过滤对话框）。它们直接构造 QWidget/对话框并依赖 `ps_uischema_widgets`，下沉 libs 会把 Widgets 带进机制层；纯 token 色表已下沉 `uischema`（`ThemeTokens`），拖拽 MIME 协议头已下沉 `dataset`（`ChannelMime.h`）。
+> 留在 gui 的共享 UI 基础设施：`ps_gui_theme`（主题状态、QSS/palette 生成、图标与缩略图渲染）与 `ps_gui_transform`（`TransformEditorDialog`/`FilterEditorDialog` 等变换/过滤对话框）。它们直接构造 QWidget/对话框并依赖 `ps_uischema_widgets`，下沉 libs 会把 Widgets 带进机制层；纯 token 色表已下沉 `uischema`（`ThemeTokens`），拖拽 MIME 协议头已下沉 `dataset`（`ChannelMime.h`）。业务对话框（协议编辑器/检查器）不属共享基础设施，已归各自模块的 `gui/`（D18a：`modules/protocol/gui`），外壳经 `DialogLauncherHub` 按 id 触发、不直接构造。
 
 ### L6 `app`
 

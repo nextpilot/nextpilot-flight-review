@@ -28,6 +28,7 @@
 #include "ToolboxHub.h"
 #include "Contribution.h"
 #include "PanelFactoryHub.h"
+#include "DialogLauncherHub.h"
 #include "AxesView.h"
 #include "fastplot/SemanticColors.h"
 #include "axes/SeriesStore.h"
@@ -3896,6 +3897,22 @@ int main(int argc, char *argv[])
             CHECK(v->bookmarks().last().label == kept); // 空白名不覆盖
         }
         OK("Interaction 3/3：改名生效并去空白，空白名被忽略");
+    }
+
+    // === D18a：协议对话框启动器注册到外壳可达的 hub（壳零业务对话框 include/构造）===
+    {
+        // 模块呈现层加载后，协议动作 id 都应有启动器；外壳只按 id 触发。
+        const QStringList ids{QStringLiteral("app.action.protocolInspector"),
+                              QStringLiteral("app.action.protocolEditor"),
+                              QStringLiteral("protocol.new"),
+                              QStringLiteral("protocol.open"),
+                              QStringLiteral("protocol.validate"),
+                              QStringLiteral("protocol.editor")};
+        for (const QString &id : ids)
+            CHECK(DialogLauncherHub::has(id));
+        // 未注册的任意 id 不应误触发（no-op 契约）。
+        CHECK(!DialogLauncherHub::has(QStringLiteral("protocol.no.such.launcher")));
+        OK("D18a：协议对话框启动器已注册、壳按 id 触发、未注册 id 安全 no-op");
     }
 
     fprintf(stdout, "\nGUI 契约测试全部通过\n");

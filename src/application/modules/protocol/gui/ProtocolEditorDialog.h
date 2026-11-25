@@ -34,7 +34,7 @@ template <typename T>
 class Result;
 }
 
-namespace nextpilot::plotscope::gui
+namespace nextpilot::plotscope::protocol
 {
 
 // 协议编辑器：创建/编辑/校验顺序段协议模板（.psproto），并试算样例帧。
@@ -176,4 +176,4 @@ private:
     int m_jsonTab = 0;       // JSON 页索引（切页签时判"是否要落表"）
 };
 
-} // namespace nextpilot::plotscope::gui
+} // namespace nextpilot::plotscope::protocol

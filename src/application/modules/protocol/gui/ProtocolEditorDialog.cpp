@@ -6,6 +6,7 @@
 #include "Transform.h"
 
 #include "ErrorCodes.h"
+#include "DialogLauncherHub.h"
 #include "protocol/ProtocolTemplateStore.h"
 
 #include "IIntentExecutor.h"
@@ -66,7 +67,7 @@ using namespace nextpilot::plotscope::registry;
 using namespace nextpilot::plotscope::parser;
 using namespace nextpilot::plotscope::context;
 
-namespace nextpilot::plotscope::gui
+namespace nextpilot::plotscope::protocol
 {
 
 namespace
@@ -3036,7 +3037,7 @@ void ProtocolEditorDialog::configureChecksumTransform()
         return;
     }
     // 按 CapChecksum 过滤，用户只能选适用于 checksum 的算子/表达式/Lua。
-    const QJsonObject req = TransformEditorDialog::run(
+    const QJsonObject req = gui::TransformEditorDialog::run(
         this, *m_appCtx, CapChecksum, QStringLiteral("协议 Checksum"));
     if (req.isEmpty())
         return;
@@ -3069,4 +3070,21 @@ ProtocolEditorDialog::runOp(const QString &op, const QVariantMap &params)
             QStringLiteral("协议意图无宿主执行器")));
 }
 
-} // namespace nextpilot::plotscope::gui
+} // namespace nextpilot::plotscope::protocol
+
+// D18a：协议编辑器作为模块呈现层，自注册启动器到外壳可达的 hub。
+// 外壳按 id 触发、不 include 本对话框；签名与 DialogLauncherHub::Launcher 一致。
+namespace
+{
+void launchProtocolEditor(QWidget *parent, nextpilot::plotscope::context::AppContext &appCtx,
+                          nextpilot::plotscope::intent::IIntentExecutor &executor)
+{
+    nextpilot::plotscope::protocol::ProtocolEditorDialog::run(parent, &appCtx, &executor);
+}
+} // namespace
+
+PS_REGISTER_DIALOG_LAUNCHER("app.action.protocolEditor", protocolEditor, launchProtocolEditor)
+PS_REGISTER_DIALOG_LAUNCHER("protocol.new", protocolNew, launchProtocolEditor)
+PS_REGISTER_DIALOG_LAUNCHER("protocol.open", protocolOpen, launchProtocolEditor)
+PS_REGISTER_DIALOG_LAUNCHER("protocol.validate", protocolValidate, launchProtocolEditor)
+PS_REGISTER_DIALOG_LAUNCHER("protocol.editor", protocolEditorEntry, launchProtocolEditor)

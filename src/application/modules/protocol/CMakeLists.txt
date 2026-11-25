@@ -9,3 +9,6 @@ target_include_directories(ps_module_protocol PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}
 # 直接链协议逻辑库：模块的 op 实现就是库能力的薄封装，不另存一份逻辑。
 target_link_libraries(ps_module_protocol PUBLIC ps_host ps_context ps_protocol Qt6::Core)
 set_target_properties(ps_module_protocol PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
+
+# D18a：协议 UI（编辑器/检查器对话框）归模块自己的呈现层，headless 器官不含 QWidget。
+add_subdirectory(gui)

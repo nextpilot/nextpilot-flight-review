@@ -1161,6 +1161,28 @@ using namespace nextpilot::plotscope::context;
         fprintf(stdout, "[ok] D10 冻结 / D11 domain.service 服务定位 / D12 NullContributionSink 校验\n");
     }
 
+    // === D18a：协议 UI 归模块呈现层，外壳零业务对话框 ===
+    {
+#ifndef PS_TEST_SRC_ROOT
+#error "D18a 归属断言需要 PS_TEST_SRC_ROOT 编译定义"
+#endif
+        const QString srcRoot = QStringLiteral(PS_TEST_SRC_ROOT);
+        // 对话框物理位置：必须在 modules/protocol/gui，不在 gui/shell。
+        CHECK(QFile::exists(srcRoot + QStringLiteral("/src/application/modules/protocol/gui/ProtocolEditorDialog.cpp")));
+        CHECK(QFile::exists(srcRoot + QStringLiteral("/src/application/modules/protocol/gui/ProtocolInspectorDialog.cpp")));
+        CHECK(!QFile::exists(srcRoot + QStringLiteral("/src/application/gui/shell/ProtocolEditorDialog.cpp")));
+        CHECK(!QFile::exists(srcRoot + QStringLiteral("/src/application/gui/shell/ProtocolInspectorDialog.cpp")));
+        // ps_gui 的源文件清单不再含任何协议对话框（外壳不编译业务 UI）。
+        QFile guiCmake(srcRoot + QStringLiteral("/src/application/gui/CMakeLists.txt"));
+        CHECK(guiCmake.open(QIODevice::ReadOnly));
+        const QString guiCmakeText = QString::fromUtf8(guiCmake.readAll());
+        CHECK(!guiCmakeText.contains(QStringLiteral("ProtocolEditorDialog.cpp")));
+        CHECK(!guiCmakeText.contains(QStringLiteral("ProtocolInspectorDialog.cpp")));
+        // 启动器表头存在于 libs/registry（外壳与模块呈现层的双向解耦点）。
+        CHECK(QFile::exists(srcRoot + QStringLiteral("/src/libs/registry/include/DialogLauncherHub.h")));
+        fprintf(stdout, "[ok] D18a：协议对话框归 modules/protocol/gui，外壳零业务对话框\n");
+    }
+
     fprintf(stdout, "\n全部架构契约测试通过\n");
     return 0;
 }

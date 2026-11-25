@@ -12,7 +12,7 @@ target_link_libraries(plotscope-gui PRIVATE
     ps_gui_theme
     ps_gui_transform
     # 装配清单：模块 + 工具箱 + 解析器（产品的"业务"全部来自这里）。
-    ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
+    ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_protocol_gui ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
     # 领域面板的呈现层：只 GUI 链接，CLI 不含（保持 headless 纯净）。
     ps_toolbox_automotive_gui

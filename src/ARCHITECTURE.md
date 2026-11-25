@@ -164,7 +164,7 @@ typedef struct PsParserVtable {
 |---|---|---|
 | 接口形态 | 纯 C ABI vtable（`ps_parser_spi.h`） | C++ 接口类 `IMessageParser`（内置）+ C ABI 镜像 `ps_message_parser_spi.h`（插件） |
 | 产出 | `PsFrameBatch` 数值批 → Rust Dataset → 画图/分析 | `DecodedFrame` 可读字段树 → 协议检查对话框 |
-| 消费者 | `IngestPipeline` → `data.load` | 专用协议对话框（`gui/shell/ProtocolInspectorDialog`），不产 Dataset |
+| 消费者 | `IngestPipeline` → `data.load` | 专用协议对话框（`modules/protocol/gui/ProtocolInspectorDialog`），不产 Dataset |
 | 用途 | 大数据绘图/分析主通路 | 逐帧看字段/枚举/校验，协议调试 |
 
 - 为什么检查器是 **C++ 接口类**：它带 Qt 数据（`QVariant` 字段），且要"继承一个接口类、自述元数据"——
@@ -883,7 +883,7 @@ headless 也能查到。
 而非"已停止"——加载完成是文件的自然终态，不是人为停止。
 
 **未实装**（无底层支撑，不造空按钮）：设备调试。协议检查不内嵌在本面板——
-它是独立对话框（`gui/shell/ProtocolInspectorDialog`，消费 IMessageParser，见 §3.2），
+它是独立对话框（`modules/protocol/gui/ProtocolInspectorDialog`，消费 IMessageParser，见 §3.2），
 领域级形态归 `toolbox/<域>/gui/` 的领域面板机制。派生通道已在
 字段树右键菜单实装（走 `data.derive` 只读预览，见 §3.8）。
 
@@ -1062,6 +1062,18 @@ toolbox/             扩展（领域知识）：common / autopilot / automotive 
 > 模块清单由装配层填好注入壳；壳内无产品常量、无产品分支。完整产品与裸壳
 > （`ps_shell_bare`，空模块清单第二产品）共用同一份 `ps_gui`——换一份 spec 起第二套
 > 产品，壳代码零改动（验收 19/20）。
+>
+> **文案归属（19a/19b）**：`ProductSpec` 只装身份文案——`displayName`（窗口标题、关于页主名）、
+> `version`、`reportTitle`、`aboutText`（关于页用途说明）。壳拼装这些字段，不写死产品名或产品用途；
+> 第二份 spec 留空 `aboutText` 就不会带出第一份产品的用途描述。业务文案（Ribbon 页/组标题、
+> 命令标签、状态项文本）归各模块在 `onAttach` 声明，不进 `ProductSpec`，避免换产品时把业务词汇带走。
+
+> **协议 UI 归属（D18a，已落地）**：`ProtocolInspectorDialog`、`ProtocolEditorDialog`
+> 住在 `modules/protocol/gui/`，由 `ps_module_protocol_gui` 呈现层编译；`gui/shell/` 零协议对话框，
+> `ps_gui` 不编译任何业务对话框。外壳只按动作 id 经 `DialogLauncherHub`（libs/registry）触发，
+> 不 include、不构造业务对话框；未注册（裸壳/headless）时启动器为 no-op。模块呈现层在各自 TU
+> 用 `PS_REGISTER_DIALOG_LAUNCHER` 自注册，启动器签名带 `QWidget* parent`、`AppContext&`、
+> `IIntentExecutor&`，模块不持有外壳指针。这与 `PanelFactoryHub` 同构，壳与业务对话框双向解耦。
 
 > 上述分层是机制视角。各目录的**定位、放什么/禁放什么、可依赖/禁依赖**以 [`LAYERS.md`](LAYERS.md) 为准——新增代码先在那里判归属。跨层依赖由 `cmake/LayerContractGuard.cmake` 在 configure 期强制，物理 include 边界由 `cmake/LibBoundaryGuard.cmake` 强制。
 

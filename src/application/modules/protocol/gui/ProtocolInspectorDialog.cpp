@@ -1,6 +1,8 @@
 #include "ProtocolInspectorDialog.h"
 
 #include "ThemeManager.h"
+#include "AppContext.h"
+#include "DialogLauncherHub.h"
 
 #include "DecodedFrame.h"
 #include "ToolboxHub.h"
@@ -32,7 +34,7 @@
 #include <QHBoxLayout>
 #include <QGroupBox>
 
-namespace nextpilot::plotscope::gui
+namespace nextpilot::plotscope::protocol
 {
 
 ProtocolInspectorDialog::ProtocolInspectorDialog(nextpilot::plotscope::registry::ToolboxHub &registry,
@@ -119,9 +121,9 @@ ProtocolInspectorDialog::~ProtocolInspectorDialog() = default;
 
 void ProtocolInspectorDialog::applyTheme()
 {
-    const QString bg = ThemeManager::themeColor(QStringLiteral("panel")).name();
-    const QString fg = ThemeManager::themeColor(QStringLiteral("text")).name();
-    const QString dim = ThemeManager::themeColor(QStringLiteral("textDim")).name();
+    const QString bg = gui::ThemeManager::themeColor(QStringLiteral("panel")).name();
+    const QString fg = gui::ThemeManager::themeColor(QStringLiteral("text")).name();
+    const QString dim = gui::ThemeManager::themeColor(QStringLiteral("textDim")).name();
     setStyleSheet(QStringLiteral(
         "QDialog{background:%1;color:%2;}"
         "QLabel{color:%3;}"
@@ -310,4 +312,17 @@ void ProtocolInspectorDialog::run(nextpilot::plotscope::registry::ToolboxHub &re
     dlg.exec();
 }
 
-} // namespace nextpilot::plotscope::gui
+} // namespace nextpilot::plotscope::protocol
+
+// D18a：协议检查器自注册启动器。其 run() 只需 ToolboxHub + parent，
+// 从外壳传入的 AppContext 取 toolbox，executor 本对话框不用。
+namespace
+{
+void launchProtocolInspector(QWidget *parent, nextpilot::plotscope::context::AppContext &appCtx,
+                             nextpilot::plotscope::intent::IIntentExecutor &)
+{
+    nextpilot::plotscope::protocol::ProtocolInspectorDialog::run(appCtx.toolbox(), parent);
+}
+} // namespace
+
+PS_REGISTER_DIALOG_LAUNCHER("app.action.protocolInspector", protocolInspector, launchProtocolInspector)
