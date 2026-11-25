@@ -4,8 +4,7 @@
 
 #include "Intent.h"
 
-namespace nextpilot::plotscope::recording
-{
+namespace nextpilot::plotscope::recording {
 
 using nextpilot::plotscope::intent::Intent;
 

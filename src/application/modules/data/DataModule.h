@@ -14,8 +14,7 @@ namespace nextpilot::plotscope::parser
 {
 class IMessageParser;
 }
-namespace nextpilot::plotscope::host
-{
+namespace nextpilot::plotscope::host {
 class RuntimeHost; // onAttach 的旧状态栏订阅用（A2b 迁；A1b 恒为空指针）
 }
 
@@ -41,8 +40,8 @@ public:
     static QList<nextpilot::plotscope::registry::UiAction> sourceGalleryActions(
         const QList<nextpilot::plotscope::parser::IMessageParser *> &drivers);
     // 元数据重载：initialize 从 IWorkspace::sourceDriverMetas() 缓存，onAttach 用它生成图块。
-    static QList<nextpilot::plotscope::registry::UiAction> sourceGalleryActions(
-        const QVector<QPair<QString, QString>> &metas);
+    static QList<nextpilot::plotscope::registry::UiAction>
+    sourceGalleryActions(const QVector<QPair<QString, QString>> &metas);
 
 private:
     // 数据表格查看器入口（data.table.open）在 initialize 注册，

@@ -7,39 +7,29 @@
 #include "IWindow.h"
 #include "PersistentStateHub.h"
 
-namespace nextpilot::plotscope::workbench
-{
+namespace nextpilot::plotscope::workbench {
 
 class NullWindow : public IWindow
 {
 public:
-    std::optional<QString> showOpenDialog(const QString &, const QString & = {},
-                                          const QString & = {}) override
+    std::optional<QString> showOpenDialog(const QString &, const QString & = {}, const QString & = {}) override
     {
         return std::nullopt;
     }
-    std::optional<QString> showSaveDialog(const QString &, const QString & = {},
-                                          const QString & = {}) override
+    std::optional<QString> showSaveDialog(const QString &, const QString & = {}, const QString & = {}) override
     {
         return std::nullopt;
     }
     void showInformationMessage(const QString &) override {}
     void showWarningMessage(const QString &) override {}
     void showErrorMessage(const QString &) override {}
-    void withProgress(const QString &,
-                      const std::function<void(int, const QString &)> &report) override
+    void withProgress(const QString &, const std::function<void(int, const QString &)> &report) override
     {
         if (report)
             report(100, QString());
     }
-    std::optional<int> showQuickPick(const QStringList &, const QString &) override
-    {
-        return std::nullopt;
-    }
-    std::optional<QString> showInputBox(const QString &, const QString & = {}) override
-    {
-        return std::nullopt;
-    }
+    std::optional<int> showQuickPick(const QStringList &, const QString &) override { return std::nullopt; }
+    std::optional<QString> showInputBox(const QString &, const QString & = {}) override { return std::nullopt; }
 
     int activeSource() const override { return -1; }
     void showSource(int) override {}

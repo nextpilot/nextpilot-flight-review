@@ -12,8 +12,7 @@
 
 #include <functional>
 
-namespace nextpilot::plotscope::dataset
-{
+namespace nextpilot::plotscope::dataset {
 
 class ISourceAccess
 {
@@ -34,10 +33,9 @@ public:
     virtual int count() const = 0;
 
     // §1.3.1 数据变更事件（VSCode Event 模式）。
-    virtual nextpilot::plotscope::workbench::Subscription onDidAddSource(
-        std::function<void(const QString &id)> l) = 0;
-    virtual nextpilot::plotscope::workbench::Subscription onDidChangeSource(
-        std::function<void(const QString &id)> l) = 0;
+    virtual nextpilot::plotscope::workbench::Subscription onDidAddSource(std::function<void(const QString &id)> l) = 0;
+    virtual nextpilot::plotscope::workbench::Subscription
+    onDidChangeSource(std::function<void(const QString &id)> l) = 0;
 };
 
 } // namespace nextpilot::plotscope::dataset

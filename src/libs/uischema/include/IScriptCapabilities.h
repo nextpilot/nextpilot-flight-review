@@ -23,18 +23,15 @@
 #include <cstdint>
 #include <functional>
 
-namespace nextpilot::plotscope::dataset
-{
+namespace nextpilot::plotscope::dataset {
 class DatasetHub;
 class SourceHub;
 } // namespace nextpilot::plotscope::dataset
-namespace nextpilot::plotscope::context
-{
+namespace nextpilot::plotscope::context {
 class InteractionHub;
 } // namespace nextpilot::plotscope::context
 
-namespace nextpilot::plotscope::uischema
-{
+namespace nextpilot::plotscope::uischema {
 
 using nextpilot::plotscope::foundation::Result;
 
@@ -43,15 +40,13 @@ class IScriptCapabilities
 public:
     virtual ~IScriptCapabilities() = default;
 
-    using TransformEvalFn = std::function<Result<QVector<double>>(
-        const QJsonObject &request, uint32_t cap, const QVector<double> &t,
-        const QVector<double> &v)>;
+    using TransformEvalFn = std::function<Result<QVector<double>>(const QJsonObject &request, uint32_t cap,
+                                                                  const QVector<double> &t, const QVector<double> &v)>;
     using OpCatalogueFn = std::function<QStringList()>; // 与 InteractionHub.h:92 同签名
 
     virtual void registerTransformEvaluator(TransformEvalFn fn) = 0;
     virtual bool hasTransformEvaluator() const = 0;
-    virtual bool evalTransform(const QJsonObject &req, uint32_t cap,
-                               const QVector<double> &t, const QVector<double> &v,
+    virtual bool evalTransform(const QJsonObject &req, uint32_t cap, const QVector<double> &t, const QVector<double> &v,
                                Result<QVector<double>> &out) const = 0;
 
     virtual void registerFilterOps(const FilterOps &ops) = 0;
@@ -75,8 +70,7 @@ public:
     // 并写结构化消息流。按名给出，adapter 纯转发，避免模块 TU 出现 host.app()。
     using ViewActionHandler = std::function<Result<QVariant>(const QVariantMap &params)>;
     virtual void registerViewAction(const QString &id, ViewActionHandler handler) = 0;
-    virtual bool dispatchViewAction(const QString &id, const QVariantMap &params,
-                                    Result<QVariant> &out) const = 0;
+    virtual bool dispatchViewAction(const QString &id, const QVariantMap &params, Result<QVariant> &out) const = 0;
     virtual void appendMessage(const QString &level, const QString &source, const QString &text,
                                const QString &locator = QString()) = 0;
 

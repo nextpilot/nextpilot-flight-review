@@ -36,10 +36,7 @@ namespace
 // 配置扁平映射：WorkspaceDataConfig 存在 SettingsStore 的 Workspace 作用域，
 // 扁平 key = "ws/"+kSettingsKey（scopePrefix(Workspace)="ws"），值存 JSON 紧凑文本。
 // 经 IWorkspace 的扁平 get/setConfiguration 读写，handler 不出现 SettingsStore 类型。
-QString wsSettingsKey()
-{
-    return QStringLiteral("ws/") + QString::fromLatin1(WorkspaceDataConfig::kSettingsKey);
-}
+QString wsSettingsKey() { return QStringLiteral("ws/") + QString::fromLatin1(WorkspaceDataConfig::kSettingsKey); }
 
 WorkspaceDataConfig loadWorkspaceData(const nextpilot::plotscope::workbench::IWorkspace &ws)
 {
@@ -55,8 +52,7 @@ WorkspaceDataConfig loadWorkspaceData(const nextpilot::plotscope::workbench::IWo
     return WorkspaceDataConfig{};
 }
 
-bool saveWorkspaceData(nextpilot::plotscope::workbench::IWorkspace &ws,
-                       const WorkspaceDataConfig &cfg, QString *err)
+bool saveWorkspaceData(nextpilot::plotscope::workbench::IWorkspace &ws, const WorkspaceDataConfig &cfg, QString *err)
 {
     const QString text = QString::fromUtf8(QJsonDocument(cfg.toJson()).toJson(QJsonDocument::Compact));
     ws.setConfiguration(wsSettingsKey(), QVariant(text));
@@ -150,10 +146,11 @@ class WorkspaceModule::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
 public:
-    explicit Handler(nextpilot::plotscope::workbench::IWorkspace &ws,
-                     nextpilot::plotscope::workbench::IWindow &window,
+    explicit Handler(nextpilot::plotscope::workbench::IWorkspace &ws, nextpilot::plotscope::workbench::IWindow &window,
                      nextpilot::plotscope::workbench::ICommands &cmds, QObject *parent)
-        : QObject(parent), m_ws(ws), m_window(window), m_cmds(cmds) {}
+        : QObject(parent), m_ws(ws), m_window(window), m_cmds(cmds)
+    {
+    }
 
     bool canHandle(const Intent &intent) const override
     {
@@ -307,10 +304,7 @@ ModuleInfo WorkspaceModule::moduleInfo()
                       {}};
 }
 
-IWorkbenchContribution *WorkspaceModule::create()
-{
-    return new WorkspaceModule();
-}
+IWorkbenchContribution *WorkspaceModule::create() { return new WorkspaceModule(); }
 
 ModuleInfo WorkspaceModule::info() const
 {
@@ -319,12 +313,9 @@ ModuleInfo WorkspaceModule::info() const
 
 void WorkspaceModule::initialize(InstantiationService &services)
 {
-    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(
-        QStringLiteral("vscode.workspace"));
-    auto *window = services.getService<nextpilot::plotscope::workbench::IWindow>(
-        QStringLiteral("vscode.window"));
-    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(
-        QStringLiteral("vscode.commands"));
+    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(QStringLiteral("vscode.workspace"));
+    auto *window = services.getService<nextpilot::plotscope::workbench::IWindow>(QStringLiteral("vscode.window"));
+    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(QStringLiteral("vscode.commands"));
     if (!ws || !window || !cmds)
         return;
     m_handler = new Handler(*ws, *window, *cmds, this);

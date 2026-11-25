@@ -12,8 +12,7 @@
 
 #include <functional>
 
-namespace nextpilot::plotscope::workbench
-{
+namespace nextpilot::plotscope::workbench {
 
 // 仓库统一错误结果（对齐 InteractionHub::ViewActionHandler 的签名口径）。
 using nextpilot::plotscope::foundation::Result;

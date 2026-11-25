@@ -22,10 +22,7 @@ ModuleInfo ReportModule::info() const
     return moduleInfo();
 }
 
-IWorkbenchContribution *ReportModule::create()
-{
-    return new ReportModule();
-}
+IWorkbenchContribution *ReportModule::create() { return new ReportModule(); }
 
 void ReportModule::initialize(InstantiationService &)
 {

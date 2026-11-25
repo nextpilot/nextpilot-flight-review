@@ -27,8 +27,7 @@
 #include <QObject>
 #include <QVariantMap>
 
-namespace nextpilot::plotscope::assembly
-{
+namespace nextpilot::plotscope::assembly {
 namespace ds = nextpilot::plotscope::dataset;
 namespace ctx = nextpilot::plotscope::context;
 namespace intent = nextpilot::plotscope::intent;
@@ -93,7 +92,7 @@ public:
     explicit IngestAdapter(ctx::AppContext &appCtx, QObject *parent = nullptr);
 
     foundation::Result<int> bindParser(int sourceId, const ds::ParserBinding &binding,
-                               ds::DatasetId preferredDatasetId = ds::kInvalidDataset) override;
+                                       ds::DatasetId preferredDatasetId = ds::kInvalidDataset) override;
     qint64 feed(int sourceId, const uint8_t *data, qint64 size) override;
     void finish(int sourceId) override;
     QVector<ds::IngestChannel> channels(int sourceId) const override;
@@ -141,13 +140,13 @@ private:
 class WorkspaceAdapter : public wb::IWorkspace
 {
 public:
-    WorkspaceAdapter(ds::IDatasetAccess &datasets, ds::ISourceAccess &sources,
-                     ds::IIngest &ingest, rec::IRecorder &recorder, rec::IPlayback &playback,
-                     ctx::SettingsStore &settings, ctx::DerivedSeriesHub &derived,
-                     std::function<QVector<QPair<QString, QString>>()> driverMetas = {})
-        : m_datasets(datasets), m_sources(sources), m_ingest(ingest), m_recorder(recorder),
-          m_playback(playback), m_settings(settings), m_derived(derived),
-          m_driverMetas(std::move(driverMetas)) {}
+    WorkspaceAdapter(ds::IDatasetAccess &datasets, ds::ISourceAccess &sources, ds::IIngest &ingest,
+                     rec::IRecorder &recorder, rec::IPlayback &playback, ctx::SettingsStore &settings,
+                     ctx::DerivedSeriesHub &derived, std::function<QVector<QPair<QString, QString>>()> driverMetas = {})
+        : m_datasets(datasets), m_sources(sources), m_ingest(ingest), m_recorder(recorder), m_playback(playback),
+          m_settings(settings), m_derived(derived), m_driverMetas(std::move(driverMetas))
+    {
+    }
 
     ds::IDatasetAccess &dataset() override { return m_datasets; }
     ds::ISourceAccess &sources() override { return m_sources; }
@@ -158,10 +157,7 @@ public:
     {
         return m_settings.value(key, def);
     }
-    void setConfiguration(const QString &key, const QVariant &value) override
-    {
-        m_settings.setValue(key, value);
-    }
+    void setConfiguration(const QString &key, const QVariant &value) override { m_settings.setValue(key, value); }
     bool flushConfiguration(QString *err = nullptr) override { return m_settings.flush(err); }
     void removeConfiguration(const QString &key) override { m_settings.remove(key); }
     QStringList configurationKeys(const QString &prefix = {}) const override
@@ -228,16 +224,17 @@ private:
 class ScriptCapabilitiesAdapter : public ui::IScriptCapabilities
 {
 public:
-    ScriptCapabilitiesAdapter(ctx::InteractionHub &hub, ctx::AppContext &appCtx,
-                              intent::IIntentExecutor &executor, intent::JobRecorder *recorder,
-                              std::function<QStringList()> opsProvider = {})
+    ScriptCapabilitiesAdapter(ctx::InteractionHub &hub, ctx::AppContext &appCtx, intent::IIntentExecutor &executor,
+                              intent::JobRecorder *recorder, std::function<QStringList()> opsProvider = {})
         : m_hub(hub), m_appCtx(appCtx), m_executor(executor), m_recorder(recorder),
-          m_opsProvider(std::move(opsProvider)) {}
+          m_opsProvider(std::move(opsProvider))
+    {
+    }
 
     void registerTransformEvaluator(TransformEvalFn fn) override { m_hub.registerTransformEvaluator(std::move(fn)); }
     bool hasTransformEvaluator() const override { return m_hub.hasTransformEvaluator(); }
-    bool evalTransform(const QJsonObject &req, uint32_t cap, const QVector<double> &t,
-                       const QVector<double> &v, foundation::Result<QVector<double>> &out) const override
+    bool evalTransform(const QJsonObject &req, uint32_t cap, const QVector<double> &t, const QVector<double> &v,
+                       foundation::Result<QVector<double>> &out) const override
     {
         return m_hub.evalTransform(req, cap, t, v, out);
     }
@@ -255,10 +252,7 @@ public:
         m_hub.registerTransformScriptOps(ops);
     }
     bool hasTransformScriptOps() const override { return m_hub.hasTransformScriptOps(); }
-    const ui::TransformScriptOps &transformScriptOps() const override
-    {
-        return m_hub.transformScriptOps();
-    }
+    const ui::TransformScriptOps &transformScriptOps() const override { return m_hub.transformScriptOps(); }
 
     void registerOpCatalogue(OpCatalogueFn fn) override
     {

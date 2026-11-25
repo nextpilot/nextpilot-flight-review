@@ -103,12 +103,10 @@ public:
 
     void initialize(nextpilot::plotscope::instantiation::InstantiationService &services) override
     {
-        auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(
-            QStringLiteral("vscode.commands"));
+        auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(QStringLiteral("vscode.commands"));
         if (cmds)
-            cmds->registerCommand(QStringLiteral("probe.ping"),
-                nextpilot::plotscope::workbench::asCommandHandler(new ProbeHandler,
-                                                                  QStringLiteral("probe.ping")));
+            cmds->registerCommand(QStringLiteral("probe.ping"), nextpilot::plotscope::workbench::asCommandHandler(
+                                                                    new ProbeHandler, QStringLiteral("probe.ping")));
     }
 };
 

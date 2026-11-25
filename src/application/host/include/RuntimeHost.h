@@ -19,8 +19,7 @@
 #include <QString>
 #include <QStringList>
 
-namespace nextpilot::plotscope::instantiation
-{
+namespace nextpilot::plotscope::instantiation {
 class InstantiationService; // 只前向声明：host 不 include 装配层服务容器头
 }
 
@@ -47,10 +46,7 @@ public:
 
     // A1b §1.4.4：装配层在构造好服务容器后注入；activate 用它初始化模块。
     // 只存引用不拥有；只前向声明，host 不 include 装配层头。
-    void setServices(nextpilot::plotscope::instantiation::InstantiationService &services)
-    {
-        m_services = &services;
-    }
+    void setServices(nextpilot::plotscope::instantiation::InstantiationService &services) { m_services = &services; }
 
     // 注册一个模块的工厂（编译期或动态发现都走这里）。
     void registerModule(ModuleInfo info, ModuleFactory factory);

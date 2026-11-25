@@ -3,18 +3,17 @@
 // A1b §1.2：摄取管道强类型接缝。方法集按施工令冻结：feed/bindParser/finish/channels。
 // 通道类型 dataset::IngestChannel（见 dataset/IngestChannel.h），签名只出现 libs 类型。
 
-#include "Dataset.h"      // DatasetId / kInvalidDataset
+#include "Dataset.h" // DatasetId / kInvalidDataset
 #include "Subscription.h"
 #include "IngestChannel.h"
-#include "Result.h"       // Result<int>
-#include "Source.h"       // ParserBinding
+#include "Result.h" // Result<int>
+#include "Source.h" // ParserBinding
 
 #include <QVector>
 
 #include <functional>
 
-namespace nextpilot::plotscope::dataset
-{
+namespace nextpilot::plotscope::dataset {
 
 using nextpilot::plotscope::foundation::Result;
 using nextpilot::plotscope::workbench::Subscription;
@@ -35,8 +34,7 @@ public:
     virtual Subscription onDidStartLoad(std::function<void()> l) = 0;
     virtual Subscription onDidFinishLoad(std::function<void(bool ok)> l) = 0;
     // 进度：done/total 折算成 0-100 与文案。
-    virtual Subscription onDidReportProgress(
-        std::function<void(int, const QString &)> l) = 0;
+    virtual Subscription onDidReportProgress(std::function<void(int, const QString &)> l) = 0;
 };
 
 } // namespace nextpilot::plotscope::dataset

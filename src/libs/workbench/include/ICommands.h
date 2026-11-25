@@ -7,8 +7,7 @@
 
 #include "VsCodeTypes.h"
 
-namespace nextpilot::plotscope::workbench
-{
+namespace nextpilot::plotscope::workbench {
 
 class ICommands
 {

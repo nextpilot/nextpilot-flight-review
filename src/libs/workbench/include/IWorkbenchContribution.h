@@ -20,8 +20,7 @@
 
 class QWidget;
 
-namespace nextpilot::plotscope::host
-{
+namespace nextpilot::plotscope::host {
 
 // UI 上下文：headless 时宿主不构造它，模块 onAttach 就不会被调用。
 //
@@ -37,8 +36,7 @@ public:
     virtual void declareRibbonPage(const QString &id, const QString &label, int order) = 0;
 
     // 声明 Ribbon 分组，挂到指定页签下；order 决定同页内左右位置。
-    virtual void declareRibbonGroup(const QString &id, const QString &label,
-                                    const QString &pageId, int order = 0) = 0;
+    virtual void declareRibbonGroup(const QString &id, const QString &label, const QString &pageId, int order = 0) = 0;
 
     // 声明 Activity Bar 入口。模块只描述 id/标签/图标/对应 ribbon 页/左栏 section，
     // 控件由外壳创建；headless 下不调用 onAttach，声明仍可落表。
@@ -71,9 +69,8 @@ public:
 
     // 注册动作提供器：ribbon 装配时实时回调取当前条目（MRU / 收藏等运行期变化的清单）。
     // 提供器只返回纯数据 UiAction；条目内容变化后调 refreshActions() 触发重建。
-    virtual void bindActionProvider(
-        const QString &area, const QString &provider,
-        std::function<QList<nextpilot::plotscope::registry::UiAction>()> providerFn) = 0;
+    virtual void bindActionProvider(const QString &area, const QString &provider,
+                                    std::function<QList<nextpilot::plotscope::registry::UiAction>()> providerFn) = 0;
 
     // 提供器内容已变化：通知外壳重建 ribbon（不直接碰控件）。
     virtual void refreshActions() = 0;
@@ -86,8 +83,7 @@ public:
     //   - 模块不依赖 Qt Widgets，headless（CLI）构建保持纯净；
     //   - 新增模块自带界面 = 声明一个部件类型 + 动作，无需改 GUI 层。
     // 返回部件的宿主引用（QWidget 前置声明），模块可用它设置数据/标题等。
-    virtual QWidget *requestPanel(nextpilot::plotscope::registry::Region region,
-                                  const QString &panelType) = 0;
+    virtual QWidget *requestPanel(nextpilot::plotscope::registry::Region region, const QString &panelType) = 0;
 
     // 查询当前可用的领域面板清单（纯数据，headless 也能问）。
     //
@@ -99,8 +95,8 @@ public:
     //   - headless 下也能问（清单是纯数据）。
     //
     // domain 传 Domain::General 表示不限领域，返回全部可用领域面板。
-    virtual QList<nextpilot::plotscope::registry::PanelSpec> availableDomainPanels(
-        nextpilot::plotscope::registry::Domain domain) const = 0;
+    virtual QList<nextpilot::plotscope::registry::PanelSpec>
+    availableDomainPanels(nextpilot::plotscope::registry::Domain domain) const = 0;
 
     // 宿主执行器：模块在 GUI 里点击动作后，用它发意图（与脚本/CLI 同一路径）。
     virtual nextpilot::plotscope::intent::IIntentExecutor &executor() = 0;

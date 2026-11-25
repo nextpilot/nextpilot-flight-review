@@ -16,8 +16,7 @@
 using namespace nextpilot::plotscope::workbench;
 namespace ds = nextpilot::plotscope::dataset;
 
-namespace
-{
+namespace {
 int failures = 0;
 void check(bool ok, const char *what)
 {
@@ -42,8 +41,7 @@ int main()
     // onDidFinishLoad 都在接口上、返回 Subscription——确保 start→progress→finish 通道不退化。
     // 只做编译期签名具名；真实顺序由 ps_gui 端到端断言覆盖。
     using IngestStartFn = Subscription (ds::IIngest::*)(std::function<void()>);
-    using IngestProgressFn = Subscription (ds::IIngest::*)(
-        std::function<void(int, const QString &)>);
+    using IngestProgressFn = Subscription (ds::IIngest::*)(std::function<void(int, const QString &)>);
     using IngestFinishFn = Subscription (ds::IIngest::*)(std::function<void(bool)>);
     IngestStartFn startFn = &ds::IIngest::onDidStartLoad;
     IngestProgressFn progressFn = &ds::IIngest::onDidReportProgress;
@@ -51,15 +49,13 @@ int main()
     check(startFn && progressFn && finishFn, "IIngest lifecycle events present");
 
     // ICommands::Handler 签名 = Result<QVariant>(QVariantMap)，与仓库口径一致。
-    ICommands::Handler h = [](const QVariantMap &args) -> Result<QVariant> {
-        return QVariant(args.size());
-    };
+    ICommands::Handler h = [](const QVariantMap &args) -> Result<QVariant> { return QVariant(args.size()); };
     Result<QVariant> r = h(QVariantMap{{QStringLiteral("a"), 1}, {QStringLiteral("b"), 2}});
     check(r.ok() && r.value().toInt() == 2, "Handler invoke");
     // Subscription = QMetaObject::Connection（§1.3.2 类型对齐，不用自建 Disposable）。
     static_assert(std::is_same_v<Subscription, QMetaObject::Connection>,
                   "Subscription must be QMetaObject::Connection");
-    Subscription sub; // 默认构造 = 无效连接
+    Subscription sub;         // 默认构造 = 无效连接
     QObject::disconnect(sub); // 退订空句柄安全，不崩
     (void)sub;
 
@@ -87,8 +83,8 @@ int main()
         QString seenOp;
         QVariantMap seenParams;
         bool canHandle(const nextpilot::plotscope::intent::Intent &) const override { return true; }
-        Result<nextpilot::plotscope::intent::IntentResult> execute(
-            const nextpilot::plotscope::intent::Intent &in) override
+        Result<nextpilot::plotscope::intent::IntentResult>
+        execute(const nextpilot::plotscope::intent::Intent &in) override
         {
             seenOp = in.op;
             seenParams = in.params;

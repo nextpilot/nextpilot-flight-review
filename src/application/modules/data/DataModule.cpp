@@ -42,10 +42,7 @@ ModuleInfo DataModule::moduleInfo()
     };
 }
 
-IWorkbenchContribution *DataModule::create()
-{
-    return new DataModule();
-}
+IWorkbenchContribution *DataModule::create() { return new DataModule(); }
 
 ModuleInfo DataModule::info() const
 {
@@ -54,12 +51,10 @@ ModuleInfo DataModule::info() const
 
 void DataModule::initialize(InstantiationService &services)
 {
-    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(
-        QStringLiteral("vscode.workspace"));
-    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(
-        QStringLiteral("vscode.commands"));
-    auto *caps = services.getService<nextpilot::plotscope::uischema::IScriptCapabilities>(
-        QStringLiteral("script.capabilities"));
+    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(QStringLiteral("vscode.workspace"));
+    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(QStringLiteral("vscode.commands"));
+    auto *caps =
+        services.getService<nextpilot::plotscope::uischema::IScriptCapabilities>(QStringLiteral("script.capabilities"));
     if (!ws || !cmds || !caps)
         return;
     // onAttach 的"来源"画廊需要格式驱动元数据；initialize 阶段按名取用并缓存，
@@ -86,8 +81,7 @@ void DataModule::initialize(InstantiationService &services)
     QPointer<DataModule> self(this);
     ws->ingest().onDidStartLoad([self]() {
         if (self && self->m_ui)
-            self->m_ui->updateStatus(QStringLiteral("data.loading.progress"),
-                                     QStringLiteral("加载中…"));
+            self->m_ui->updateStatus(QStringLiteral("data.loading.progress"), QStringLiteral("加载中…"));
     });
     ws->ingest().onDidFinishLoad([self](bool ok) {
         if (self && self->m_ui)
@@ -108,8 +102,8 @@ void DataModule::initialize(InstantiationService &services)
     // GUI 侧仍经 dispatchViewAction 消费，A2b 才迁 command）。此前误迁成 registerCommand
     // 导致 GUI 层 DataManagerPanel / 测试按 dispatchViewAction 取不到（998 回归）。
     // 模块只经 caps 注册，不碰 AppContext/interactionHub。
-    caps->registerViewAction(QStringLiteral("data.table.open"),
-        [this, caps](const QVariantMap &params) -> Result<QVariant> {
+    caps->registerViewAction(
+        QStringLiteral("data.table.open"), [this, caps](const QVariantMap &params) -> Result<QVariant> {
             if (!m_ui)
                 return fail(err::Unsupported, QStringLiteral("数据表格需要 GUI 环境"));
             if (!m_ui->requestPanel(nextpilot::plotscope::registry::Region::Editor,
@@ -121,8 +115,7 @@ void DataModule::initialize(InstantiationService &services)
         });
 }
 
-namespace
-{
+namespace {
 // 唯一实现：接受 {id, displayName} 元数据对，两个公开重载都转发到这里。
 QList<UiAction> buildSourceGalleryActions(const QVector<QPair<QString, QString>> &metas)
 {

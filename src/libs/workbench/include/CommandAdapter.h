@@ -19,16 +19,14 @@
 #include <QVariant>
 #include <QVariantMap>
 
-namespace nextpilot::plotscope::workbench
-{
+namespace nextpilot::plotscope::workbench {
 
-inline ICommands::Handler asCommandHandler(nextpilot::plotscope::intent::IIntentHandler *h,
-                                           const QString &id)
+inline ICommands::Handler asCommandHandler(nextpilot::plotscope::intent::IIntentHandler *h, const QString &id)
 {
     return [h, id](const QVariantMap &args) -> Result<QVariant> {
         if (!h)
-            return Result<QVariant>(nextpilot::plotscope::foundation::fail(
-                QStringLiteral("E_NO_HANDLER"), QStringLiteral("空命令处理器")));
+            return Result<QVariant>(
+                nextpilot::plotscope::foundation::fail(QStringLiteral("E_NO_HANDLER"), QStringLiteral("空命令处理器")));
         nextpilot::plotscope::intent::Intent in;
         in.op = id;
         in.params = args;

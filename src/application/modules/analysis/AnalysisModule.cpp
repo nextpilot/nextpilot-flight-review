@@ -81,8 +81,7 @@ QJsonObject readWsJson(const nextpilot::plotscope::workbench::IWorkspace &ws, co
     return {};
 }
 
-void writeWsJson(nextpilot::plotscope::workbench::IWorkspace &ws, const QString &key,
-                 const QJsonObject &obj)
+void writeWsJson(nextpilot::plotscope::workbench::IWorkspace &ws, const QString &key, const QJsonObject &obj)
 {
     const QString text = QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
     ws.setConfiguration(wsConfigKey(key), QVariant(text));
@@ -101,9 +100,11 @@ class AnalysisModule::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
 public:
-    explicit Handler(nextpilot::plotscope::workbench::IWorkspace &ws,
-                     nextpilot::plotscope::workbench::IWindow &window, QObject *parent)
-        : QObject(parent), m_ws(ws), m_window(window) {}
+    explicit Handler(nextpilot::plotscope::workbench::IWorkspace &ws, nextpilot::plotscope::workbench::IWindow &window,
+                     QObject *parent)
+        : QObject(parent), m_ws(ws), m_window(window)
+    {
+    }
 
     void attachUi(IUiContext *ui) { m_ui = ui; }
 
@@ -187,15 +188,9 @@ private:
         return r;
     }
 
-    QStringList recents() const
-    {
-        return jsonToStringList(readWsJson(m_ws, kRecentsKey), QStringLiteral("apps"));
-    }
+    QStringList recents() const { return jsonToStringList(readWsJson(m_ws, kRecentsKey), QStringLiteral("apps")); }
 
-    QStringList favorites() const
-    {
-        return jsonToStringList(readWsJson(m_ws, kFavoritesKey), QStringLiteral("apps"));
-    }
+    QStringList favorites() const { return jsonToStringList(readWsJson(m_ws, kFavoritesKey), QStringLiteral("apps")); }
 
     // MRU 记录：先删旧位再插到头部，截断到上限。
     void pushRecent(const QString &app)
@@ -293,10 +288,7 @@ ModuleInfo AnalysisModule::moduleInfo()
     };
 }
 
-IWorkbenchContribution *AnalysisModule::create()
-{
-    return new AnalysisModule();
-}
+IWorkbenchContribution *AnalysisModule::create() { return new AnalysisModule(); }
 
 ModuleInfo AnalysisModule::info() const
 {
@@ -305,12 +297,9 @@ ModuleInfo AnalysisModule::info() const
 
 void AnalysisModule::initialize(InstantiationService &services)
 {
-    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(
-        QStringLiteral("vscode.workspace"));
-    auto *window = services.getService<nextpilot::plotscope::workbench::IWindow>(
-        QStringLiteral("vscode.window"));
-    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(
-        QStringLiteral("vscode.commands"));
+    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(QStringLiteral("vscode.workspace"));
+    auto *window = services.getService<nextpilot::plotscope::workbench::IWindow>(QStringLiteral("vscode.window"));
+    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(QStringLiteral("vscode.commands"));
     if (!ws || !window || !cmds)
         return;
     m_handler = new Handler(*ws, *window, this);

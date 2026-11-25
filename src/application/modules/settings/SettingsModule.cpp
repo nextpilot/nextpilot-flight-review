@@ -52,8 +52,7 @@ class SettingsModule::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
 public:
-    explicit Handler(nextpilot::plotscope::workbench::IWorkspace &ws, QObject *parent)
-        : QObject(parent), m_ws(ws) {}
+    explicit Handler(nextpilot::plotscope::workbench::IWorkspace &ws, QObject *parent) : QObject(parent), m_ws(ws) {}
 
     bool canHandle(const Intent &intent) const override
     {
@@ -98,8 +97,7 @@ public:
         {
             const QString scopeNameParam = intent.params.value(QStringLiteral("scope")).toString();
             const QString rel = intent.params.value(QStringLiteral("key")).toString();
-            m_ws.setConfiguration(scopedKey(scopeNameParam, rel),
-                                  intent.params.value(QStringLiteral("value")));
+            m_ws.setConfiguration(scopedKey(scopeNameParam, rel), intent.params.value(QStringLiteral("value")));
             IntentResult r;
             r.payload = true;
             return r;
@@ -108,9 +106,8 @@ public:
         if (op == QStringLiteral("settings.list"))
         {
             const QString scopeNameParam = intent.params.value(QStringLiteral("scope")).toString();
-            const QString prefix = scopeNameParam.isEmpty()
-                                       ? QString()
-                                       : scopeKeyPrefix(scopeNameParam) + QLatin1Char('/');
+            const QString prefix =
+                scopeNameParam.isEmpty() ? QString() : scopeKeyPrefix(scopeNameParam) + QLatin1Char('/');
             IntentResult r;
             r.payload = m_ws.configurationKeys(prefix);
             return r;
@@ -153,10 +150,7 @@ ModuleInfo SettingsModule::moduleInfo()
     };
 }
 
-IWorkbenchContribution *SettingsModule::create()
-{
-    return new SettingsModule();
-}
+IWorkbenchContribution *SettingsModule::create() { return new SettingsModule(); }
 
 ModuleInfo SettingsModule::info() const
 {
@@ -167,10 +161,8 @@ void SettingsModule::initialize(InstantiationService &services)
 {
     // 设置存储归宿主所有（GUI/CLI/脚本共用一份），模块只做门面：
     // 只登记存取类意图，不碰任何 UI（设置对话框属 GUI 外壳，见 preferences.open）。
-    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(
-        QStringLiteral("vscode.workspace"));
-    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(
-        QStringLiteral("vscode.commands"));
+    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(QStringLiteral("vscode.workspace"));
+    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(QStringLiteral("vscode.commands"));
     if (!ws || !cmds)
         return;
     m_handler = new Handler(*ws, this);
@@ -180,11 +172,10 @@ void SettingsModule::initialize(InstantiationService &services)
     // Handler::canHandle 用 startsWith("settings.")，execute 覆盖 get/set/scoped.get/
     // scoped.set/list/remove/flush 七个 op。asCommandHandler 每个 Bridge 只匹配单个
     // 固定 id，故七个 op 必须逐一注册；"settings.store" 是 provides 能力名不是 op。
-    for (const QString &op : {QStringLiteral("settings.get"), QStringLiteral("settings.set"),
-                              QStringLiteral("settings.scoped.get"),
-                              QStringLiteral("settings.scoped.set"),
-                              QStringLiteral("settings.list"), QStringLiteral("settings.flush"),
-                              QStringLiteral("settings.remove")})
+    for (const QString &op :
+         {QStringLiteral("settings.get"), QStringLiteral("settings.set"), QStringLiteral("settings.scoped.get"),
+          QStringLiteral("settings.scoped.set"), QStringLiteral("settings.list"), QStringLiteral("settings.flush"),
+          QStringLiteral("settings.remove")})
         reg(op, m_handler);
 }
 

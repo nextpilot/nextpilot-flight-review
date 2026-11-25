@@ -7,8 +7,7 @@
 
 #include <QJsonObject>
 
-namespace nextpilot::plotscope::recording
-{
+namespace nextpilot::plotscope::recording {
 
 using nextpilot::plotscope::foundation::Result;
 using nextpilot::plotscope::intent::Intent;

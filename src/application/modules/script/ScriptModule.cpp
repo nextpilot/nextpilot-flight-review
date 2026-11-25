@@ -97,10 +97,7 @@ ModuleInfo ScriptModule::moduleInfo()
     };
 }
 
-IWorkbenchContribution *ScriptModule::create()
-{
-    return new ScriptModule();
-}
+IWorkbenchContribution *ScriptModule::create() { return new ScriptModule(); }
 
 ModuleInfo ScriptModule::info() const
 {
@@ -110,12 +107,10 @@ ModuleInfo ScriptModule::info() const
 void ScriptModule::initialize(InstantiationService &services)
 {
     namespace inst = nextpilot::plotscope::instantiation;
-    auto *caps = services.getService<nextpilot::plotscope::uischema::IScriptCapabilities>(
-        QStringLiteral("script.capabilities"));
-    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(
-        QStringLiteral("vscode.workspace"));
-    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(
-        QStringLiteral("vscode.commands"));
+    auto *caps =
+        services.getService<nextpilot::plotscope::uischema::IScriptCapabilities>(QStringLiteral("script.capabilities"));
+    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(QStringLiteral("vscode.workspace"));
+    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(QStringLiteral("vscode.commands"));
     if (!caps || !ws || !cmds)
         return;
     nextpilot::plotscope::uischema::IScriptCapabilities &capsRef = *caps;
@@ -125,8 +120,7 @@ void ScriptModule::initialize(InstantiationService &services)
     // view action 派发器：脚本 app.call 在意图通道 eunsupported 时回退到这里，
     // 从而能触发 plot.*/page.*/playback.* 等 GUI 视图能力（headless 下也可注册但通常无视图）。
     // §1.5：viewDispatcher 保持签名不变，内部改走 IScriptCapabilities::dispatchViewAction。
-    auto viewDispatcher = [&capsRef](const QString &id, const QVariantMap &params,
-                                     Result<QVariant> &out) {
+    auto viewDispatcher = [&capsRef](const QString &id, const QVariantMap &params, Result<QVariant> &out) {
         return capsRef.dispatchViewAction(id, params, out);
     };
     m_handler = new Handler(capsRef.executor(), capsRef.recorder(), viewDispatcher, this);
@@ -138,32 +132,30 @@ void ScriptModule::initialize(InstantiationService &services)
     // ---- 批量处理：data.batch.run 意图 + 取消通道 ----
     // 每文件 load→script 走与单文件完全相同的执行器路径；进度经 view action
     // data.batch.progress 广播（GUI 汇总面板消费），取消经 data.batch.cancel 置标志。
-    m_batch = new nextpilot::plotscope::script::BatchHandler(
-        capsRef.executor(), &capsRef.interactionsHub(), &capsRef.dataHub(), &capsRef.sourcesHub(),
-        viewDispatcher, this);
+    m_batch =
+        new nextpilot::plotscope::script::BatchHandler(capsRef.executor(), &capsRef.interactionsHub(),
+                                                       &capsRef.dataHub(), &capsRef.sourcesHub(), viewDispatcher, this);
     reg(QStringLiteral("data.batch.run"), m_batch);
 
     // ---- Python 子进程桥：script.py.* 意图族 ----
     // 常驻桥进程按需拉起（首个 script.py.* 调用时启动）；找不到解释器时
     // 每条意图返回明确错误（优雅降级，不弹窗轰炸）。
-    m_py = new nextpilot::plotscope::script::PythonHandler(
-        capsRef.executor(), &capsRef.dataHub(), this);
+    m_py = new nextpilot::plotscope::script::PythonHandler(capsRef.executor(), &capsRef.dataHub(), this);
     // PythonHandler::canHandle 用 startsWith("script.py.")，execute 覆盖 eval/status/
     // exec/push/pull/writeback 六个 op。asCommandHandler 的每个 Bridge 只匹配单个
     // 固定 id，故六个 op 必须逐一注册（迁移前 registerIntentHandler 一次注册整个
     // handler，canHandle 内部按 op 分支，不存在这个落差）。
-    for (const QString &op : {QStringLiteral("script.py.eval"), QStringLiteral("script.py.status"),
-                              QStringLiteral("script.py.exec"), QStringLiteral("script.py.push"),
-                              QStringLiteral("script.py.pull"), QStringLiteral("script.py.writeback")})
+    for (const QString &op :
+         {QStringLiteral("script.py.eval"), QStringLiteral("script.py.status"), QStringLiteral("script.py.exec"),
+          QStringLiteral("script.py.push"), QStringLiteral("script.py.pull"), QStringLiteral("script.py.writeback")})
         reg(op, m_py);
-    capsRef.interactionsHub().registerViewAction(
-        QStringLiteral("data.batch.cancel"),
-        [this](const QVariantMap &) -> Result<QVariant> {
-            if (!m_batch || !m_batch->running())
-                return fail(err::Args, QStringLiteral("没有进行中的批量运行"));
-            m_batch->requestCancel();
-            return Result<QVariant>(QVariant(true));
-        });
+    capsRef.interactionsHub().registerViewAction(QStringLiteral("data.batch.cancel"),
+                                                 [this](const QVariantMap &) -> Result<QVariant> {
+                                                     if (!m_batch || !m_batch->running())
+                                                         return fail(err::Args, QStringLiteral("没有进行中的批量运行"));
+                                                     m_batch->requestCancel();
+                                                     return Result<QVariant>(QVariant(true));
+                                                 });
 
     // script.workbench.batch：批量运行入口（Ribbon"批量运行"按钮 / 脚本同路径）。
     // 先确保汇总面板存在，再经视图层 data.batch.pick 拿 {dir, script}
@@ -215,12 +207,12 @@ void ScriptModule::initialize(InstantiationService &services)
     // 调用，而不必反向依赖 script 模块。builtin/expression 内部走 Rust，lua 走 C++。
     // 捕获 IScriptCapabilities 指针（其生命周期 = 进程运行期，长于回调）。
     auto *capsPtr = &capsRef;
-    services.getService<IScriptCapabilities>(QStringLiteral("script.capabilities"))->registerTransformEvaluator(
-        [capsPtr](const QJsonObject &request, uint32_t cap,
-                  const QVector<double> &t, const QVector<double> &v) {
-            return nextpilot::plotscope::script::TransformEvaluator::evalSeries(
-                capsPtr->transforms(), request, cap, t, v);
-        });
+    services.getService<IScriptCapabilities>(QStringLiteral("script.capabilities"))
+        ->registerTransformEvaluator(
+            [capsPtr](const QJsonObject &request, uint32_t cap, const QVector<double> &t, const QVector<double> &v) {
+                return nextpilot::plotscope::script::TransformEvaluator::evalSeries(capsPtr->transforms(), request, cap,
+                                                                                    t, v);
+            });
 
     // 有状态过滤器能力：内置目录注入 InteractionHub，供 host(data.filter) 与 GUI 编辑器调用。
     // 目录归模块持有（生命周期）；回调只吃/吐 JSON，调用方不依赖 script 模块类型。
@@ -244,7 +236,8 @@ void ScriptModule::initialize(InstantiationService &services)
                                   const QVector<double> &t, const QVector<double> &v) {
         return cat->applySeries(id, params, t, v);
     };
-    services.getService<IScriptCapabilities>(QStringLiteral("script.capabilities"))->registerFilterOps(std::move(filterOps));
+    services.getService<IScriptCapabilities>(QStringLiteral("script.capabilities"))
+        ->registerFilterOps(std::move(filterOps));
 
     // Marker 规则能力：run(code, seriesJson) -> markers JSON。用一次性 MarkerEngine 执行，
     // seriesJson 里的序列在本 lambda 栈上构造，provider 的 get 返回它们的地址（调用期有效）。
@@ -279,7 +272,8 @@ void ScriptModule::initialize(InstantiationService &services)
             return fail(r.error().code, r.error().message);
         return Result<QJsonArray>(markersToJson(r.value()));
     };
-    services.getService<IScriptCapabilities>(QStringLiteral("script.capabilities"))->registerMarkerOps(std::move(markerOps));
+    services.getService<IScriptCapabilities>(QStringLiteral("script.capabilities"))
+        ->registerMarkerOps(std::move(markerOps));
 
     // Lua 脚本库：目录可用 PS_SCRIPTS_DIR 覆盖（部署/测试），默认 scripts/ops。
     // 注册表注入：脚本算子登记进 AppContext 持有的 TransformHub 实例。
@@ -305,7 +299,8 @@ void ScriptModule::initialize(InstantiationService &services)
 
     // op 目录：工作台速查面板的数据源。存 provider 实时拉取，与实际可执行意图一致
     // （handler 是各模块 initialize 陆续注册的，快照会漏后注册者）。
-    services.getService<IScriptCapabilities>(QStringLiteral("script.capabilities"))->registerOpCatalogue({}); // provider 由装配层注入
+    services.getService<IScriptCapabilities>(QStringLiteral("script.capabilities"))
+        ->registerOpCatalogue({}); // provider 由装配层注入
 
     // 工作台执行通道：GUI 面板（编辑器/控制台）经 viewAction 调用，引擎归模块——
     // GUI 层不直接依赖 script 模块内部类（层契约：ps_module_script_gui 禁止横向
@@ -313,11 +308,10 @@ void ScriptModule::initialize(InstantiationService &services)
     registerWorkbenchActions(capsRef, wsRef, cmdsRef, viewDispatcher);
 }
 
-void ScriptModule::registerWorkbenchActions(
-    nextpilot::plotscope::uischema::IScriptCapabilities &caps,
-    nextpilot::plotscope::workbench::IWorkspace &ws,
-    nextpilot::plotscope::workbench::ICommands &cmds,
-    ScriptFacade::ViewActionDispatcher dispatcher)
+void ScriptModule::registerWorkbenchActions(nextpilot::plotscope::uischema::IScriptCapabilities &caps,
+                                            nextpilot::plotscope::workbench::IWorkspace &ws,
+                                            nextpilot::plotscope::workbench::ICommands &cmds,
+                                            ScriptFacade::ViewActionDispatcher dispatcher)
 {
     IIntentExecutor &executor = caps.executor();
     JobRecorder *recorder = caps.recorder();
@@ -329,8 +323,7 @@ void ScriptModule::registerWorkbenchActions(
     // headless 下两条都没有订阅者，append 只是入库，无副作用。
     nextpilot::plotscope::context::InteractionHub *inter = &caps.interactionsHub();
     auto echo = [&caps, inter](const QString &text, bool error) {
-        caps.appendMessage(error ? QStringLiteral("error") : QStringLiteral("info"),
-                           QStringLiteral("脚本"), text);
+        caps.appendMessage(error ? QStringLiteral("error") : QStringLiteral("info"), QStringLiteral("脚本"), text);
         QVariantMap p;
         p.insert(QStringLiteral("text"), text);
         p.insert(QStringLiteral("error"), error);
@@ -420,24 +413,22 @@ void ScriptModule::registerWorkbenchActions(
                                   QStringLiteral("script-editor")) != nullptr;
     };
     nextpilot::plotscope::context::InteractionHub *reg = &caps.interactionsHub();
-    caps.interactionsHub().registerViewAction(
-        QStringLiteral("script.workbench.open"),
-        [this, ensureEditor, reg](const QVariantMap &params) -> Result<QVariant> {
-            Result<QVariant> out{QVariant()};
-            if (!ensureEditor(out))
-                return out;
-            reg->dispatchViewAction(QStringLiteral("script.open"), params, out);
-            return out;
-        });
-    caps.interactionsHub().registerViewAction(
-        QStringLiteral("script.workbench.new"),
-        [this, ensureEditor, reg](const QVariantMap &params) -> Result<QVariant> {
-            Result<QVariant> out{QVariant()};
-            if (!ensureEditor(out))
-                return out;
-            reg->dispatchViewAction(QStringLiteral("script.new"), params, out);
-            return out;
-        });
+    caps.interactionsHub().registerViewAction(QStringLiteral("script.workbench.open"),
+                                              [this, ensureEditor, reg](const QVariantMap &params) -> Result<QVariant> {
+                                                  Result<QVariant> out{QVariant()};
+                                                  if (!ensureEditor(out))
+                                                      return out;
+                                                  reg->dispatchViewAction(QStringLiteral("script.open"), params, out);
+                                                  return out;
+                                              });
+    caps.interactionsHub().registerViewAction(QStringLiteral("script.workbench.new"),
+                                              [this, ensureEditor, reg](const QVariantMap &params) -> Result<QVariant> {
+                                                  Result<QVariant> out{QVariant()};
+                                                  if (!ensureEditor(out))
+                                                      return out;
+                                                  reg->dispatchViewAction(QStringLiteral("script.new"), params, out);
+                                                  return out;
+                                              });
 
     // ---- 调试通道（2.1.7-2.1.9）----
 
@@ -465,10 +456,10 @@ void ScriptModule::registerWorkbenchActions(
                 [this, &caps, name, dbgReg](const nextpilot::plotscope::script::LuaEngine::DebugPause &p) {
                     // 调试事件同时进消息流：底部「调试控制台」按 level=debug 取它，
                     // 于是它和终端是两个视图看同一份数据，而不是两套私有输出。
-                    caps.appendMessage(QStringLiteral("debug"), QStringLiteral("调试"),
-                                       QStringLiteral("暂停 @ %1:%2（%3）")
-                                           .arg(name, QString::number(p.line), p.reason),
-                                       QStringLiteral("%1:%2").arg(name).arg(p.line));
+                    caps.appendMessage(
+                        QStringLiteral("debug"), QStringLiteral("调试"),
+                        QStringLiteral("暂停 @ %1:%2（%3）").arg(name, QString::number(p.line), p.reason),
+                        QStringLiteral("%1:%2").arg(name).arg(p.line));
                     // 快照 → 调试面板（stack+var 树）
                     QVariantMap up;
                     up.insert(QStringLiteral("paused"), true);
@@ -496,8 +487,7 @@ void ScriptModule::registerWorkbenchActions(
                 },
                 breakpoints.isEmpty()); // 有断点直接跑到首个断点；无断点才停在入口
             // 收尾：清调试面板快照 + 编辑器解除暂停高亮
-            caps.appendMessage(QStringLiteral("debug"), QStringLiteral("调试"),
-                               QStringLiteral("调试结束"));
+            caps.appendMessage(QStringLiteral("debug"), QStringLiteral("调试"), QStringLiteral("调试结束"));
             Result<QVariant> co{QVariant()};
             dbgReg->dispatchViewAction(QStringLiteral("script.debug.clear"), QVariantMap(), co);
             Result<QVariant> done{QVariant()};
@@ -534,33 +524,31 @@ void ScriptModule::registerWorkbenchActions(
 
     // script.workbench.runCurrent {debug?}：执行编辑器**当前标签**（Ribbon"运行"与
     // 面板 F5 同路径）。转发给编辑器面板的 script.editor.run；headless/无面板时报错明确。
-    caps.interactionsHub().registerViewAction(
-        QStringLiteral("script.workbench.runCurrent"),
-        [this, ensureEditor, reg](const QVariantMap &params) -> Result<QVariant> {
-            Result<QVariant> out{QVariant()};
-            if (!ensureEditor(out))
-                return out;
-            reg->dispatchViewAction(QStringLiteral("script.editor.run"), params, out);
-            return out;
-        });
+    caps.interactionsHub().registerViewAction(QStringLiteral("script.workbench.runCurrent"),
+                                              [this, ensureEditor, reg](const QVariantMap &params) -> Result<QVariant> {
+                                                  Result<QVariant> out{QVariant()};
+                                                  if (!ensureEditor(out))
+                                                      return out;
+                                                  reg->dispatchViewAction(QStringLiteral("script.editor.run"), params,
+                                                                          out);
+                                                  return out;
+                                              });
 
     // script.workbench.debugRun：调试模式执行当前标签（Ribbon"调试运行"，带断点单步）。
-    caps.interactionsHub().registerViewAction(
-        QStringLiteral("script.workbench.debugRun"),
-        [this, ensureEditor, reg](const QVariantMap &) -> Result<QVariant> {
-            Result<QVariant> out{QVariant()};
-            if (!ensureEditor(out))
-                return out;
-            QVariantMap p;
-            p.insert(QStringLiteral("debug"), true);
-            reg->dispatchViewAction(QStringLiteral("script.editor.run"), p, out);
-            return out;
-        });
+    caps.interactionsHub().registerViewAction(QStringLiteral("script.workbench.debugRun"),
+                                              [this, ensureEditor, reg](const QVariantMap &) -> Result<QVariant> {
+                                                  Result<QVariant> out{QVariant()};
+                                                  if (!ensureEditor(out))
+                                                      return out;
+                                                  QVariantMap p;
+                                                  p.insert(QStringLiteral("debug"), true);
+                                                  reg->dispatchViewAction(QStringLiteral("script.editor.run"), p, out);
+                                                  return out;
+                                              });
 
     // script.workbench.console：确保控制台面板存在（常驻 Region::Panel，请求即置前）。
     caps.interactionsHub().registerViewAction(
-        QStringLiteral("script.workbench.console"),
-        [this](const QVariantMap &) -> Result<QVariant> {
+        QStringLiteral("script.workbench.console"), [this](const QVariantMap &) -> Result<QVariant> {
             if (!m_ui)
                 return fail(err::Unsupported, QStringLiteral("脚本控制台需要 GUI 环境"));
             return Result<QVariant>(

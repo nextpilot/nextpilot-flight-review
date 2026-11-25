@@ -20,14 +20,12 @@
 
 #include <typeinfo>
 
-namespace nextpilot::plotscope::instantiation
-{
+namespace nextpilot::plotscope::instantiation {
 
 // 服务类型 → 规范 typeTag。默认用类型的 RTTI 名；各服务接口可在自己的头文件里
 // 做全特化给出稳定可读 tag（如 "vscode.workspace"）。注册与取用必须用同一个
 // ServiceTypeTag<T>::value()，故二者恒匹配；手填不一致的 typeTag 会被 getService<T> 挡下。
-template <class T>
-struct ServiceTypeTag
+template <class T> struct ServiceTypeTag
 {
     static QString value() { return QString::fromLatin1(typeid(T).name()); }
 };
@@ -45,8 +43,8 @@ public:
     };
 
     // 同 id 重复注册返回 false，并把诊断追加到 diagnostics()。不覆盖原条目。
-    void registerSingleton(const QString &id, void *instance, const QString &owner,
-                           int version, const QString &typeTag);
+    void registerSingleton(const QString &id, void *instance, const QString &owner, int version,
+                           const QString &typeTag);
 
     // 按 owner 整批撤；依赖倒序（注册序号大的先撤）。每次撤的 id 记入 removedLog()。
     void unregisterOwner(const QString &owner);
@@ -58,8 +56,7 @@ public:
     void *getServiceUnchecked(const QString &id) const;
 
     // 类型安全取用：未命中或 typeTag 不符返回 nullptr 并写诊断。
-    template <class T>
-    T *getService(const QString &id) const
+    template <class T> T *getService(const QString &id) const
     {
         const Entry *e = findEntry(id);
         if (!e)

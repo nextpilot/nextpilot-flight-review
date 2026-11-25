@@ -11,8 +11,7 @@
 
 #include <functional>
 
-namespace nextpilot::plotscope::dataset
-{
+namespace nextpilot::plotscope::dataset {
 
 class IDatasetAccess
 {
@@ -27,10 +26,10 @@ public:
     virtual bool remove(DatasetId id) = 0;
 
     // §1.3.1 数据变更事件（VSCode Event 模式）：返回可撤销句柄。
-    virtual nextpilot::plotscope::workbench::Subscription onDidAddDocument(
-        std::function<void(const QString &id)> l) = 0;
-    virtual nextpilot::plotscope::workbench::Subscription onDidRemoveDocument(
-        std::function<void(const QString &id)> l) = 0;
+    virtual nextpilot::plotscope::workbench::Subscription
+    onDidAddDocument(std::function<void(const QString &id)> l) = 0;
+    virtual nextpilot::plotscope::workbench::Subscription
+    onDidRemoveDocument(std::function<void(const QString &id)> l) = 0;
 };
 
 } // namespace nextpilot::plotscope::dataset

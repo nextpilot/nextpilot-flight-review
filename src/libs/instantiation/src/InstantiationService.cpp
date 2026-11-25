@@ -3,11 +3,9 @@
 #include <QVector>
 #include <algorithm>
 
-namespace nextpilot::plotscope::instantiation
-{
+namespace nextpilot::plotscope::instantiation {
 
-void InstantiationService::registerSingleton(const QString &id, void *instance,
-                                             const QString &owner, int version,
+void InstantiationService::registerSingleton(const QString &id, void *instance, const QString &owner, int version,
                                              const QString &typeTag)
 {
     if (id.isEmpty())
@@ -17,8 +15,7 @@ void InstantiationService::registerSingleton(const QString &id, void *instance,
     }
     if (instance == nullptr)
     {
-        appendDiagnostic(
-            QStringLiteral("registerSingleton: null instance (id=%1 owner=%2)").arg(id, owner));
+        appendDiagnostic(QStringLiteral("registerSingleton: null instance (id=%1 owner=%2)").arg(id, owner));
         return;
     }
     if (m_entries.contains(id))
@@ -46,19 +43,14 @@ void InstantiationService::unregisterOwner(const QString &owner)
             ordered.append(qMakePair(it.value().seq, it.key()));
 
     std::sort(ordered.begin(), ordered.end(),
-              [](const QPair<int, QString> &a, const QPair<int, QString> &b) {
-                  return a.first > b.first;
-              });
+              [](const QPair<int, QString> &a, const QPair<int, QString> &b) { return a.first > b.first; });
 
     for (const auto &kv : ordered)
         if (m_entries.remove(kv.second) > 0)
             m_removedLog.append(kv.second);
 }
 
-bool InstantiationService::unregister(const QString &id)
-{
-    return m_entries.remove(id) > 0;
-}
+bool InstantiationService::unregister(const QString &id) { return m_entries.remove(id) > 0; }
 
 const InstantiationService::Entry *InstantiationService::findEntry(const QString &id) const
 {
@@ -91,15 +83,9 @@ QStringList InstantiationService::idsByOwner(const QString &owner) const
     return out;
 }
 
-QStringList InstantiationService::diagnostics() const
-{
-    return m_diagnostics;
-}
+QStringList InstantiationService::diagnostics() const { return m_diagnostics; }
 
-void InstantiationService::appendDiagnostic(const QString &msg) const
-{
-    m_diagnostics.append(msg);
-}
+void InstantiationService::appendDiagnostic(const QString &msg) const { m_diagnostics.append(msg); }
 
 void InstantiationService::clear()
 {

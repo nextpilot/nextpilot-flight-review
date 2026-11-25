@@ -18,13 +18,11 @@
 // derived() 返回类型只前向声明，避免 include context 头（§1.3.1 要求头不依赖具体 Hub）。
 // configuration 不返回 SettingsStore&（避免 workbench→context 反向依赖），改为扁平 QVariant
 // 键值（§1.3.2 类型对齐表），底层由装配层映射到 SettingsStore::value/setValue。
-namespace nextpilot::plotscope::context
-{
+namespace nextpilot::plotscope::context {
 class DerivedSeriesHub;
 }
 
-namespace nextpilot::plotscope::workbench
-{
+namespace nextpilot::plotscope::workbench {
 
 class IWorkspace
 {

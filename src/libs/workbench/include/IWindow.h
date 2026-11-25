@@ -12,13 +12,11 @@
 #include <optional>
 
 // state() 返回类型只前向声明；真正的 PersistentStateHub 由装配层注入。
-namespace nextpilot::plotscope::context
-{
+namespace nextpilot::plotscope::context {
 class PersistentStateHub;
 }
 
-namespace nextpilot::plotscope::workbench
-{
+namespace nextpilot::plotscope::workbench {
 
 class IWindow
 {
@@ -26,22 +24,17 @@ public:
     virtual ~IWindow() = default;
 
     // nameFilters：QFileDialog 的过滤器串（同 GuiContext.cpp:237），如 "CSV (*.csv);;文本 (*.txt)"。
-    virtual std::optional<QString> showOpenDialog(const QString &title,
-                                                  const QString &nameFilters = {},
+    virtual std::optional<QString> showOpenDialog(const QString &title, const QString &nameFilters = {},
                                                   const QString &dir = {}) = 0;
-    virtual std::optional<QString> showSaveDialog(const QString &title,
-                                                  const QString &nameFilters = {},
+    virtual std::optional<QString> showSaveDialog(const QString &title, const QString &nameFilters = {},
                                                   const QString &suggested = {}) = 0;
     virtual void showInformationMessage(const QString &message) = 0;
     virtual void showWarningMessage(const QString &message) = 0;
     virtual void showErrorMessage(const QString &message) = 0;
-    virtual void withProgress(const QString &title,
-                              const std::function<void(int, const QString &)> &report) = 0;
+    virtual void withProgress(const QString &title, const std::function<void(int, const QString &)> &report) = 0;
     // 不设 createOutputChannel：仓库无 IOutputChannel，输出留 A2b DebugConsole / A8b window.outputs。
-    virtual std::optional<int> showQuickPick(const QStringList &items,
-                                             const QString &title) = 0;
-    virtual std::optional<QString> showInputBox(const QString &title,
-                                                const QString &valueHint = {}) = 0;
+    virtual std::optional<int> showQuickPick(const QStringList &items, const QString &title) = 0;
+    virtual std::optional<QString> showInputBox(const QString &title, const QString &valueHint = {}) = 0;
 
     // 承载 workspace 的"当前焦点"（类比 window.activeTextEditor / showTextDocument）。
     virtual int activeSource() const = 0;

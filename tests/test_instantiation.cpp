@@ -5,8 +5,7 @@
 
 #include <iostream>
 
-namespace
-{
+namespace {
 int failures = 0;
 void check(bool ok, const char *what)
 {
@@ -31,15 +30,12 @@ struct FakeWindow
     int y = 0;
 };
 
-namespace nextpilot::plotscope::instantiation
-{
-template <>
-struct ServiceTypeTag<FakeWorkspace>
+namespace nextpilot::plotscope::instantiation {
+template <> struct ServiceTypeTag<FakeWorkspace>
 {
     static QString value() { return QStringLiteral("vscode.workspace"); }
 };
-template <>
-struct ServiceTypeTag<FakeWindow>
+template <> struct ServiceTypeTag<FakeWindow>
 {
     static QString value() { return QStringLiteral("vscode.window"); }
 };
@@ -53,10 +49,8 @@ int main()
     int rogue = 9;
 
     // 注册 + 类型安全取用。
-    s.registerSingleton("vscode.workspace", &ws, "assembly", 1,
-                        ServiceTypeTag<FakeWorkspace>::value());
-    s.registerSingleton("vscode.window", &win, "assembly", 1,
-                        ServiceTypeTag<FakeWindow>::value());
+    s.registerSingleton("vscode.workspace", &ws, "assembly", 1, ServiceTypeTag<FakeWorkspace>::value());
+    s.registerSingleton("vscode.window", &win, "assembly", 1, ServiceTypeTag<FakeWindow>::value());
     check(s.getService<FakeWorkspace>("vscode.workspace") == &ws, "typed get workspace");
     check(s.getService<FakeWindow>("vscode.window") == &win, "typed get window");
     check(s.getServiceUnchecked("vscode.workspace") == &ws, "unchecked get workspace");
@@ -70,8 +64,7 @@ int main()
     // 同 id 二次注册 → 拒绝、不覆盖、诊断。
     const int before = s.diagnostics().size();
     FakeWorkspace ws2;
-    s.registerSingleton("vscode.workspace", &ws2, "intruder", 9,
-                        ServiceTypeTag<FakeWorkspace>::value());
+    s.registerSingleton("vscode.workspace", &ws2, "intruder", 9, ServiceTypeTag<FakeWorkspace>::value());
     check(s.getService<FakeWorkspace>("vscode.workspace") == &ws, "duplicate did not overwrite");
     check(s.diagnostics().size() == before + 1, "duplicate diagnostic recorded");
 
@@ -88,12 +81,10 @@ int main()
     t.registerSingleton("b", &b, "owner2", 1, "x");
     t.registerSingleton("c", &c, "owner1", 1, "x");
     t.unregisterOwner("owner1");
-    check(t.getServiceUnchecked("a") == nullptr && t.getServiceUnchecked("c") == nullptr,
-          "owner1 removed");
+    check(t.getServiceUnchecked("a") == nullptr && t.getServiceUnchecked("c") == nullptr, "owner1 removed");
     check(t.getServiceUnchecked("b") == &b, "owner2 untouched");
     check(t.removedLog().size() == 2, "removed log count");
-    check(t.removedLog().at(0) == QStringLiteral("c")
-              && t.removedLog().at(1) == QStringLiteral("a"),
+    check(t.removedLog().at(0) == QStringLiteral("c") && t.removedLog().at(1) == QStringLiteral("a"),
           "dependency reverse order (c before a)");
 
     if (failures)

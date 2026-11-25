@@ -925,8 +925,7 @@ int main(int argc, char *argv[])
     int finishIdx = -1;
     for (int i = 0; i < progressEvents.size(); ++i)
     {
-        if (progressEvents.at(i) == QStringLiteral("空闲") ||
-            progressEvents.at(i) == QStringLiteral("加载失败"))
+        if (progressEvents.at(i) == QStringLiteral("空闲") || progressEvents.at(i) == QStringLiteral("加载失败"))
         {
             finishIdx = i; // 首次终态即可证明 onDidFinishLoad 至少一次
             break;

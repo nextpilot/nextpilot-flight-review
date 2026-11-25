@@ -22,8 +22,8 @@ namespace nextpilot::plotscope::app
 {
 
 App::App(const QString &settingsPath, QObject *parent)
-    : QObject(parent), m_ctx(settingsPath, this), m_host(m_ctx, this),
-      m_recorder(), m_services(m_ctx, m_recorder, m_host, this)
+    : QObject(parent), m_ctx(settingsPath, this), m_host(m_ctx, this), m_recorder(),
+      m_services(m_ctx, m_recorder, m_host, this)
 {
     // A1b §1.4.4：服务容器构造完毕后注入宿主，activate 用它初始化模块。
     m_host.setServices(m_services.services());

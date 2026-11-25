@@ -42,8 +42,7 @@ namespace
 // x 用桶首样本时间）。桶数恒 <= px。
 // 配置扁平读写：IWorkspace 只给扁平键值（get/setConfiguration），scope→前缀由调用点给出
 // （SettingsStore.cpp scopePrefix：App=app / Workspace=ws / Document=doc）。
-QJsonObject readFlatJson(const nextpilot::plotscope::workbench::IWorkspace &ws,
-                         const QString &key)
+QJsonObject readFlatJson(const nextpilot::plotscope::workbench::IWorkspace &ws, const QString &key)
 {
     const QVariant v = ws.getConfiguration(key);
     if (v.typeId() == QMetaType::QString)
@@ -57,8 +56,7 @@ QJsonObject readFlatJson(const nextpilot::plotscope::workbench::IWorkspace &ws,
     return {};
 }
 
-void writeFlatJson(nextpilot::plotscope::workbench::IWorkspace &ws, const QString &key,
-                   const QJsonObject &obj)
+void writeFlatJson(nextpilot::plotscope::workbench::IWorkspace &ws, const QString &key, const QJsonObject &obj)
 {
     const QString text = QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
     ws.setConfiguration(key, QVariant(text));
@@ -105,10 +103,10 @@ public:
                      nextpilot::plotscope::dataset::ISourceAccess &sources,
                      nextpilot::plotscope::workbench::IWorkspace &ws,
                      nextpilot::plotscope::context::DerivedSeriesHub &derived,
-                     nextpilot::plotscope::uischema::IScriptCapabilities &scriptCaps,
-                     QObject *parent)
-        : QObject(parent), m_repo(repo), m_ws(ws), m_sources(sources),
-          m_derived(derived), m_scriptCaps(scriptCaps) {}
+                     nextpilot::plotscope::uischema::IScriptCapabilities &scriptCaps, QObject *parent)
+        : QObject(parent), m_repo(repo), m_ws(ws), m_sources(sources), m_derived(derived), m_scriptCaps(scriptCaps)
+    {
+    }
 
     bool canHandle(const Intent &intent) const override
     {
@@ -214,9 +212,8 @@ private:
             {
                 if (const DataSourceInfo *info = m_sources.get(srcId))
                 {
-                    const ChannelTransformConfig cfg = ChannelTransformConfig::fromJson(
-                        readFlatJson(m_ws, QStringLiteral("ws/") +
-                                               QString::fromLatin1(ChannelTransformConfig::kSettingsKey)));
+                    const ChannelTransformConfig cfg = ChannelTransformConfig::fromJson(readFlatJson(
+                        m_ws, QStringLiteral("ws/") + QString::fromLatin1(ChannelTransformConfig::kSettingsKey)));
                     if (const ChannelTransformSpec *spec =
                             cfg.find(info->origin, table, column))
                         transformReq = spec->transform;
@@ -662,10 +659,7 @@ ModuleInfo PlotModule::moduleInfo()
     };
 }
 
-IWorkbenchContribution *PlotModule::create()
-{
-    return new PlotModule();
-}
+IWorkbenchContribution *PlotModule::create() { return new PlotModule(); }
 
 ModuleInfo PlotModule::info() const
 {
@@ -675,16 +669,13 @@ ModuleInfo PlotModule::info() const
 void PlotModule::initialize(InstantiationService &services)
 {
     namespace inst = nextpilot::plotscope::instantiation;
-    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(
-        QStringLiteral("vscode.workspace"));
-    auto *caps = services.getService<nextpilot::plotscope::uischema::IScriptCapabilities>(
-        QStringLiteral("script.capabilities"));
-    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(
-        QStringLiteral("vscode.commands"));
+    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(QStringLiteral("vscode.workspace"));
+    auto *caps =
+        services.getService<nextpilot::plotscope::uischema::IScriptCapabilities>(QStringLiteral("script.capabilities"));
+    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(QStringLiteral("vscode.commands"));
     if (!ws || !caps || !cmds)
         return;
-    m_handler = new Handler(ws->dataset(), ws->sources(), *ws, ws->derived(),
-                            *caps, this);
+    m_handler = new Handler(ws->dataset(), ws->sources(), *ws, ws->derived(), *caps, this);
     // 编排调用走命令；asCommandHandler 把 IIntentHandler 适配成 ICommands::Handler。
     auto reg = [cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
         cmds->registerCommand(id, nextpilot::plotscope::workbench::asCommandHandler(h, id));

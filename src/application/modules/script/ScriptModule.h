@@ -14,13 +14,11 @@ class BatchHandler;
 class PythonHandler;
 } // namespace nextpilot::plotscope::script
 
-namespace nextpilot::plotscope::uischema
-{
+namespace nextpilot::plotscope::uischema {
 class IScriptCapabilities;
 } // namespace nextpilot::plotscope::uischema
 
-namespace nextpilot::plotscope::workbench
-{
+namespace nextpilot::plotscope::workbench {
 class IWorkspace;
 class ICommands;
 } // namespace nextpilot::plotscope::workbench
@@ -54,11 +52,10 @@ private:
     // 引擎归模块持有——GUI 层不直接依赖 script 模块内部类，分层守卫才过得去）：
     //   script.workbench.run  {source, name}   运行编辑器当前文档（引擎每次新建，与 script.run 同路径）
     //   script.workbench.repl {code}           控制台 REPL 求值（持久 VM，进程期共享全局状态）
-    void registerWorkbenchActions(
-        nextpilot::plotscope::uischema::IScriptCapabilities &caps,
-        nextpilot::plotscope::workbench::IWorkspace &ws,
-        nextpilot::plotscope::workbench::ICommands &cmds,
-        nextpilot::plotscope::context::ScriptFacade::ViewActionDispatcher dispatcher);
+    void registerWorkbenchActions(nextpilot::plotscope::uischema::IScriptCapabilities &caps,
+                                  nextpilot::plotscope::workbench::IWorkspace &ws,
+                                  nextpilot::plotscope::workbench::ICommands &cmds,
+                                  nextpilot::plotscope::context::ScriptFacade::ViewActionDispatcher dispatcher);
     std::unique_ptr<nextpilot::plotscope::context::ScriptFacade> m_replFacade;
     std::unique_ptr<nextpilot::plotscope::script::LuaEngine> m_replEngine;
     // 调试会话引擎（script.workbench.debug 执行期持有；暂停期控制指令经它恢复/中断）。

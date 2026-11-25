@@ -11,8 +11,7 @@
 #include "NullWindow.h"
 #include "RuntimeHost.h"
 
-namespace nextpilot::plotscope::assembly
-{
+namespace nextpilot::plotscope::assembly {
 namespace inst = nextpilot::plotscope::instantiation;
 namespace wb = nextpilot::plotscope::workbench;
 namespace host = nextpilot::plotscope::host;
@@ -23,8 +22,8 @@ class WorkbenchServices : public QObject
     Q_OBJECT
 public:
     WorkbenchServices(nextpilot::plotscope::context::AppContext &appCtx,
-                      nextpilot::plotscope::intent::JobRecorder &recorder,
-                      host::RuntimeHost &hostRef, QObject *parent = nullptr);
+                      nextpilot::plotscope::intent::JobRecorder &recorder, host::RuntimeHost &hostRef,
+                      QObject *parent = nullptr);
 
     inst::InstantiationService &services() { return m_services; }
 
