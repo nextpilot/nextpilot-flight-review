@@ -90,15 +90,26 @@ jobs:
           # Full history: the gate diffs against the base branch commit.
           fetch-depth: 0
 
-      - name: Install clang-format (pinned)
+      - name: Fetch clang-format (pinned)
         run: |
           set -euo pipefail
-          # Pinned to the same version developers install locally; clang-format output
+          # Version is pinned to what developers install locally: clang-format output
           # differs across releases, so an unpinned install would make the gate flaky.
-          python3 -m pip install --user 'clang-format==23.1.5'
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-          clang-format --version
-          git clang-format --help >/dev/null
+          #
+          # Deliberately does NOT use `pip install --user`: on the runner that drops
+          # console scripts into ~/.local/bin, and GITHUB_PATH only takes effect for
+          # *later* steps, so the same-step `clang-format --version` probe cannot see
+          # them. That step was observed failing with an opaque exit code 16 — unrelated
+          # to formatting. Extracting the wheel gives one static binary and no
+          # site-packages/entry-point indirection at all.
+          python3 -m pip download --no-deps -q -d "$RUNNER_TEMP/cf" 'clang-format==23.1.5'
+          W="$(find "$RUNNER_TEMP/cf" -maxdepth 1 -name '*.whl' -print -quit)"
+          python3 -m zipfile -e "$W" "$RUNNER_TEMP/cf/x"
+          CF="$RUNNER_TEMP/cf/x/clang_format/data/bin/clang-format"
+          chmod +x "$CF"
+          "$CF" --version
+          echo "CLANG_FORMAT_BIN=$CF" >> "$GITHUB_ENV"
+          echo "CLANG_FORMAT_PY=$RUNNER_TEMP/cf/x" >> "$GITHUB_ENV"
 
       - name: Format changed lines only
         run: |
@@ -116,4 +127,7 @@ jobs:
           if [ "${#FILES[@]}" -eq 0 ]; then echo "no C++ changes, nothing to check"; exit 0; fi
           printf '%s\n' "${FILES[@]}"
           # Exits non-zero as soon as one changed line differs from the formatter output.
-          git clang-format --binary "$(command -v clang-format)" --diff "$BASE" -- "${FILES[@]}"
+          # git-clang-format ships inside the wheel, so run it as a module via PYTHONPATH
+          # instead of relying on a console script from pip.
+          PYTHONPATH="$CLANG_FORMAT_PY" python3 -m clang_format.git_clang_format \
+            --binary "$CLANG_FORMAT_BIN" --diff "$BASE" -- "${FILES[@]}"
