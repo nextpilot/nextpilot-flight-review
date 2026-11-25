@@ -71,3 +71,49 @@ jobs:
           /tmp/actionlint -version
           # Also checks the shell snippets embedded in `run:` blocks via shellcheck.
           /tmp/actionlint -color .github/workflows/*.yml
+
+  format:
+    # Changed-lines-only clang-format gate.
+    #
+    # The tree is NOT clang-format clean: on the closest possible config a whole-file
+    # pass still rewrites ~17% of its lines. A bulk reformat would destroy git blame,
+    # so the gate deliberately looks only at lines this change touches. `git
+    # clang-format --diff <base>` does exactly that and exits non-zero on any drift.
+    #
+    # src/3rdparty is excluded: vendored code keeps its upstream formatting
+    # (see .clang-format-ignore for the in-editor side of the same rule).
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history: the gate diffs against the base branch commit.
+          fetch-depth: 0
+
+      - name: Install clang-format (pinned)
+        run: |
+          set -euo pipefail
+          # Pinned to the same version developers install locally; clang-format output
+          # differs across releases, so an unpinned install would make the gate flaky.
+          python3 -m pip install --user 'clang-format==23.1.5'
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          clang-format --version
+          git clang-format --help >/dev/null
+
+      - name: Format changed lines only
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+          else
+            BASE="${{ github.event.before }}"
+            # Force-push can leave an unreachable "before"; fall back to the parent.
+            git cat-file -e "${BASE}^{commit}" 2>/dev/null || BASE="$(git rev-parse HEAD~1)"
+          fi
+          echo "base = $BASE"
+          mapfile -t FILES < <(git diff --name-only --diff-filter=d "$BASE"...HEAD -- '*.cpp' '*.h' '*.hpp' \
+            | grep -v -e '/3rdparty/' || true)
+          if [ "${#FILES[@]}" -eq 0 ]; then echo "no C++ changes, nothing to check"; exit 0; fi
+          printf '%s\n' "${FILES[@]}"
+          # Exits non-zero as soon as one changed line differs from the formatter output.
+          git clang-format --binary "$(command -v clang-format)" --diff "$BASE" -- "${FILES[@]}"

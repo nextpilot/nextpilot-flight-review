@@ -1,0 +1,2 @@
+# Vendored third-party sources keep their upstream formatting untouched.
+src/3rdparty/**

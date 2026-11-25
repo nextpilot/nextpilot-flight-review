@@ -1,0 +1,50 @@
+# PlotScope C++ formatting baseline.
+#
+# SCOPE — read this before running clang-format over the tree.
+#
+#   Enforced on *changed lines only* (see .github/workflows/lint.yml, job `format`).
+#   The existing tree was written by hand and is NOT clang-format clean: running the
+#   tool over a whole file rewrites roughly 15% of its lines. A bulk reformat would
+#   destroy git blame and bury real changes, so it is explicitly out of scope — do not
+#   reformat the repository inside a feature commit.
+#
+#   The settings below were picked to sit as close to the existing style as possible:
+#     - Allman braces on functions/classes/structs, but `namespace X {` stays on one line
+#     - 4-space indent, no tabs, 120 columns (P99 of the tree is 100, so 120 is slack)
+#     - pointer/reference bound to the name: `const QString &path`, `QString *p`
+#     - includes are NOT sorted: current grouping (own headers / Qt / std / platform)
+#       carries information that an alphabetical sort would flatten
+#     - string literals are NOT broken: this tree is full of CJK literals that wrap
+#       badly under clang-format's display-width model
+#     - namespace closing comments are NOT injected, comments are NOT reflowed
+BasedOnStyle: LLVM
+Language: Cpp
+Standard: c++17
+ColumnLimit: 120
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: true
+  AfterControlStatement: Always
+  AfterEnum: true
+  AfterFunction: true
+  AfterNamespace: false
+  AfterStruct: true
+  AfterUnion: true
+  BeforeCatch: true
+  BeforeElse: true
+  SplitEmptyFunction: true
+PointerAlignment: Right
+AccessModifierOffset: -4
+SortIncludes: false
+FixNamespaceComments: false
+ReflowComments: false
+BreakStringLiterals: false
+AllowShortFunctionsOnASingleLine: All
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: true
+IndentCaseLabels: true
+AlignAfterOpenBracket: Align
