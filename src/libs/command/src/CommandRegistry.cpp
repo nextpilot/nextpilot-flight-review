@@ -25,6 +25,20 @@ bool CommandRegistry::add(const CommandDescriptor &command)
     return true;
 }
 
+bool CommandRegistry::remove(const QString &id)
+{
+    for (int i = 0; i < m_commands.size(); ++i)
+    {
+        if (m_commands.at(i).id == id)
+        {
+            m_commands.removeAt(i);
+            m_whenById.remove(id);
+            return true;
+        }
+    }
+    return false;
+}
+
 WhenExpression CommandRegistry::compileCached(const QString &source, QString *error)
 {
     const auto it = m_whenCache.constFind(source);

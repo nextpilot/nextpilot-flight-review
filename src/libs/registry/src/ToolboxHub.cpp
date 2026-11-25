@@ -37,6 +37,24 @@ ToolboxHub::ToolboxHub(RegistryTree &tree)
 {
 }
 
+// RegistryNode 可观测：扩展 id = 内置包 id ∪ contributes owner（去重）。
+// 内置包与外部 manifest 是同一个 ExtensionRegistry 的两种来源，diagnostics 必须
+// 同时看见——只装外置 manifest 时 extension 行 count 也应 >0（审核 52440654 §3）。
+QStringList ToolboxHub::keysAsStrings() const
+{
+    QSet<QString> seen;
+    for (const QString &id : packs.keys())
+        seen.insert(id);
+    for (const QString &owner : m_contribByOwner.keys())
+        seen.insert(owner);
+    return seen.values();
+}
+
+int ToolboxHub::count() const
+{
+    return keysAsStrings().size();
+}
+
 bool ToolboxHub::registerBuiltinPack(const QString &id, PackFactory factory)
 {
     if (id.isEmpty() || !factory)
@@ -410,5 +428,86 @@ bool ToolboxHub::contains(const QString &id) const
 }
 
 // count() 改为 RegistryNode::count override（头文件内联，packs 表口径）。
+
+// === vscode contributes 贡献面（A8b-M1 / IKXXJ2）===
+// 与 mount(Pack) 并存于同一 Extension 节点：贡献是扩展的属性，不是第二个宿主。
+
+bool ToolboxHub::mountContribution(const ContributesDoc &doc)
+{
+    if (doc.owner.isEmpty())
+    {
+        recordContributionIssue(QStringLiteral("<empty>"), QStringLiteral("owner"),
+                                QStringLiteral("owner 为空，拒载"));
+        return false;
+    }
+    if (m_contribByOwner.contains(doc.owner))
+    {
+        recordContributionIssue(doc.owner, QStringLiteral("owner"),
+                                QStringLiteral("owner 已挂载，重复 mount 拒（请先 unmount）"));
+        return false;
+    }
+
+    m_contribByOwner.insert(doc.owner, QStringList());
+    m_contribOwnerOrder.append(doc.owner);
+
+    QStringList ownedIds;
+    for (const auto &c : doc.commands)
+    {
+        if (m_contribCommands.contains(c.command))
+        {
+            recordContributionIssue(doc.owner, QStringLiteral("commands.") + c.command,
+                                    QStringLiteral("命令 id 已被其他 owner 占用，跳过（先到者保留）"));
+            continue;
+        }
+        m_contribCommands.insert(c.command, c);
+        m_contribCommandOwner.insert(c.command, doc.owner);
+        ownedIds.append(c.command);
+    }
+    m_contribByOwner.insert(doc.owner, ownedIds);
+
+    for (const auto &item : doc.commandPalette)
+        m_contribPalette.append(PaletteEntry{item, doc.owner});
+
+    Q_EMIT objectAdded(doc.owner);
+    return true;
+}
+
+bool ToolboxHub::unmountContribution(const QString &owner)
+{
+    if (!m_contribByOwner.contains(owner))
+        return false;
+
+    for (int i = m_contribPalette.size() - 1; i >= 0; --i)
+        if (m_contribPalette.at(i).owner == owner)
+            m_contribPalette.removeAt(i);
+
+    const QStringList ids = m_contribByOwner.value(owner);
+    for (const QString &id : ids)
+    {
+        m_contribCommands.remove(id);
+        m_contribCommandOwner.remove(id);
+    }
+    m_contribByOwner.remove(owner);
+    m_contribOwnerOrder.removeAll(owner);
+
+    Q_EMIT objectRemoved(owner);
+    return true;
+}
+
+const ContributedCommand *ToolboxHub::findCommand(const QString &commandId) const
+{
+    return m_contribCommands.find(commandId);
+}
+
+QStringList ToolboxHub::commandIdsOf(const QString &owner) const
+{
+    return m_contribByOwner.value(owner);
+}
+
+void ToolboxHub::recordContributionIssue(const QString &owner, const QString &keyPath,
+                                         const QString &message)
+{
+    m_contribDiagnostics.append(ContributionDiagnostic{owner, keyPath, message});
+}
 
 } // namespace nextpilot::plotscope::registry

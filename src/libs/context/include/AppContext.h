@@ -77,7 +77,8 @@ public:
     SettingsStore &settings() { return m_settings; }
     const SettingsStore &settings() const { return m_settings; }
 
-    // 工具箱（扩展包贡献登记处）。
+    // 扩展注册表（ExtensionRegistry 的对位）：内置包、外部扩展、vscode contributes
+    // 都登记在这唯一一张表里——"贡献"是扩展的属性，不是第二个宿主（IKXUT9 §零.1）。
     ToolboxHub &toolbox() { return m_toolbox; }
     const ToolboxHub &toolbox() const { return m_toolbox; }
 
@@ -229,7 +230,7 @@ private:
     RegistryTree m_registryTree;
     DatasetHub m_repo;
     SettingsStore m_settings;
-    ToolboxHub m_toolbox;
+    ToolboxHub m_toolbox; // 唯一扩展注册表：内置包 + contributes 贡献面都在此
     SourceHub m_sources;
     IngestPipeline m_ingest; // 依赖 m_repo，故必须在其后构造
 

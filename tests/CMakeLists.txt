@@ -50,6 +50,24 @@ target_link_libraries(ps_test_registry_standalone PRIVATE ps_registry Qt6::Core)
 set_target_properties(ps_test_registry_standalone PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_registry_standalone COMMAND ps_test_registry_standalone)
 
+# A8b-M1 贡献解析：只链 ps_registry + Qt6::Core，纯解析无副作用。
+add_executable(ps_test_contribution_parser test_contribution_parser.cpp)
+target_link_libraries(ps_test_contribution_parser PRIVATE ps_registry Qt6::Core)
+set_target_properties(ps_test_contribution_parser PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ps_contribution_parser COMMAND ps_test_contribution_parser)
+
+# A8b-M1 扩展注册表的 contributes 属性面：mount/unmount/owner 索引/整批撤回，只链 ps_registry。
+add_executable(ps_test_extension_contributions test_extension_contributions.cpp)
+target_link_libraries(ps_test_extension_contributions PRIVATE ps_registry Qt6::Core)
+set_target_properties(ps_test_extension_contributions PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ps_extension_contributions COMMAND ps_test_extension_contributions)
+
+# A8b-M1 扩展扫描：扫目录读 manifest.json，只登记 contributes，不链 GUI/toolbox。
+add_executable(ps_test_extension_scanner test_extension_scanner.cpp)
+target_link_libraries(ps_test_extension_scanner PRIVATE ps_registry Qt6::Core)
+set_target_properties(ps_test_extension_scanner PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ps_extension_scanner COMMAND ps_test_extension_scanner)
+
 # 验收 4：面板引用三源启动期校验（包 PanelSpec / Activity panelTypes+centralPanel /
 # 产品 defaultPanels）；负向用例故意声明不存在的面板类型，断言校验器真的报错。
 add_executable(ps_test_panel_ref test_panel_ref.cpp)
@@ -246,6 +264,19 @@ set_target_properties(ps_test_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 # offscreen 平台插件：无显示环境（CI）也能跑。
 add_test(NAME ps_gui COMMAND ps_test_gui)
 set_tests_properties(ps_gui PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# A8b-M1 e2e cmd-ext：内置扩展一条命令 → 命令面板接线 → 执行成功 → 卸载撤回。
+# 不构造完整 MainWindow，走 gui_main 同款 binder 装配；不链业务模块（空壳底座即可跑）。
+add_executable(ps_test_cmd_ext e2e/cmd-ext/test_cmd_ext.cpp)
+target_include_directories(ps_test_cmd_ext PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/application/app/core
+    ${CMAKE_SOURCE_DIR}/src/application/assembly/include)
+target_link_libraries(ps_test_cmd_ext PRIVATE
+    ps_gui ps_gui_theme ps_widgets
+    ps_app ps_assembly ps_host ps_context ps_command ps_registry Qt6::Widgets Qt6::Gui Qt6::Core)
+set_target_properties(ps_test_cmd_ext PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ps_cmd_ext COMMAND ps_test_cmd_ext)
+set_tests_properties(ps_cmd_ext PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
 # === 新架构契约测试（Source 多数据源 + Parser SPI）===
 # 独立可执行文件：只依赖 core + 扩展里的解析器，不需要 GUI。

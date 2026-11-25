@@ -1,0 +1,16 @@
+{
+  "id": "plotscope.helloworld",
+  "version": "0.1.0",
+  "builtin": true,
+  "activationEvents": ["onCommand:hello.say"],
+  "contributes": {
+    "commands": [
+      { "command": "hello.say", "title": "说你好", "category": "测试", "icon": "chat", "order": 10 }
+    ],
+    "menus": {
+      "commandPalette": [
+        { "command": "hello.say", "group": "z@1" }
+      ]
+    }
+  }
+}

@@ -9,7 +9,7 @@ AppContext::AppContext(const QString &settingsPath, QObject *parent)
       m_registryTree(),             // 组合根唯一持有树（成员逆序析构：节点先亡、向仍活着的树摘除）
       m_repo(m_registryTree),       // M2.8：数据集仓库上树
       m_settings(settingsPath),
-      m_toolbox(m_registryTree),    // M2.8：工具箱上树（R3，扩展包可枚举）
+      m_toolbox(m_registryTree),    // 唯一扩展注册表：内置包 + contributes 贡献面
       m_sources(m_registryTree),    // M2.8 遗留5 收口：数据源上树
       m_ingest(m_repo),             // 摄取管道依赖数据集仓库
       m_interactions(m_registryTree),        // M2.8 遗留5 收口：交互注册表上树

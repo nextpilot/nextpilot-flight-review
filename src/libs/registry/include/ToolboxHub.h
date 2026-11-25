@@ -15,11 +15,13 @@
 //   - 外部插件：插件扫描器加载后 mount() 进来。
 
 #include "Contribution.h"
+#include "ContributionParser.h"
 #include "IMessageParser.h"
 #include "Registry.h"
 #include "RegistryNode.h"
 #include "RegistryTree.h"
 
+#include <QHash>
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -79,9 +81,48 @@ public:
     bool mount(Pack pack);
     bool unmount(const QString &packId);
 
-    // === RegistryNode 可观测：条目经节点间接可枚举（count/keys 取 packs 表）===
-    int count() const override { return packs.count(); }
-    QStringList keysAsStrings() const override { return packs.keys(); }
+    // === RegistryNode 可观测：扩展 id 经节点间接可枚举 ===
+    // 口径 = 内置包 id ∪ contributes owner（同一 owner 只算一次）。只装外置 manifest
+    // 时 extension 行也必须 count>0——诊断不能说"没有扩展"而命令面板全是扩展命令。
+    int count() const override;
+    QStringList keysAsStrings() const override;
+
+    // === vscode contributes 贡献面（A8b-M1 / IKXXJ2）===
+    // 一个 owner 一份 contributes 文档就是本注册表的一个 Extension：内置包与外部
+    // manifest 走同一张表，"贡献"是 Extension 的属性，不是第二个宿主。与 mount(Pack)
+    // 并列但数据独立——contributes 只带声明数据，不创建 Pack（避免双份来源）。
+    bool mountContribution(const ContributesDoc &doc);
+    bool unmountContribution(const QString &owner);
+    bool isContributionMounted(const QString &owner) const { return m_contribByOwner.contains(owner); }
+    QStringList contributionOwners() const { return m_contribOwnerOrder; }
+
+    const ContributedCommand *findCommand(const QString &commandId) const;
+    QString ownerOfCommand(const QString &commandId) const
+    {
+        return m_contribCommandOwner.value(commandId);
+    }
+    QList<ContributedCommand> contributedCommands() const { return m_contribCommands.values(); }
+    QStringList commandIdsOf(const QString &owner) const;
+
+    struct PaletteEntry
+    {
+        CommandPaletteMenuItem item;
+        QString owner;
+    };
+    QList<PaletteEntry> paletteEntries() const { return m_contribPalette; }
+
+    struct ContributionDiagnostic
+    {
+        QString owner;
+        QString keyPath;
+        QString message;
+    };
+    QList<ContributionDiagnostic> contributionDiagnostics() const { return m_contribDiagnostics; }
+    void clearContributionDiagnostics() { m_contribDiagnostics.clear(); }
+    void addContributionDiagnostic(const QString &owner, const QString &keyPath, const QString &message)
+    {
+        m_contribDiagnostics.append(ContributionDiagnostic{owner, keyPath, message});
+    }
 
     // === 数据表（机制唯一：Registry<T>；内容全是数据，直接读）===
     Registry<PackInfo> packs;        // 包自我声明
@@ -134,6 +175,16 @@ public:
     QList<IMessageParser *> messageParsersByTransport(const QString &transport) const { return parsersByTransport(transport); }
 
 private:
+    void recordContributionIssue(const QString &owner, const QString &keyPath, const QString &message);
+
+    // contributes 贡献面：command id → 条目（保序，先到者为准）
+    Registry<ContributedCommand> m_contribCommands;
+    QHash<QString, QString> m_contribCommandOwner;        // command id → owner（归属索引）
+    QHash<QString, QStringList> m_contribByOwner;          // owner → 该 owner 的 command id
+    QList<QString> m_contribOwnerOrder;
+    QList<PaletteEntry> m_contribPalette;
+    QList<ContributionDiagnostic> m_contribDiagnostics;
+
     std::vector<std::unique_ptr<IMessageParser>> m_parsers; // 全部解析器（含旧 driver 包装包的）
 };
 

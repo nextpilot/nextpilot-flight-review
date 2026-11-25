@@ -1,5 +1,6 @@
 #include "MainWindow.h"
 #include "ShellBinder.h"
+#include "ExtensionActivationService.h"
 #ifdef PS_HAS_REPORT_GUI
 #include "ReportExporter.h" // 装配层：注册 report.export viewAction（业务在 report 模块）
 #endif
@@ -141,6 +142,12 @@ int main(int argc, char *argv[])
     nextpilot::plotscope::app::App application(settingsPath);
     nextpilot::plotscope::gui::MainWindow window(application.context(), productSpec);
     window.build(application.host());
+
+    // A8b-M1：把扩展 contributes 的命令接进命令面板。MainWindow 零改动——
+    // 装配层用 public getter 拿 CommandRegistry*，激活服务只按声明摆放、不解释 id。
+    nextpilot::plotscope::assembly::ExtensionActivationService extensionActivation(
+        application.context().toolbox());
+    extensionActivation.bind(window.commandRegistry(), application.host());
 
 #ifdef PS_HAS_REPORT_GUI
     // 装配层注册 report.export viewAction（业务实现在 report 模块呈现层）。

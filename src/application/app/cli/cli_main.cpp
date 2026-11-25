@@ -47,6 +47,7 @@ static void printUsage()
             "  plotscope --list-modules      # 模块模块\n"
             "  plotscope --list-packs        # 工具箱里的扩展包（装载/卸载单位）\n"
             "  plotscope --list-contributions [kind]  # 贡献（按 kind×领域，开放类型）\n"
+            "  plotscope --contributions      # A8b vscode contributes：owner/key/id/order 逐行\n"
             "  plotscope --list-parser      # 工具箱里的格式驱动（list-contributions format 别名）\n"
             "  plotscope --list-slots        # UI 插槽及工具箱填入的入口\n"
             "  plotscope --kernel            # Rust kernel ABI/版本/自检\n"
@@ -168,6 +169,24 @@ int main(int argc, char **argv)
         // startup 已在上方完成（模块/扩展包已装载）；此处快照即终态。
         const QJsonDocument doc(diag::collect(application));
         fprintf(stdout, "%s\n", QString::fromUtf8(doc.toJson(QJsonDocument::Indented)).toUtf8().constData());
+        return 0;
+    }
+
+    if (command == QStringLiteral("--contributions"))
+    {
+        // A8b-M1：只列 vscode contributes 契约表（owner/key/id/order），
+        // 纯读扩展注册表的 contributes 贡献面，不链 GUI / 业务数据。
+        const auto &extensions = application.context().toolbox();
+        for (const auto &c : extensions.contributedCommands())
+            fprintf(stdout, "%s commands %s order=%d\n",
+                    u8(extensions.ownerOfCommand(c.command)), u8(c.command), c.order);
+        for (const auto &e : extensions.paletteEntries())
+            fprintf(stdout, "%s menus.commandPalette %s group=%s when=%s\n",
+                    u8(e.owner), u8(e.item.command),
+                    u8(e.item.group.isEmpty() ? QStringLiteral("-") : e.item.group),
+                    u8(e.item.when.isEmpty() ? QStringLiteral("-") : e.item.when));
+        for (const auto &d : extensions.contributionDiagnostics())
+            fprintf(stdout, "diagnostic %s %s %s\n", u8(d.owner), u8(d.keyPath), u8(d.message));
         return 0;
     }
 

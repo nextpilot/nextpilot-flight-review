@@ -52,5 +52,11 @@ target_link_libraries(plotscope PRIVATE
     ps_host ps_context ps_recording Qt6::Core)
 set_target_properties(plotscope PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 
+# A8b-M1：把内置测试扩展拷到 CLI 旁 extensions/，供 --contributions 与 cmd-ext e2e 扫描。
+add_custom_command(TARGET plotscope POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_SOURCE_DIR}/tests/e2e/cmd-ext/extensions"
+        "$<TARGET_FILE_DIR:plotscope>/extensions")
+
 # Windows：把 ads.dll 拷到本目录各可执行目标旁边，构建完即可直接运行/跑测试。
 ps_deploy_windows_runtime_all()

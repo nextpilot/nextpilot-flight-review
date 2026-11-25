@@ -45,6 +45,8 @@ enum class RegistryKind : quint8
     Parser,
     RecordingFormat,
     RecordingBackend
+    // A8b：contributes 是 Extension 的属性面（ToolboxHub 内），不另立 kind——
+    // "贡献"与"扩展包"是同一个注册表，diag.registries 保持 11 类。
 };
 
 // kind → 诊断字符串（kebab：dataset / builtin-module ...）。

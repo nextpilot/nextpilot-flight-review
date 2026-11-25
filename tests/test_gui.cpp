@@ -3296,7 +3296,8 @@ int main(int argc, char *argv[])
         // 诊断面板归 Region::Panel（底部面板组），不再是注册表插槽；
         // 插槽只剩 RibbonPage / RibbonGroup 两类（见 test_architecture 死槽检查）。
 
-        // diag.registries：11 类节点齐全（遗留4/遗留5 收口：全量上树无盲区）
+        // diag.registries：11 类节点齐全（遗留4/遗留5 收口全量上树；
+        // A8b contributes 是 Extension 的属性面，不新增 kind）
         Result<QVariant> out{QVariant()};
         CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("diag.registries"), {}, out));
@@ -3331,7 +3332,7 @@ int main(int argc, char *argv[])
         auto *diag = qobject_cast<nextpilot::plotscope::gui::DiagnosticsPanel *>(diagWidget);
         CHECK(diag != nullptr);
         CHECK(diag->refresh() == application.context().registryTree().nodes().size());
-        OK("诊断面板：注册树 11 类节点齐全，面板行数==树上节点数（diag.registries 同路）");
+        OK("诊断面板：注册树节点齐全，面板行数==树上节点数（diag.registries 同路）");
     }
     // --- c3b-2c/d 设置页与主题令牌：声明 → 壳排序 → 实际可解析 ---
     {

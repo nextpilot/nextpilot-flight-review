@@ -3,6 +3,7 @@
 #include "BuiltinModuleHub.h"
 #include "Toolbox.h"
 #include "PluginScanner.h"
+#include "ExtensionScanner.h"
 #include "RecordingBackend.h"
 #include "RecordingFormat.h"
 
@@ -42,6 +43,15 @@ App::App(const QString &settingsPath, QObject *parent)
     // 目录可后续由配置/命令行注入；默认检查可执行文件旁的 plugins/ 目录。
     nextpilot::plotscope::ext::scanExternalPlugins(m_ctx.toolbox(),
                                  QCoreApplication::applicationDirPath() + QStringLiteral("/plugins"));
+
+    // A8b-M1：内置扩展目录扫描（vscode contributes 契约）。只登记 contributes、
+    // 不执行扩展代码；每个 owner 的声明作为一条 Extension 贡献 mount 进同一注册表。
+    const QString extRoot = QCoreApplication::applicationDirPath() + QStringLiteral("/extensions");
+    const auto extReport = nextpilot::plotscope::registry::scanExtensions(extRoot);
+    for (const auto &doc : extReport.docs)
+        m_ctx.toolbox().mountContribution(doc);
+    for (const auto &issue : extReport.issues)
+        m_ctx.toolbox().addContributionDiagnostic(issue.keyPath, issue.keyPath, issue.message);
 
     // 录制：格式 × 后端两个独立注册表。
     // 格式决定"字节长什么样"（raw/mcap），后端决定"字节送到哪"（文件/UDP）。

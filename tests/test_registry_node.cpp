@@ -141,6 +141,7 @@ int main(int argc, char **argv)
         QStringLiteral("diag.registries"), {}, out));
     CHECK(out.ok());
     const QVariantList base = out.value().toList();
+    // 11 类节点全量上树、kind 互异（A8b contributes 是 Extension 的属性面，不新增 kind）。
     CHECK(base.size() == 11);
     QHash<QString, QVariantMap> byKind;
     for (const QVariant &r : base)

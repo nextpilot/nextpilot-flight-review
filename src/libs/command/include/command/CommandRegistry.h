@@ -56,6 +56,8 @@ class CommandRegistry
 {
 public:
     bool add(const CommandDescriptor &command);
+    // 移除命令（owner 卸载时整批撤注册项，避免悬空引用）。命中返回 true。
+    bool remove(const QString &id);
     bool contains(const QString &id) const;
     const CommandDescriptor *find(const QString &id) const;
     QList<CommandDescriptor> commands() const { return m_commands; }
