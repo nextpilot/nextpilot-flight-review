@@ -36,6 +36,38 @@ if(NOT PS_CARGO)
   message(FATAL_ERROR "找不到 cargo：Dataset 由 Rust kernel 管理，请先安装 rustup")
 endif()
 set(_ps_kernel_dir "${CMAKE_CURRENT_SOURCE_DIR}/kernel")
+
+# --- Rust 工具链预检（纯本地判定，不联网）---
+# `cargo` 是 rustup 的 shim：它在 WORKING_DIRECTORY（这里是 kernel/）读到 rust-toolchain.toml
+# 的 channel，发现该工具链没装时会静默去 static.rust-lang.org 下载，国内网络下表现为
+# "构建卡住十几分钟且没有任何输出"。这里在 configure 阶段就把这件事挑明，报错里直接给出
+# 可执行的安装命令与镜像脚本，避免下一个人再靠猜。
+# 设了 RUSTUP_TOOLCHAIN 时跳过：该环境变量的优先级高于 toolchain 文件，不会触发下载。
+if(NOT DEFINED ENV{RUSTUP_TOOLCHAIN})
+  file(STRINGS "${_ps_kernel_dir}/rust-toolchain.toml" _ps_tc_line REGEX "^channel[ \t]*=")
+  if(_ps_tc_line)
+    string(REGEX REPLACE "^channel[ \t]*=[ \t]*\"(.*)\".*" "\\1" _ps_tc_channel "${_ps_tc_line}")
+    set(_ps_rustup_home "$ENV{RUSTUP_HOME}")
+    if(NOT _ps_rustup_home)
+      if(WIN32 AND DEFINED ENV{USERPROFILE})
+        set(_ps_rustup_home "$ENV{USERPROFILE}/.rustup")
+      else()
+        set(_ps_rustup_home "$ENV{HOME}/.rustup")
+      endif()
+    endif()
+    file(GLOB _ps_tc_installed "${_ps_rustup_home}/toolchains/${_ps_tc_channel}-*")
+    if(NOT _ps_tc_installed)
+      message(FATAL_ERROR
+        "缺少 Rust 工具链 ${_ps_tc_channel}（由 src/kernel/rust-toolchain.toml 指定），"
+        "构建时 rustup 会尝试联网下载 https://static.rust-lang.org，国内网络下常见长时间无响应。\n"
+        "  先安装：rustup toolchain install ${_ps_tc_channel}\n"
+        "  或用工程脚本（自动选 deps-version.json 里的国内镜像）：bash tools/ubuntu-setup.sh --install --rust\n"
+        "  若确定要用本机别的版本，显式设 RUSTUP_TOOLCHAIN 覆盖（本检查会跳过）。")
+    endif()
+    message(STATUS "[rust] 工具链 ${_ps_tc_channel} 已在 ${_ps_rustup_home} 安装，构建不会触发 rustup 联网")
+  endif()
+endif()
+
 if(WIN32)
   set(_ps_kernel_lib "${_ps_kernel_dir}/target/release/ps_abi.lib")
 else()

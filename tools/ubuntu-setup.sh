@@ -193,6 +193,15 @@ probe_ccache() {
   fi
 }
 probe_rust() {
+  # 工程钉的 channel 优先：直接读已安装的 toolchain 目录（纯本地，不触发 rustup 联网）。
+  # 若退回 `~/.cargo/bin/cargo`（rustup shim）在仓库根探测，读到的是 default toolchain，
+  # 而构建时 CMake 在 kernel/ 下读到的是 rust-toolchain.toml 的 channel —— 两者不是一回事，
+  # 体检会出现「已装好却报红」的假红。
+  local ch="${V_RUST_CHANNEL:-}" root="${RUSTUP_HOME:-$HOME/.rustup}" d=""
+  if [ -n "$ch" ]; then
+    d="$(ls -d "$root"/toolchains/"$ch"-* 2>/dev/null | head -1)"
+    if [ -n "$d" ] && [ -x "$d/bin/cargo" ]; then "$d/bin/cargo" --version | awk '{print $2}'; return; fi
+  fi
   local c=""
   if [ -x "$PS_DEPS_ROOT/toolchain/rust/cargo/bin/cargo" ]; then c="$PS_DEPS_ROOT/toolchain/rust/cargo/bin/cargo"
   elif [ -x "$HOME/.cargo/bin/cargo" ]; then c="$HOME/.cargo/bin/cargo"
