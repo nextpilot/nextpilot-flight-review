@@ -114,7 +114,7 @@ plotscope --help              # CLI
 
 ## CI
 
-`.github/workflows/release.yml` 三 job（ubuntu-22.04 / windows-2022 / macos-14）+ 一个汇总 job：
+`.github/workflows/build-packages.yml` 三 job（ubuntu-22.04 / windows-2022 / macos-13）+ 一个汇总 job：
 
 - 推 `v*` tag 或手动触发；
 - 每个 job 各自 configure + build 两个目标，再调对应打包脚本；

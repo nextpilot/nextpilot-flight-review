@@ -1,19 +1,21 @@
-name: release-packages
+name: build-packages
 
-# 三平台发布包：Linux AppImage / Windows 安装器+便携包 / macOS dmg。
+# Three-platform release packages: Linux AppImage + DEB / Windows installer + portable ZIP / macOS DMG.
 #
-# 触发（三种，方案 A：验证构建与正式发布分层）：
-#   1. 推分支名以 -workflow-packaging 结尾的分支 → 三平台构建 + 出包 + 冒烟，
-#      产物仅上传 artifact，不挂 Release（release job 的 tag 门禁会跳过）。
-#      用途：日常改打包脚本/CI 后推分支即可回归验证，无需手动点触发。
-#   2. 推 v* tag → 完整发布，构建产物挂到 GitHub Release。
-#   3. 手动 workflow_dispatch → 同 tag，但需手动指定 ref。
+# Triggers (three modes, plan A: validation builds and formal releases are layered):
+#   1. Push a branch whose name ends with -workflow-packaging -> build, package and smoke-test
+#      on all three platforms; artifacts are uploaded only, no Release is created
+#      (the release job is gated on a tag and will be skipped).
+#      Use this to regress packaging-script/CI changes just by pushing the marked branch,
+#      without a manual dispatch.
+#   2. Push a v* tag -> full release; build artifacts are attached to the GitHub Release.
+#   3. Manual workflow_dispatch -> same as a tag, but with a manually chosen ref.
 #
-# ⚠️ 运行平台：本文件是 GitHub Actions 配置。Gitee 主仓不会执行它，
-#    需要仓库同时镜像到 GitHub（或在本机直接跑 tools/pack-*.sh）。
-#    Gitee 推送会同步到 GitHub，故推上述标记分支即会触发本工作流。
-#    三个 job 各自在原生 runner 上构建：macOS 包只能在 macOS 上出，
-#    Windows 安装器必须在 Windows 上做 windeployqt。
+# NOTE: This is GitHub Actions configuration. The Gitee primary repository does not run it;
+#   the repo must also be mirrored to GitHub (or run tools/pack-*.sh locally).
+#   Gitee pushes sync to GitHub, so pushing the marked branch triggers this workflow.
+#   Each job builds on its native runner: macOS packages can only be produced on macOS,
+#   and the Windows installer must be built with windeployqt on Windows.
 
 on:
   push:
@@ -21,20 +23,25 @@ on:
     tags: ['v*']
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
 jobs:
   linux:
-    runs-on: ubuntu-22.04      # glibc 2.35 基线，与 linuxdeploy 兼容
+    runs-on: ubuntu-22.04      # glibc 2.35 baseline, compatible with linuxdeploy
     timeout-minutes: 120
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
 
-      - name: 校验版本（versions.env 唯一来源）
+      - name: Verify version (versions.env is the single source of truth)
         shell: bash
         run: |
           set -euo pipefail
@@ -42,13 +49,13 @@ jobs:
           echo "PS_VER=${PS_APP_VERSION}" >> "$GITHUB_ENV"
           echo "PS_QT_VER=${PS_QT_VERSION}" >> "$GITHUB_ENV"
           grep -q "project(PlotScope VERSION ${PS_APP_VERSION}" CMakeLists.txt \
-            || { echo "::error::CMakeLists 的 project VERSION 与 versions.env 不一致"; exit 1; }
+            || { echo "::error::CMakeLists project VERSION does not match versions.env"; exit 1; }
           if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
             [ "${GITHUB_REF_NAME}" = "v${PS_APP_VERSION}" ] \
-              || { echo "::error::tag ${GITHUB_REF_NAME} 必须等于 v${PS_APP_VERSION}"; exit 1; }
+              || { echo "::error::tag ${GITHUB_REF_NAME} must equal v${PS_APP_VERSION}"; exit 1; }
           fi
 
-      - name: 安装构建依赖
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build patchelf build-essential curl file \
@@ -57,85 +64,102 @@ jobs:
             libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
             libxkbcommon-x11-0 libfontconfig1 libdbus-1-3
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: 安装 Qt 6.2.4
+      - name: Install Qt 6.2.4
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.PS_QT_VER }}
           modules: 'qtcharts'
 
-      - name: ccache
+      - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1
         with:
           key: linux-release
 
-      - name: 配置 + 构建
+      - name: Configure CMake
         run: |
-          # QT_ROOT_DIR 已含 gcc_64（install-qt-action v4），不能再拼一层。
+          # QT_ROOT_DIR already contains gcc_64 (install-qt-action v4); do not append another level.
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
             -DPS_BUILD_TESTS=OFF \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-          cmake --build build --target plotscope-gui plotscope -j"$(nproc)"
 
-      - name: 出 AppImage
+      - name: Build targets (plotscope-gui, plotscope)
+        run: cmake --build build --target plotscope-gui plotscope -j"$(nproc)"
+
+      - name: Build AppImage
         run: bash tools/pack-appimage.sh build dist "$QT_ROOT_DIR"
 
-      - name: 出 deb 安装包
+      - name: Build DEB package
         run: bash tools/pack-deb.sh build dist
 
-      - name: 冒烟（清空环境直接跑）
+      - name: Smoke test - AppImage CLI
         run: |
           chmod +x dist/*.AppImage
-          # runner 上没有 FUSE，必须走解压模式，否则直接报 fusermount 缺失
+          # The runner has no FUSE; use extract-and-run, otherwise fusermount is missing.
           env -i HOME="$HOME" PATH=/usr/bin:/bin APPIMAGE_EXTRACT_AND_RUN=1 \
             dist/PlotScope-*.AppImage --cli --help
-          # AppImage 的 GUI 也要起窗（offscreen），10 秒未退出（124）= 成功
+          echo "AppImage CLI smoke test passed"
+
+      - name: Smoke test - AppImage GUI (offscreen)
+        run: |
+          # The AppImage GUI must also open a window (offscreen); not exiting within 10s (124) means success.
           set +e
           env -i HOME="$HOME" PATH=/usr/bin:/bin APPIMAGE_EXTRACT_AND_RUN=1 \
             QT_QPA_PLATFORM=offscreen timeout 10 dist/PlotScope-*.AppImage
           AI_RC=$?
           set -e
-          [ "$AI_RC" -eq 124 ] || { echo "::error::AppImage GUI 未能启动（退出码 $AI_RC）"; exit 1; }
-          echo "AppImage CLI + GUI 冒烟通过"
-          # deb：解包后直接跑真实二进制（FHS 布局，RPATH=$ORIGIN/lib）
-          mkdir -p /tmp/deb-root && dpkg-deb -x dist/*.deb /tmp/deb-root
+          [ "$AI_RC" -eq 124 ] || { echo "::error::AppImage GUI failed to start (exit code $AI_RC)"; exit 1; }
+          echo "AppImage GUI smoke test passed"
+
+      - name: Smoke test - DEB CLI
+        run: |
+          # DEB: extract and run the real binary (FHS layout, RPATH=$ORIGIN/lib).
+          mkdir -p /tmp/deb-root
+          dpkg-deb -x dist/*.deb /tmp/deb-root
           env -i HOME="$HOME" PATH=/usr/bin:/bin /tmp/deb-root/usr/lib/plotscope/plotscope --help
-          # deb 的 GUI 也必须能起：offscreen 起窗，10 秒未退出（124）= 启动成功。
-          # 这条才是 deb 的核心价值 —— CLI 不碰平台插件，跑通不代表 GUI 能跑。
+          echo "DEB CLI smoke test passed"
+
+      - name: Smoke test - DEB GUI (offscreen)
+        run: |
+          # This is the core value of the DEB: the CLI does not touch platform plugins,
+          # so passing the CLI does not prove the GUI can start.
           set +e
           env -i HOME="$HOME" PATH=/usr/bin:/bin QT_QPA_PLATFORM=offscreen \
             timeout 10 /tmp/deb-root/usr/lib/plotscope/plotscope-gui
           GUI_RC=$?
           set -e
-          [ "$GUI_RC" -eq 124 ] || { echo "::error::deb 内 GUI 未能启动（退出码 $GUI_RC）"; exit 1; }
-          echo "deb GUI 冒烟通过（offscreen 启动后超时未退）"
+          [ "$GUI_RC" -eq 124 ] || { echo "::error::DEB GUI failed to start (exit code $GUI_RC)"; exit 1; }
+          echo "DEB GUI smoke test passed (offscreen window opened, timed out without exit)"
 
-      - name: ELF glibc 基线审计（≤ 2.35）
+      - name: Audit ELF glibc baseline (<= 2.35)
         run: |
           set -euo pipefail
           FLOOR=2.35
           MAX="$(find dist/AppDir -type f \( -name '*.so*' -o -perm -u+x \) -print0 2>/dev/null \
             | xargs -0 -r -n1 sh -c 'objdump -T "$0" 2>/dev/null | grep -oE "GLIBC_[0-9]+\.[0-9]+"' \
             | sed 's/GLIBC_//' | sort -V | tail -1 || true)"
-          if [ -z "$MAX" ]; then echo "::error::未从 AppDir 提取到任何 GLIBC 需求"; exit 1; fi
-          echo "最高 glibc 需求：$MAX"
+          if [ -z "$MAX" ]; then echo "::error::No GLIBC requirement extracted from AppDir"; exit 1; fi
+          echo "Highest glibc requirement: $MAX"
           NEED="$(printf '%s\n%s\n' "$FLOOR" "$MAX" | sort -V | tail -1)"
           if [ "$NEED" != "$FLOOR" ]; then
-            echo "::error::glibc 基线 $MAX 超过 $FLOOR，老发行版会被挡在门外"; exit 1
+            echo "::error::glibc baseline $MAX exceeds $FLOOR; older distributions would be blocked"; exit 1
           fi
-          echo "glibc 基线审计通过（≤ $FLOOR，与 ubuntu-22.04 构建机一致）"
+          echo "glibc baseline audit passed (<= $FLOOR, matching ubuntu-22.04 builder)"
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload AppImage artifact
+        uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
           path: dist/*.AppImage
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload DEB artifact
+        uses: actions/upload-artifact@v4
         with:
           name: linux-deb
           path: dist/*.deb
@@ -145,12 +169,13 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 150
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
 
-      - name: 校验版本（versions.env 唯一来源）
+      - name: Verify version (versions.env is the single source of truth)
         shell: bash
         run: |
           set -euo pipefail
@@ -158,74 +183,91 @@ jobs:
           echo "PS_VER=${PS_APP_VERSION}" >> "$GITHUB_ENV"
           echo "PS_QT_VER=${PS_QT_VERSION}" >> "$GITHUB_ENV"
           grep -q "project(PlotScope VERSION ${PS_APP_VERSION}" CMakeLists.txt \
-            || { echo "::error::CMakeLists 的 project VERSION 与 versions.env 不一致"; exit 1; }
+            || { echo "::error::CMakeLists project VERSION does not match versions.env"; exit 1; }
           if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
             [ "${GITHUB_REF_NAME}" = "v${PS_APP_VERSION}" ] \
-              || { echo "::error::tag ${GITHUB_REF_NAME} 必须等于 v${PS_APP_VERSION}"; exit 1; }
+              || { echo "::error::tag ${GITHUB_REF_NAME} must equal v${PS_APP_VERSION}"; exit 1; }
           fi
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain (MSVC target)
+        uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-pc-windows-msvc
 
-      - name: 安装 Qt 6.2.4 (MSVC)
+      - name: Install Qt 6.2.4 (MSVC)
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.PS_QT_VER }}
           arch: 'win64_msvc2019_64'
           modules: 'qtcharts'
 
-      - name: 配置 MSVC 环境
+      - name: Set up MSVC build environment
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
-      - name: 确保 NSIS
+      - name: Ensure NSIS is installed
         shell: pwsh
         run: |
           $n = "$env:ProgramFiles\NSIS\makensis.exe"
           if (-not (Test-Path $n)) { choco install nsis -y --no-progress }
 
-      - name: sccache
+      - name: Set up sccache
         uses: hendrikmuhs/ccache-action@v1
         with:
           key: windows-release
           variant: sccache
 
-      - name: 配置 + 构建
+      - name: Configure CMake
         shell: pwsh
         run: |
-          # QT_ROOT_DIR 已含 msvc2019_64（install-qt-action v4），不能再拼一层。
+          # QT_ROOT_DIR already contains msvc2019_64 (install-qt-action v4); do not append another level.
           cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" `
             -DPS_BUILD_TESTS=OFF `
             -DCMAKE_C_COMPILER_LAUNCHER=sccache `
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-          cmake --build build --target plotscope-gui plotscope
 
-      - name: 出安装器 + 便携包
+      - name: Build targets (plotscope-gui, plotscope)
+        shell: pwsh
+        run: cmake --build build --target plotscope-gui plotscope
+
+      - name: Build installer and portable archive
         shell: pwsh
         run: |
           powershell -ExecutionPolicy Bypass -File tools/pack-windows.ps1 `
             -BuildDir build -QtDir "$env:QT_ROOT_DIR" -OutDir dist
 
-      - name: 冒烟（静默安装 → 跑 CLI → 卸载）
+      - name: Smoke test - silent install
         shell: pwsh
         run: |
           $setup = Get-ChildItem dist -Filter '*windows-*-setup.exe' | Select-Object -First 1
-          if (-not $setup) { throw "未找到安装器" }
+          if (-not $setup) { throw "Installer not found" }
           Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
           $cli = "$env:ProgramFiles\PlotScope\bin\plotscope.exe"
-          if (-not (Test-Path $cli)) { throw "静默安装后找不到 $cli" }
+          if (-not (Test-Path $cli)) { throw "Could not find $cli after silent install" }
+          "Silent install smoke test passed"
+
+      - name: Smoke test - installed CLI
+        shell: pwsh
+        run: |
+          $cli = "$env:ProgramFiles\PlotScope\bin\plotscope.exe"
+          if (-not (Test-Path $cli)) { throw "Could not find $cli" }
           & $cli --help | Out-Null
-          if ($LASTEXITCODE -ne 0) { throw "安装后的 CLI 冒烟失败（exit $LASTEXITCODE）" }
+          if ($LASTEXITCODE -ne 0) { throw "Installed CLI smoke test failed (exit $LASTEXITCODE)" }
+          "Installed CLI smoke test passed"
+
+      - name: Smoke test - uninstall
+        shell: pwsh
+        run: |
           & "$env:ProgramFiles\PlotScope\uninstall.exe" /S
           Start-Sleep -Seconds 5
-          if (Test-Path "$env:ProgramFiles\PlotScope") { throw "卸载后目录仍在" }
-          "Windows 安装/运行/卸载冒烟通过"
+          if (Test-Path "$env:ProgramFiles\PlotScope") { throw "Installation directory still exists after uninstall" }
+          "Uninstall smoke test passed"
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload Windows packages artifact
+        uses: actions/upload-artifact@v4
         with:
           name: windows-package
           path: |
@@ -234,15 +276,16 @@ jobs:
           if-no-files-found: error
 
   macos:
-    runs-on: macos-13        # Intel；macos-14-arm64 label 在本仓库不可用，会直接 cancelled
+    runs-on: macos-13        # Intel; the macos-14-arm64 label is unavailable in this repo and gets cancelled
     timeout-minutes: 150
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
 
-      - name: 校验版本（versions.env 唯一来源）
+      - name: Verify version (versions.env is the single source of truth)
         shell: bash
         run: |
           set -euo pipefail
@@ -250,53 +293,57 @@ jobs:
           echo "PS_VER=${PS_APP_VERSION}" >> "$GITHUB_ENV"
           echo "PS_QT_VER=${PS_QT_VERSION}" >> "$GITHUB_ENV"
           grep -q "project(PlotScope VERSION ${PS_APP_VERSION}" CMakeLists.txt \
-            || { echo "::error::CMakeLists 的 project VERSION 与 versions.env 不一致"; exit 1; }
+            || { echo "::error::CMakeLists project VERSION does not match versions.env"; exit 1; }
           if [ "${GITHUB_REF_TYPE:-}" = "tag" ]; then
             [ "${GITHUB_REF_NAME}" = "v${PS_APP_VERSION}" ] \
-              || { echo "::error::tag ${GITHUB_REF_NAME} 必须等于 v${PS_APP_VERSION}"; exit 1; }
+              || { echo "::error::tag ${GITHUB_REF_NAME} must equal v${PS_APP_VERSION}"; exit 1; }
           fi
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: 工具
+      - name: Install build tools (ninja, Xcode)
         run: |
           command -v ninja || HOMEBREW_NO_AUTO_UPDATE=1 brew install ninja
           xcodebuild -version
 
-      - name: 安装 Qt 6.2.4
+      - name: Install Qt 6.2.4
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.PS_QT_VER }}
           host: mac
           modules: 'qtcharts'
 
-      - name: ccache
+      - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1
         with:
           key: macos-release
 
-      - name: 配置 + 构建
+      - name: Configure CMake
         run: |
-          # QT_ROOT_DIR 已是绝对路径且含 clang_64（install-qt-action v4），
-          # 不能再加 $(pwd)/ 前缀或拼 /macos。
+          # QT_ROOT_DIR is already an absolute path containing clang_64 (install-qt-action v4);
+          # do not prepend $(pwd)/ or append /macos.
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
             -DPS_BUILD_TESTS=OFF \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-          cmake --build build --target plotscope-gui plotscope -j"$(sysctl -n hw.ncpu)"
 
-      - name: 出 .app + dmg
+      - name: Build targets (plotscope-gui, plotscope)
+        run: cmake --build build --target plotscope-gui plotscope -j"$(sysctl -n hw.ncpu)"
+
+      - name: Build .app bundle and DMG
         env:
-          # 有证书/公证凭据就签名+公证；没有则脚本自动走 ad-hoc 签名。
+          # With signing/notarization credentials the script signs and notarizes;
+          # otherwise it falls back to ad-hoc signing.
           MACOS_SIGNING_IDENTITY: ${{ secrets.MACOS_SIGNING_IDENTITY }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: bash tools/pack-macos.sh build dist "$QT_ROOT_DIR"
 
-      - name: 冒烟（挂载 dmg 跑 CLI）
+      - name: Smoke test - DMG CLI
         run: |
           set -euo pipefail
           MP="$(mktemp -d)/psdmg"
@@ -304,9 +351,10 @@ jobs:
           hdiutil attach dist/*.dmg -mountpoint "$MP" -nobrowse -quiet
           trap 'hdiutil detach "$MP" -quiet || true' EXIT
           "$MP/PlotScope.app/Contents/MacOS/plotscope" --help >/dev/null
-          echo "dmg 挂载后 CLI 冒烟通过"
+          echo "DMG CLI smoke test passed after mounting"
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
         with:
           name: macos-dmg
           path: dist/*.dmg
@@ -317,17 +365,18 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: 汇总产物
+      - name: Collect artifacts into output directory
         run: |
           mkdir -p out
           find artifacts -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' -o -name '*.exe' -o -name '*.zip' \) -exec cp {} out/ \;
           ls -lh out
 
-      - name: 挂到 Release
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: out/*

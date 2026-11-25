@@ -1,14 +1,15 @@
 name: ci
 
-# 验收门禁（契约 §7 第 10/15 条）：每次推 main / PR 都跑一遍全量构建 + ctest。
+# Acceptance gate (contract §7, clauses 10/15): every push to main / PR runs a full build + ctest.
 #
-# 为什么单独一条：release.yml 只做发布包（PS_BUILD_TESTS=OFF），
-# 而验收第 15 条要求「死插槽检查入 CI」——那两条检查（test_architecture 的
-# 表检查 + test_gui 的零消费者检查）都活在 ctest 里，没有这个 job 就等于
-# 只在本地手跑。本 job 只做 Linux + offscreen，够把 T1/T3/D13 这些结构性回归拦住。
+# Why a separate workflow: build-packages.yml only builds release packages (PS_BUILD_TESTS=OFF),
+# while acceptance clause 15 requires "dead-slot checks in CI" — those two checks
+# (test_architecture's table check + test_gui's zero-consumer check) live inside ctest,
+# so without this job they would only ever be run by hand locally. This job only does
+# Linux + offscreen, enough to catch structural regressions like T1/T3/D13.
 #
-# ⚠️ 与 release.yml 同样前提：这是 GitHub Actions 配置，Gitee 主仓不执行，
-#    需仓库镜像到 GitHub。
+# NOTE: Same prerequisite as build-packages.yml: this is GitHub Actions configuration.
+#   The Gitee primary repository does not run it; the repo must be mirrored to GitHub.
 
 on:
   push:
@@ -17,24 +18,29 @@ on:
     branches: [main]
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           submodules: recursive
 
-      - name: 读取版本（versions.env 唯一来源）
+      - name: Verify version (versions.env is the single source of truth)
         shell: bash
         run: |
           set -euo pipefail
           source versions.env
           echo "PS_QT_VER=${PS_QT_VERSION}" >> "$GITHUB_ENV"
 
-      - name: 安装构建依赖
+      - name: Install build dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build build-essential curl file \
@@ -43,21 +49,24 @@ jobs:
             libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
             libxkbcommon-x11-0 libfontconfig1 libdbus-1-3
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: 安装 Qt
+      - name: Install Qt 6.2.4
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.PS_QT_VER }}
           modules: 'qtcharts'
 
-      - name: ccache
+      - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1
         with:
           key: linux-ci-test
 
-      - name: 配置
+      - name: Configure CMake
         run: |
+          # PS_BUILD_TESTS=ON is the point of this job: it pulls in the ctest suite
+          # (test_architecture / test_gui) that enforces the acceptance gate.
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
@@ -65,23 +74,23 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
-      - name: 构建
+      - name: Build targets (all, including tests)
         run: cmake --build build -j"$(nproc)"
 
-      - name: ctest（offscreen，验收 10/15 的判定面）
+      - name: Run CTest (offscreen)
         env:
           QT_QPA_PLATFORM: offscreen
         run: ctest --test-dir build -j"$(nproc)" --output-on-failure
 
-      - name: 失败清单（无论成败都打印，便于定位）
+      - name: Print ctest failure summary (always, for diagnostics)
         if: always()
         run: |
           echo "=== LastTestsFailed.log ==="
-          cat build/Testing/Temporary/LastTestsFailed.log || echo "(无失败清单)"
-          echo "=== LastTest.log（尾部 300 行）==="
+          cat build/Testing/Temporary/LastTestsFailed.log || echo "(no failure list)"
+          echo "=== LastTest.log (tail 300 lines) ==="
           tail -n 300 build/Testing/Temporary/LastTest.log || true
 
-      - name: 回传日志
+      - name: Upload ctest logs
         if: always()
         uses: actions/upload-artifact@v4
         with:

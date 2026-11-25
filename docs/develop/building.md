@@ -122,7 +122,7 @@ Debug / Release 两种配置都要过。测试用 `assert` 驱动，多配置生
 
 ## 出发布包
 
-推 `v*` tag 或手动触发 `.github/workflows/release.yml`，三平台各自出包并上传 artifact；完整矩阵、体积与签名说明见 [packaging.md](packaging.md)。本地出包需先构建 `plotscope-gui plotscope` 两个目标：
+推 `v*` tag 或手动触发 `.github/workflows/build-packages.yml`，三平台各自出包并上传 artifact；完整矩阵、体积与签名说明见 [packaging.md](packaging.md)。本地出包需先构建 `plotscope-gui plotscope` 两个目标：
 
 ```bash
 tools/pack-appimage.sh build dist                    # Linux AppImage（首选）
