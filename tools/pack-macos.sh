@@ -70,7 +70,10 @@ done
 iconutil -c icns "$ICONSET" -o "$APP/Contents/Resources/plotscope.icns" || log "警告：icns 生成失败，用默认图标"
 
 log "macdeployqt 部署 Qt 框架与插件"
-"$QT_DIR/bin/macdeployqt" "$APP" -always-overwrite -no-codesign 2>&1 | sed 's/^/[macdeployqt] /' || die "macdeployqt 失败"
+# 不要传 -no-codesign：Qt 6.2.4 的 macdeployqt 不认这个参数，会直接报
+# 'ERROR: Unknown argument "-no-codesign"' 并返回非 0（build-packages run 45676009156）。
+# 签名统一由下面的 codesign 处理（--force 会覆盖 macdeployqt 的默认签名）。
+"$QT_DIR/bin/macdeployqt" "$APP" -always-overwrite 2>&1 | sed 's/^/[macdeployqt] /' || die "macdeployqt 失败"
 
 # CLI 也要能独立跑：macdeployqt 只处理主程序，CLI 依赖 Core，把 Core 框架已存在的即可。
 # 若 CLI 需要额外框架，macdeployqt 已随 GUI 一起拷入 Frameworks。
