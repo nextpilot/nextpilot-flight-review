@@ -7,3 +7,9 @@
 pynmea2==1.19.0
 pyubx2==1.4.1
 aqtinstall==3.3.0
+
+# 格式化工具。版本必须与 .github/workflows/lint.yml 里固定的版本严格一致，
+# 否则会出现"本地已格式化、CI 仍报 diff"。装进 venv 后提供三个入口：
+# clang-format / git-clang-format / clang-format-diff.py（venv/bin 已在 PATH），
+# `cmake --build build --target format` 与 .githooks/pre-commit 直接可用。
+clang-format==23.1.5

@@ -87,6 +87,8 @@ git config core.hooksPath .githooks
 
 hook 只格式化暂存区的 C++ 变更行，并把结果重新暂存（不会改动未暂存的文件）。CI 的 `lint.yml` 里 `format` job **只检查、不修复**——构建期自动改写会让门禁永远绿，所以格式化始终是开发机侧的动作。本地 clang-format 版本要与 CI 的 `23.1.5` 对齐，否则会出现"本地已格式化、CI 仍报 diff"。
 
+工具不用单独装：`clang-format==23.1.5` 已写进 `tools/requirements.txt`，`tools/ubuntu-setup.sh --install --python` 会把它装进 `$PS_DEPS_ROOT/toolchain/python/venv`，该 venv 的 `bin` 目录本来就在编写的 shell 块 PATH 里（脚本不做 `source activate`，而是直接注入 PATH），因此 `clang-format`、`git-clang-format`、`clang-format-diff.py` 三个入口开箱可用。手动装的话：`$PS_DEPS_ROOT/toolchain/python/venv/bin/pip install -r tools/requirements.txt`。
+
 ## 构建加速开关
 
 开关的作用与实测数据见 `build-performance.md`，这里只列默认值与适用场景。**三个开关的默认值都偏向"日常热迭代"**：缓存与增量优先，冷建优化留给 CI。
