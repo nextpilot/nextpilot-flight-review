@@ -20,7 +20,7 @@ BUILD_DIR="${1:-$ROOT/build}"
 OUT_DIR="${2:-$ROOT/dist}"
 QT_DIR="${3:-}"
 
-GUI_BIN="$BUILD_DIR/src/application/gui/plotscope-gui"
+GUI_BIN="$BUILD_DIR/src/application/assembly/plotscope-gui"
 CLI_BIN="$BUILD_DIR/src/application/app/plotscope"
 TOOLS_DIR="$ROOT/.tools"
 ARCH="${ARCH:-x86_64}"

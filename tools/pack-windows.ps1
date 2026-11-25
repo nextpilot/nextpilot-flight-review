@@ -30,8 +30,8 @@ function Find-First($candidates, $what) {
 
 # MSVC 多配置在 Release\ 下，Ninja 单配置直接在目标目录。
 $gui = Find-First @(
-    "$BuildDir\src\application\gui\Release\plotscope-gui.exe",
-    "$BuildDir\src\application\gui\plotscope-gui.exe"
+    "$BuildDir\src\application\assembly\Release\plotscope-gui.exe",
+    "$BuildDir\src\application\assembly\plotscope-gui.exe"
 ) "plotscope-gui.exe"
 $cli = Find-First @(
     "$BuildDir\src\application\app\Release\plotscope.exe",

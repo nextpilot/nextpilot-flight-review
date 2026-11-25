@@ -202,7 +202,7 @@ offscreen 截图 + Qt 事件注入的可复用工具，用于人工目检、场�
 ```bash
 xvfb-run -a -s '-screen 0 1600x1000x24' bash -c '
   LD_LIBRARY_PATH="${PS_QT_DIR:-$HOME/.ps-deps/toolchain/qt/6.2.4/gcc_64}/lib" QT_QPA_PLATFORM=xcb \
-  ./build/src/application/gui/plotscope-gui tests/fixture/demo_flight.csv
+  ./build/src/application/assembly/plotscope-gui tests/fixture/demo_flight.csv
 '
 ```
 

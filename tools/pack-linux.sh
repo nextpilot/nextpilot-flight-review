@@ -21,7 +21,7 @@ set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="${1:-$ROOT/build}"
 OUT_DIR="${2:-$ROOT/dist}"
-GUI_BIN="$BUILD_DIR/src/application/gui/plotscope-gui"
+GUI_BIN="$BUILD_DIR/src/application/assembly/plotscope-gui"
 CLI_BIN="$BUILD_DIR/src/application/app/plotscope"
 
 log() { printf '[pack-linux] %s\n' "$*"; }

@@ -117,13 +117,13 @@ Debug / Release 两种配置都要过。测试用 `assert` 驱动，多配置生
 | 产物 | 路径 |
 |---|---|
 | CLI（headless） | `build/src/application/app/plotscope` |
-| GUI | `build/src/application/gui/plotscope-gui` |
+| GUI | `build/src/application/assembly/plotscope-gui` |
 | 测试 | `build/tests/ps_test_*` |
 
 ## 运行
 
 ```bash
-./build/src/application/gui/plotscope-gui
+./build/src/application/assembly/plotscope-gui
 ./build/src/application/app/plotscope --info tests/fixture/demo_flight.csv
 ```
 
@@ -131,7 +131,7 @@ Debug / Release 两种配置都要过。测试用 `assert` 驱动，多配置生
 
 ```bash
 xvfb-run -a -s '-screen 0 1600x1000x24' \
-  env QT_QPA_PLATFORM=xcb ./build/src/application/gui/plotscope-gui
+  env QT_QPA_PLATFORM=xcb ./build/src/application/assembly/plotscope-gui
 ```
 
 ## 设置存储

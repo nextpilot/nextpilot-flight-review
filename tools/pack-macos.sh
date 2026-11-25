@@ -23,7 +23,7 @@ die() { log "错误：$*" >&2; exit 1; }
 
 [ "$(uname -s)" = "Darwin" ] || die "本脚本只能在 macOS 上运行（当前 $(uname -s)）"
 
-GUI_BIN="$BUILD_DIR/src/application/gui/plotscope-gui"
+GUI_BIN="$BUILD_DIR/src/application/assembly/plotscope-gui"
 CLI_BIN="$BUILD_DIR/src/application/app/plotscope"
 [ -f "$GUI_BIN" ] || die "找不到 GUI $GUI_BIN"
 [ -f "$CLI_BIN" ] || die "找不到 CLI $CLI_BIN"
