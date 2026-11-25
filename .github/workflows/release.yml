@@ -2,15 +2,22 @@ name: release-packages
 
 # 三平台发布包：Linux AppImage / Windows 安装器+便携包 / macOS dmg。
 #
-# 触发：推 v* tag 或手动 workflow_dispatch。
+# 触发（三种，方案 A：验证构建与正式发布分层）：
+#   1. 推分支名以 -workflow-test-packing 结尾的分支 → 三平台构建 + 出包 + 冒烟，
+#      产物仅上传 artifact，不挂 Release（release job 的 tag 门禁会跳过）。
+#      用途：日常改打包脚本/CI 后推分支即可回归验证，无需手动点触发。
+#   2. 推 v* tag → 完整发布，构建产物挂到 GitHub Release。
+#   3. 手动 workflow_dispatch → 同 tag，但需手动指定 ref。
 #
 # ⚠️ 运行平台：本文件是 GitHub Actions 配置。Gitee 主仓不会执行它，
 #    需要仓库同时镜像到 GitHub（或在本机直接跑 tools/pack-*.sh）。
+#    Gitee 推送会同步到 GitHub，故推上述标记分支即会触发本工作流。
 #    三个 job 各自在原生 runner 上构建：macOS 包只能在 macOS 上出，
 #    Windows 安装器必须在 Windows 上做 windeployqt。
 
 on:
   push:
+    branches: ['**/*-workflow-test-packing']
     tags: ['v*']
   workflow_dispatch:
 
@@ -65,16 +72,17 @@ jobs:
 
       - name: 配置 + 构建
         run: |
+          # QT_ROOT_DIR 已含 gcc_64（install-qt-action v4），不能再拼一层。
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR/gcc_64" \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
             -DPS_BUILD_TESTS=OFF \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
           cmake --build build --target plotscope-gui plotscope -j"$(nproc)"
 
       - name: 出 AppImage
-        run: bash tools/pack-appimage.sh build dist "$QT_ROOT_DIR/gcc_64"
+        run: bash tools/pack-appimage.sh build dist "$QT_ROOT_DIR"
 
       - name: 出 deb 安装包
         run: bash tools/pack-deb.sh build dist
@@ -187,9 +195,10 @@ jobs:
       - name: 配置 + 构建
         shell: pwsh
         run: |
+          # QT_ROOT_DIR 已含 msvc2019_64（install-qt-action v4），不能再拼一层。
           cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR\msvc2019_64" `
+            -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" `
             -DPS_BUILD_TESTS=OFF `
             -DCMAKE_C_COMPILER_LAUNCHER=sccache `
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
@@ -199,7 +208,7 @@ jobs:
         shell: pwsh
         run: |
           powershell -ExecutionPolicy Bypass -File tools/pack-windows.ps1 `
-            -BuildDir build -QtDir "$env:QT_ROOT_DIR\msvc2019_64" -OutDir dist
+            -BuildDir build -QtDir "$env:QT_ROOT_DIR" -OutDir dist
 
       - name: 冒烟（静默安装 → 跑 CLI → 卸载）
         shell: pwsh
@@ -225,7 +234,7 @@ jobs:
           if-no-files-found: error
 
   macos:
-    runs-on: macos-14        # Apple Silicon
+    runs-on: macos-13        # Intel；macos-14-arm64 label 在本仓库不可用，会直接 cancelled
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
@@ -268,9 +277,11 @@ jobs:
 
       - name: 配置 + 构建
         run: |
+          # QT_ROOT_DIR 已是绝对路径且含 clang_64（install-qt-action v4），
+          # 不能再加 $(pwd)/ 前缀或拼 /macos。
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$(pwd)/$QT_ROOT_DIR/macos" \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
             -DPS_BUILD_TESTS=OFF \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
@@ -283,7 +294,7 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
-        run: bash tools/pack-macos.sh build dist "$(pwd)/$QT_ROOT_DIR/macos"
+        run: bash tools/pack-macos.sh build dist "$QT_ROOT_DIR"
 
       - name: 冒烟（挂载 dmg 跑 CLI）
         run: |
