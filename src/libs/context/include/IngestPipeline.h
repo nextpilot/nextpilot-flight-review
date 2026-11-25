@@ -110,6 +110,11 @@ public:
     // 诊断：某通道最近一次错误。
     QString channelError(int sourceId, const QString &parserId) const;
 
+Q_SIGNALS:
+    // 解析进度（验收 7 状态栏 data.loading.progress）：由 parser 的 sink.progress 回调转发。
+    // done/total 语义随 parser（CSV 传 consumed 字节、total=0 表示总量未知）。
+    void progressChanged(int sourceId, uint64_t done, uint64_t total);
+
 private:
     // sink 回调：把一批行落进该通道自己的数据集。
     static int32_t onFrameBatch(void *ctx, const PsFrameBatch *batch);

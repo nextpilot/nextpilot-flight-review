@@ -45,6 +45,7 @@
 #include "FilterEditorDialog.h"
 
 #include "AppContext.h"
+#include "IngestPipeline.h"
 #include "ChannelMime.h"
 #include "RegistryTree.h"
 #include "SettingsStore.h"
@@ -259,9 +260,19 @@ int main(int argc, char *argv[])
         ui->updateStatus(QStringLiteral("data.loading.progress"), QStringLiteral("加载中 42%"));
         CHECK(ui->statusText(QStringLiteral("data.loading.progress")) == QStringLiteral("加载中 42%"));
 
+        // 真实进度链路（P2）：摄取管道 progressChanged 必须被 data 模块订阅并推到状态栏，
+        // total>0 显示百分比、total=0 显示已读字节数。此前只有 start/finish 两端点占位。
+        IngestPipeline &ingest = application.context().ingest();
+        Q_EMIT ingest.progressChanged(1, 42, 100);
+        CHECK(ui->statusText(QStringLiteral("data.loading.progress")) ==
+              QStringLiteral("加载 42%"));
+        Q_EMIT ingest.progressChanged(1, 512, 0);
+        CHECK(ui->statusText(QStringLiteral("data.loading.progress")) ==
+              QStringLiteral("加载 512 字节"));
+
         // 注：游标 10Hz 节流已归位 plot 域（PlotWorkspace::pushCursorStatus，D2），
         // 壳与 hub 不认识业务键；游标真实推送路径的断言见下文「游标读数」行为段。
-        OK("状态栏契约：4 项在跑 + 推模式（节流归 plot 域）");
+        OK("状态栏契约：4 项在跑 + 推模式 + 摄取真实进度（节流归 plot 域）");
     }
 
     // --- 0a2) 真跑一次 preferences.open：GUI 系统级 handler 必须弹得出、收得回 ---

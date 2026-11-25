@@ -320,9 +320,14 @@ int32_t IngestPipeline::onFrameBatch(void *ctx, const PsFrameBatch *batch)
     return 0;
 }
 
-void IngestPipeline::onProgress(void *, uint64_t, uint64_t)
+void IngestPipeline::onProgress(void *ctx, uint64_t done, uint64_t total)
 {
-    // 进度上报预留：宿主可据此更新 UI 进度条。
+    // 进度上报（验收 7）：从 sink 上下文反查管道与源，转成 Qt 信号给状态栏消费者。
+    // 与 onFrameBatch 同构——上下文里存了 pipeline 与 sourceId。
+    auto *sc = static_cast<SinkContext *>(ctx);
+    if (!sc || !sc->pipeline)
+        return;
+    Q_EMIT sc->pipeline->progressChanged(sc->sourceId, done, total);
 }
 
 } // namespace nextpilot::plotscope::context

@@ -2,6 +2,7 @@
 
 #include "BuiltinModuleHub.h"
 #include "DatasetHub.h"
+#include "IngestPipeline.h"
 #include "ErrorCodes.h"
 #include "Events.h"
 #include "Contribution.h"
@@ -197,6 +198,20 @@ void DataModule::onAttach(IUiContext &ui)
                 m_ui->updateStatus(QStringLiteral("data.loading.progress"),
                                    ok ? QStringLiteral("空闲") : QStringLiteral("加载失败"));
         });
+
+        // 加载进度（验收 7）：订阅摄取管道的真实进度，覆盖上面 start 端的"加载中…"占位。
+        // total=0（CSV 等流式 parser 上报 consumed 字节、总量未知）显示"已读 N 字节"；
+        // total>0 显示百分比。finish 端仍回"空闲"/"加载失败"，不由本订阅收尾。
+        IngestPipeline &ingest = appCtx.ingest();
+        QObject::connect(&ingest, &IngestPipeline::progressChanged, this,
+                         [this](int, uint64_t done, uint64_t total) {
+                             if (!m_ui)
+                                 return;
+                             const QString text = total > 0
+                                 ? QStringLiteral("加载 %1%").arg(done * 100 / total)
+                                 : QStringLiteral("加载 %1 字节").arg(done);
+                             m_ui->updateStatus(QStringLiteral("data.loading.progress"), text);
+                         });
     }
     // GUI 环境下才走到这里（headless 时宿主不调用 onAttach）。
     //
