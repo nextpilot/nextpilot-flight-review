@@ -739,7 +739,7 @@ void PlotModule::onAttach(IUiContext &ui)
         UiAction a;
         a.id = id;
         a.label = label;
-        a.area = area;
+        a.slotId = area;
         a.icon = icon;
         a.order = order;
         a.data = data;

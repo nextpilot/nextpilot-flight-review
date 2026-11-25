@@ -66,7 +66,7 @@ void ProtocolModule::onAttach(IUiContext &ui)
         UiAction a;
         a.id = id;
         a.label = label;
-        a.area = area;
+        a.slotId = area;
         a.icon = icon;
         a.order = order;
         ui.addAction(a);

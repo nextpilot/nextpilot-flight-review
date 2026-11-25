@@ -33,11 +33,11 @@ enum class SlotKind
 // 业务 UI 随扩展包装卸，而骨架与模块代码永不改动。
 struct UiSlot
 {
-    QString area;   // 插槽标识（唯一）
+    QString slotId; // 插槽标识（唯一）
     QString label;  // 展示名
     QString owner;  // 声明者（模块/骨架 id），便于归属诊断
     SlotKind kind = SlotKind::RibbonGroup;
-    QString parentArea; // 上级插槽（ribbon group 的父页签等）；空=顶层
+    QString parentSlotId; // 上级插槽（ribbon group 的父页签等）；空=顶层
     int order = 0;       // 同级排序
     QString when;        // 上下文可见性（空=恒真）：Ribbon 上下文页签靠它收起/展开
 };
@@ -73,7 +73,7 @@ public:
     // 壳级页/组清单归 host 层 ShellContributions，业务页/组归各模块 onAttach。
     void declareSlot(const QString &area, const QString &label, const QString &owner,
                      SlotKind kind = SlotKind::RibbonGroup,
-                     const QString &parentArea = QString(), int order = 0,
+                     const QString &parentSlotId = QString(), int order = 0,
                      const QString &when = QString());
 
     // 从工具箱 uiActions 表重新扫描，按 area 绑定到已声明插槽。
@@ -101,7 +101,7 @@ public:
     QStringList areas() const;
     QList<UiSlot> allSlots() const;
     QList<UiSlot> slotsOfKind(SlotKind kind) const;
-    QList<UiSlot> childrenOf(const QString &parentArea) const;
+    QList<UiSlot> childrenOf(const QString &parentSlotId) const;
     const UiSlot *slot(const QString &area) const;
     QList<BoundUiAction> actionsIn(const QString &area) const;
     int boundActionCount() const;

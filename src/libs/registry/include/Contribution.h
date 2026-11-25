@@ -34,7 +34,7 @@ struct UiAction
 {
     QString id;        // 稳定标识，如 "ap.plot.attitude"
     QString label;     // 显示文本，如 "姿态曲线"
-    QString area;      // 目标插槽 id（Ribbon 页/组等挂载点），如 "ribbon.group.plot.series"
+    QString slotId;   // 目标插槽 id（Ribbon 页/组等挂载点），如 "ribbon.group.plot.series"
     QString intentOp;  // 点击后发射的意图 op（空=仅占位）；如 "plot.render"
     QString data;      // 附加数据（可选，如预置的 PlotSpec JSON）
     QString icon;      // 图标名（可选），如 "plot.refresh"；由外壳解析成 QIcon

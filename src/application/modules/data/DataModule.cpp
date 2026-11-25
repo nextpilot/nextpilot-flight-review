@@ -100,7 +100,7 @@ QList<UiAction> DataModule::sourceGalleryActions(const QList<parser::IMessagePar
         UiAction fmt;
         fmt.id = QStringLiteral("data.source.") + driver->id();
         fmt.label = driver->displayName();
-        fmt.area = QStringLiteral("ribbon.group.data.sources");
+        fmt.slotId = QStringLiteral("ribbon.group.data.sources");
         fmt.visual = driver->id();
         fmt.galleryGroup = QStringLiteral("文件格式");
         fmt.icon = QStringLiteral("file_open");
@@ -114,7 +114,7 @@ QList<UiAction> DataModule::sourceGalleryActions(const QList<parser::IMessagePar
             UiAction fav;
             fav.id = QStringLiteral("data.source.common.") + driver->id();
             fav.label = driver->displayName();
-            fav.area = fmt.area;
+            fav.slotId = fmt.slotId;
             fav.visual = driver->id();
             fav.galleryGroup = QStringLiteral("常用");
             fav.icon = QStringLiteral("file_open");
@@ -256,7 +256,7 @@ void DataModule::onAttach(IUiContext &ui)
         UiAction a;
         a.id = id;
         a.label = label;
-        a.area = QStringLiteral("ribbon.group.home.data");
+        a.slotId = QStringLiteral("ribbon.group.home.data");
         a.intentOp = op;
         a.icon = icon;
         a.shortcut = shortcut;
@@ -276,7 +276,7 @@ void DataModule::onAttach(IUiContext &ui)
         UiAction a;
         a.id = id;
         a.label = label;
-        a.area = QStringLiteral("ribbon.group.data.common");
+        a.slotId = QStringLiteral("ribbon.group.data.common");
         a.intentOp = op;
         a.icon = icon;
         a.order = order;
@@ -300,7 +300,7 @@ void DataModule::onAttach(IUiContext &ui)
         UiAction a;
         a.id = id;
         a.label = label;
-        a.area = QStringLiteral("ribbon.group.data.record");
+        a.slotId = QStringLiteral("ribbon.group.data.record");
         a.intentOp = op;
         a.icon = icon;
         a.order = order;

@@ -601,7 +601,7 @@ void ScriptModule::onAttach(IUiContext &ui)
         UiAction a;
         a.id = id;
         a.label = label;
-        a.area = area;
+        a.slotId = area;
         a.data = data; // 额外参数（JSON），经外壳透传给 view action
         a.order = order;
         a.icon = icon;
@@ -625,7 +625,7 @@ void ScriptModule::onAttach(IUiContext &ui)
         UiAction runFile;
         runFile.id = QStringLiteral("app.action.runScript");
         runFile.label = QStringLiteral("运行脚本");
-        runFile.area = QStringLiteral("ribbon.group.script.run");
+        runFile.slotId = QStringLiteral("ribbon.group.script.run");
         runFile.intentOp = QStringLiteral("script.run");
         runFile.icon = QStringLiteral("play");
         runFile.shortcut = QStringLiteral("Ctrl+F5");

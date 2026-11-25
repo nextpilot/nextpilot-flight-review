@@ -202,16 +202,16 @@ int main(int argc, char *argv[])
             if (s.kind == SlotKind::RibbonPage)
             {
                 // 页必须至少有一个分组，否则是空页（死槽）。
-                CHECK(!slotReg.childrenOf(s.area).isEmpty());
+                CHECK(!slotReg.childrenOf(s.slotId).isEmpty());
             }
             else // RibbonGroup
             {
                 // 组要么有动作，要么有子组（嵌套画廊），否则是死槽。
-                const bool hasActions = !slotReg.actionsIn(s.area).isEmpty();
-                const bool hasChildren = !slotReg.childrenOf(s.area).isEmpty();
+                const bool hasActions = !slotReg.actionsIn(s.slotId).isEmpty();
+                const bool hasChildren = !slotReg.childrenOf(s.slotId).isEmpty();
                 if (!(hasActions || hasChildren))
                     fprintf(stderr, "[死槽] area=%s owner=%s（声明了却无动作/子组）\n",
-                            qPrintable(s.area), qPrintable(s.owner));
+                            qPrintable(s.slotId), qPrintable(s.owner));
                 CHECK(hasActions || hasChildren);
             }
         }

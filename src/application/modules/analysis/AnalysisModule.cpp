@@ -189,7 +189,7 @@ private:
                                                            : QStringLiteral("fav"),
                         app);
         a.label = displayLabel(app);
-        a.area = QStringLiteral("ribbon.group.analysis.apps");
+        a.slotId = QStringLiteral("ribbon.group.analysis.apps");
         a.intentOp = QStringLiteral("analysis.run");
         a.data = app;
         a.icon = QStringLiteral("chart");
@@ -303,7 +303,7 @@ void AnalysisModule::onAttach(IUiContext &ui)
         UiAction a;
         a.id = id;
         a.label = label;
-        a.area = slotId;
+        a.slotId = slotId;
         a.intentOp = QStringLiteral("analysis.run");
         a.data = app;
         a.icon = QStringLiteral("chart");

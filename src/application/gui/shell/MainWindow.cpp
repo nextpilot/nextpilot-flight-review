@@ -186,7 +186,7 @@ void MainWindow::declareStandardSlots()
         UiAction a;
         a.id = id;
         a.label = label;
-        a.area = area;
+        a.slotId = area;
         a.intentOp = op;
         a.icon = icon;
         a.shortcut = shortcut;
@@ -1432,7 +1432,7 @@ void MainWindow::registerSlotCommands()
     int added = 0;
     for (const UiSlot &slot : m_context->slotHub().allSlots())
     {
-        for (const BoundUiAction &bound : m_context->slotHub().actionsIn(slot.area))
+        for (const BoundUiAction &bound : m_context->slotHub().actionsIn(slot.slotId))
         {
             const UiAction &ua = bound.action;
             if (ua.id.isEmpty() || seen.contains(ua.id))

@@ -43,7 +43,7 @@ void ReportModule::onAttach(IUiContext &ui)
     UiAction a;
     a.id = QStringLiteral("report.workbench.export");
     a.label = QStringLiteral("导出报告");
-    a.area = QStringLiteral("ribbon.group.report.export");
+    a.slotId = QStringLiteral("ribbon.group.report.export");
     a.icon = QStringLiteral("file_save");
     a.large = true;
     a.order = 0;

@@ -6,14 +6,14 @@ namespace nextpilot::plotscope::registry
 {
 
 void UiSlotHub::declareSlot(const QString &area, const QString &label, const QString &owner,
-                                 SlotKind kind, const QString &parentArea, int order,
+                                 SlotKind kind, const QString &parentSlotId, int order,
                                  const QString &when)
 {
     auto it = std::find_if(m_slots.begin(), m_slots.end(),
-                           [&area](const UiSlot &s) { return s.area == area; });
+                           [&area](const UiSlot &s) { return s.slotId == area; });
     if (it != m_slots.end())
         return; // 已声明，先到者为准
-    m_slots.append(UiSlot{area, label, owner, kind, parentArea, order, when});
+    m_slots.append(UiSlot{area, label, owner, kind, parentSlotId, order, when});
     Q_EMIT objectAdded(area); // M2.8：统一节点信号（带 key）
 }
 
@@ -23,14 +23,14 @@ void UiSlotHub::refreshFrom(const ToolboxHub &registry)
     m_unbound.clear();
     // 预建 slot 集合，确保未声明插槽也能保持声明顺序
     for (const UiSlot &slot : m_slots)
-        m_bound.insert(slot.area, {});
+        m_bound.insert(slot.slotId, {});
 
     // 内容全是数据：直接读 uiActions 表，归属（provider）就在条目里。
     for (const UiAction &action : registry.uiActions.values())
     {
         BoundUiAction bound{action, action.provider};
-        if (m_bound.contains(action.area))
-            m_bound[action.area].append(bound);
+        if (m_bound.contains(action.slotId))
+            m_bound[action.slotId].append(bound);
         else
             m_unbound.append(bound);
     }
@@ -106,7 +106,7 @@ QStringList UiSlotHub::areas() const
 {
     QStringList out;
     for (const UiSlot &s : m_slots)
-        out.append(s.area);
+        out.append(s.slotId);
     return out;
 }
 
@@ -131,11 +131,11 @@ QList<UiSlot> UiSlotHub::slotsOfKind(SlotKind kind) const
     return out;
 }
 
-QList<UiSlot> UiSlotHub::childrenOf(const QString &parentArea) const
+QList<UiSlot> UiSlotHub::childrenOf(const QString &parentSlotId) const
 {
     QList<UiSlot> out;
     for (const UiSlot &s : m_slots)
-        if (s.parentArea == parentArea)
+        if (s.parentSlotId == parentSlotId)
             out.append(s);
     std::sort(out.begin(), out.end(),
               [](const UiSlot &a, const UiSlot &b) { return a.order < b.order; });
@@ -145,7 +145,7 @@ QList<UiSlot> UiSlotHub::childrenOf(const QString &parentArea) const
 const UiSlot *UiSlotHub::slot(const QString &area) const
 {
     for (const UiSlot &s : m_slots)
-        if (s.area == area)
+        if (s.slotId == area)
             return &s;
     return nullptr;
 }

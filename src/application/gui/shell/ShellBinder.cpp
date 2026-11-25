@@ -598,13 +598,13 @@ void ShellBinder::rebuildRibbon()
             continue;
         built << category;
 
-        for (const nextpilot::plotscope::registry::UiSlot &groupSlot : m_slots.childrenOf(pageSlot.area))
+        for (const nextpilot::plotscope::registry::UiSlot &groupSlot : m_slots.childrenOf(pageSlot.slotId))
         {
             if (groupSlot.kind != nextpilot::plotscope::registry::SlotKind::RibbonGroup)
                 continue;
             if (!whenVisible(groupSlot.when))
                 continue;
-            const auto actions = m_slots.actionsIn(groupSlot.area);
+            const auto actions = m_slots.actionsIn(groupSlot.slotId);
             // 空分组不渲染：兼容保留的旧 area（如 home 下的 plottype/sources）
             // 没有 action 时若仍建 panel，会在页上留下几个只有竖排标题的空壳，很难看。
             if (actions.isEmpty())
@@ -721,8 +721,8 @@ void ShellBinder::rebuildRibbon()
                 // 语义型图库（分析应用 / 数据来源）条目图标相似，必须带文字才能分辨；
                 // 图型库靠缩略图本身已可辨认，保留 IconOnly 避免文字挤占缩略图。
                 const bool semanticGallery =
-                    groupSlot.area == QLatin1String("ribbon.group.analysis.apps")
-                    || groupSlot.area == QLatin1String("ribbon.group.data.sources");
+                    groupSlot.slotId == QLatin1String("ribbon.group.analysis.apps")
+                    || groupSlot.slotId == QLatin1String("ribbon.group.data.sources");
                 for (const QString &g : galleryOrder)
                 {
                     auto *grp = gallery->addCategoryActions(g, galleryActions.value(g));
@@ -1570,7 +1570,7 @@ bool ShellBinder::setRibbonPage(const QString &area)
     const QList<UiSlot> pages = m_slots.slotsOfKind(SlotKind::RibbonPage);
     for (int i = 0; i < pages.size(); ++i)
     {
-        if (pages.at(i).area != area)
+        if (pages.at(i).slotId != area)
             continue;
         if (i >= m_ribbon->categoryPages().size())
             return false;
@@ -1587,7 +1587,7 @@ QString ShellBinder::currentRibbonPageArea() const
         return QString();
     const QList<UiSlot> pages = m_slots.slotsOfKind(SlotKind::RibbonPage);
     const int index = m_ribbon->currentIndex();
-    return index >= 0 && index < pages.size() ? pages.at(index).area : QString();
+    return index >= 0 && index < pages.size() ? pages.at(index).slotId : QString();
 }
 
 QJsonObject ShellBinder::captureState() const

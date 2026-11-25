@@ -390,7 +390,7 @@ int main(int argc, char **argv)
                 {
                     CHECK(fmt->label == d->displayName());
                     CHECK(fmt->visual == d->id());
-                    CHECK(fmt->area == QStringLiteral("ribbon.group.data.sources"));
+                    CHECK(fmt->slotId == QStringLiteral("ribbon.group.data.sources"));
                     CHECK(fmt->galleryGroup == QStringLiteral("文件格式"));
                     CHECK(fmt->intentOp == QStringLiteral("data.load"));
                     fmtIds.insert(fmtId);
@@ -486,7 +486,7 @@ int main(int argc, char **argv)
         for (const UiSlot &s : slotReg.allSlots())
         {
             CHECK(s.kind == SlotKind::RibbonPage || s.kind == SlotKind::RibbonGroup);
-            CHECK(s.area.startsWith(QStringLiteral("ribbon.")));
+            CHECK(s.slotId.startsWith(QStringLiteral("ribbon.")));
         }
 
         // 旧方位名 / 菜单名不得再作为插槽存在（区域走 Region 枚举，不进注册表）。

@@ -247,9 +247,9 @@ int main(int argc, char **argv)
         const auto &slotReg = application.host().uiSlots();
         for (const nextpilot::plotscope::registry::UiSlot &slot : slotReg.allSlots())
         {
-            const auto actions = slotReg.actionsIn(slot.area);
+            const auto actions = slotReg.actionsIn(slot.slotId);
             fprintf(stdout, "[%s] %s (%s) <- %d 项\n",
-                    u8(slot.area), u8(slot.label),
+                    u8(slot.slotId), u8(slot.label),
                     u8(slot.owner), static_cast<int>(actions.size()));
             for (const nextpilot::plotscope::registry::BoundUiAction &b : actions)
                 fprintf(stdout, "    %-24s %-14s op=%s (来自 %s)\n",

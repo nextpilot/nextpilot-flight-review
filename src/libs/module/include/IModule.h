@@ -68,8 +68,8 @@ public:
     virtual void setActivityBadge(const QString &activityId, int count) = 0;
 
     // 往已声明的插槽里放一个动作（ribbon 按钮 / 图库项）。
-    // 归属插槽由 action.area 单一来源给出——不另传 area 参数，
-    // 杜绝"参数 area 与 action.area 不一致"的双源隐患。
+    // 归属插槽由 action.slotId 单一来源给出——不另传 slotId 参数，
+    // 杜绝"参数 area 与 action.slotId 不一致"的双源隐患。
     // 动态可见性用 action.when 表达（命令层 when 求值器），不再设动态 provider 通道。
     virtual void addAction(const nextpilot::plotscope::registry::UiAction &action) = 0;
 

@@ -134,8 +134,8 @@ void GuiContext::setActivityBadge(const QString &activityId, int count)
 void GuiContext::addAction(const UiAction &action)
 {
     // 模块本地登记的入口，provider 记为 "module"，卸载时按 provider 清理。
-    // 归属插槽取 action.area 单一来源（接口已不再另传 area 参数）。
-    m_slots.bindLocal(action.area, action, QStringLiteral("module"));
+    // 归属插槽取 action.slotId 单一来源（接口已不再另传 area 参数）。
+    m_slots.bindLocal(action.slotId, action, QStringLiteral("module"));
     if (m_binder)
         m_binder->rebuildRibbon();
 }
