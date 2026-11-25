@@ -23,6 +23,9 @@ if(PS_BUILD_BARE)
 
     include(${CMAKE_SOURCE_DIR}/cmake/ShellLinkGuard.cmake)
     ps_guard_shell_links(ps_shell_bare)
+    # 验收 20：闭包层面也断言一次（直接面已由 ps_guard_shell_links 拦住，
+    # 这里防 libs 层某个 INTERFACE 把 ps_module_* 传递进来）。
+    ps_guard_closure_has_no_business(ps_shell_bare)
 
     ps_deploy_windows_runtime(ps_shell_bare)
 endif()

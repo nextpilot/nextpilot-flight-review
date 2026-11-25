@@ -33,14 +33,10 @@ target_link_libraries(ps_app PUBLIC
     ps_host ps_context ps_intent ps_recording Qt6::Core)
 set_target_properties(ps_app PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
 
-# 最小 app 断言（契约 §11 链接关 / 验收 20）：ps_app 的依赖里不许出现业务模块。
+# 最小 app 断言（契约 §11 链接关 / 验收 20）：ps_app 的**传递闭包**里不许出现业务模块。
 # 一旦被 PUBLIC 链住，"换个产品只换 modules 集合"就不成立了。
-get_target_property(_ps_app_iface ps_app INTERFACE_LINK_LIBRARIES)
-foreach(_l IN LISTS _ps_app_iface)
-    if(_l MATCHES "^ps_(module|toolbox|parser)_")
-        message(FATAL_ERROR "ps_app 链了业务模块 ${_l}：核心必须与业务解耦（契约 §11）")
-    endif()
-endforeach()
+include(${CMAKE_SOURCE_DIR}/cmake/ShellLinkGuard.cmake)
+ps_guard_closure_has_no_business(ps_app)
 
 # --- cli：一次性批处理入口（只依赖 Core，不链接 Qt Widgets） ---
 # 保证无显示环境下也能跑（CI、服务器、批处理）。
