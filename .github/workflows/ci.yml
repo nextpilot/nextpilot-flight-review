@@ -38,7 +38,7 @@ jobs:
         build_type: [Release, Debug]
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           submodules: recursive
@@ -94,7 +94,31 @@ jobs:
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build targets (all, including tests)
-        run: cmake --build build -j"$(nproc)"
+        # 与两个跨平台编译门禁同款诊断：失败时 summary 写尾部、并给每条错误一行带上下文的
+        # annotation。Linux 的 GNU ar 容忍空归档，最容易出现"绿着但没编出东西"的假绿，
+        # 所以 pattern 也覆盖 ar:/ld:/Undefined symbols。
+        run: |
+          set -o pipefail
+          LOG="$RUNNER_TEMP/build.log"
+          if ! { echo "__PS_BUILD_LOG_START__"; cmake --build build -j"$(nproc)"; } 2>&1 | tee "$LOG"; then
+            {
+              echo '### Build failed on Linux — last 150 lines'
+              echo '```'
+              tail -150 "$LOG"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            TAIL_LOG="$RUNNER_TEMP/build.tail"
+            marker=$(grep -n '__PS_BUILD_LOG_START__' "$LOG" | tail -1 | cut -d: -f1)
+            marker=${marker:-0}
+            tail -n +"$(( marker + 1 ))" "$LOG" > "$TAIL_LOG"
+            PATTERN='error:|error C[0-9]|fatal error|FAILED:|ld: |ar: |Undefined symbols|undefined reference'
+            grep -nE "$PATTERN" "$TAIL_LOG" | head -8 | while IFS=: read -r ln _; do
+              from=$(( ln > 2 ? ln - 2 : 1 ))
+              ctx=$(sed -n "${from},$(( ln + 3 ))p" "$TAIL_LOG" | tr '\n' ' ' | cut -c1-400)
+              echo "::error::${ctx}"
+            done
+            exit 1
+          fi
 
       - name: Run CTest (offscreen)
         env:
@@ -134,9 +158,15 @@ jobs:
   windows-compile:
     runs-on: windows-2022
     timeout-minutes: 60
+    env:
+      # sccache 的本地缓存必须落在 workspace 内。runner 的默认位置不存在，导致
+      # ccache-action 的 post 步骤报 "Path Validation Error: Path(s) ... do not exist"，
+      # 缓存从来没存上、每次都是全量编译（ci #25 证据）。目录由下面的显式 actions/cache
+      # 负责保存/恢复，不再依赖 action 内部猜测的默认路径。
+      SCCACHE_DIR: ${{ github.workspace }}/.sccache
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           submodules: recursive
@@ -173,9 +203,20 @@ jobs:
           key: windows-compile
           variant: sccache
 
+      - name: Restore sccache cache (explicit path)
+        # 显式缓存 $SCCACHE_DIR：ccache-action 的 post 步骤指向一个不存在的默认目录，
+        # 缓存实际从未落盘。这里自己管路径，key 用少量构建入口文件做指纹（不 hash 全树）。
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.SCCACHE_DIR }}
+          key: sccache-windows-${{ hashFiles('versions.env', 'CMakeLists.txt', 'src/CMakeLists.txt', '.github/workflows/ci.yml') }}
+          restore-keys: |
+            sccache-windows-
+
       - name: Configure CMake
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Force -Path $env:SCCACHE_DIR | Out-Null
           # QT_ROOT_DIR already contains msvc2019_64 (install-qt-action v4); do not append another level.
           cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
@@ -194,16 +235,32 @@ jobs:
         # reliably rendered on the public run page, the summary body is not always
         # exposed in the public HTML.
         run: |
-          cmake --build build --parallel 4 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\build.log"
+          # 哨兵：Actions 会把本步骤脚本回显进日志，pattern 会误命中外层 Select-String 行。
+          # 以哨兵为界，只分析它之后的真实构建输出。
+          "__PS_BUILD_LOG_START__" | Out-File -FilePath "$env:RUNNER_TEMP\build.log" -Encoding utf8
+          cmake --build build --parallel 4 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\build.log" -Append
           if ($LASTEXITCODE -ne 0) {
             "### Build failed on Windows — last 150 lines" | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
             '```' | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
             Get-Content "$env:RUNNER_TEMP\build.log" -Tail 150 | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
             '```' | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
-            Get-Content "$env:RUNNER_TEMP\build.log" |
-              Select-String -Pattern 'error:|fatal error:|FAILED:' |
-              Select-Object -First 8 |
-              ForEach-Object { "::error::$($_.Line)" }
+            # pattern 必须覆盖真实写法：MSVC 的 "fatal error LNK1181" 没有冒号，
+            # 归档/链接失败是 "ar:" / "ld:" / "Undefined symbols"，只写 'error:' 会全漏掉，
+            # annotation 只剩一条 FAILED 行（ci #25 就是这样看不出根因）。
+            $lines = Get-Content "$env:RUNNER_TEMP\build.log"
+            $mark = ($lines | Select-String -Pattern '__PS_BUILD_LOG_START__' | Select-Object -Last 1)
+            $start = if ($null -ne $mark) { $mark.LineNumber } else { 0 }
+            $body = $lines[$start..($lines.Count - 1)]
+            $pattern = 'error:|error LNK|error C[0-9]|fatal error|FAILED:|ld: |ar: |Undefined symbols|undefined reference'
+            $hits = $body | Select-String -Pattern $pattern | Select-Object -First 8
+            foreach ($hit in $hits) {
+              $i = $hit.LineNumber                       # 相对 $body，从 1 开始
+              $from = [Math]::Max(1, $i - 2)
+              $to = [Math]::Min($body.Count, $i + 3)
+              $ctx = ($body[($from - 1)..($to - 1)] -join ' ')
+              if ($ctx.Length -gt 400) { $ctx = $ctx.Substring(0, 400) }
+              "::error::$ctx"
+            }
             exit 1
           }
 
@@ -216,7 +273,7 @@ jobs:
     timeout-minutes: 60
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           submodules: recursive
@@ -269,15 +326,29 @@ jobs:
         run: |
           set -o pipefail
           LOG="$RUNNER_TEMP/build.log"
-          if ! cmake --build build --parallel "$(sysctl -n hw.ncpu)" 2>&1 | tee "$LOG"; then
+          # 哨兵：Actions 会把本步骤的脚本文本也回显进 tee 的流里，pattern 会误命中外层
+          # 的 grep 行。以哨兵为界，只分析它之后的真实构建输出。
+          if ! { echo "__PS_BUILD_LOG_START__"; cmake --build build --parallel "$(sysctl -n hw.ncpu)"; } 2>&1 | tee "$LOG"; then
             {
               echo '### Build failed on macOS — last 150 lines'
               echo '```'
               tail -150 "$LOG"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            grep -E "error:|fatal error:|FAILED:" "$LOG" | head -8 | while IFS= read -r line; do
-              echo "::error::${line}"
+            # pattern 要覆盖真实写法：clang 的 "error:"、MSVC 的 "fatal error LNK1181"、
+            # 归档/链接的 "ar:" / "ld:" / "Undefined symbols"。只写带冒号的
+            # 'error:'/'fatal error:' 会把后几类全漏掉，annotation 只剩 FAILED 行。
+            # 每条再带上下文：根因几乎总在 FAILED 的下一两行（如
+            # "ar: no archive members specified"）。
+            TAIL_LOG="$RUNNER_TEMP/build.tail"
+            marker=$(grep -n '__PS_BUILD_LOG_START__' "$LOG" | tail -1 | cut -d: -f1)
+            marker=${marker:-0}
+            tail -n +"$(( marker + 1 ))" "$LOG" > "$TAIL_LOG"
+            PATTERN='error:|error LNK|error C[0-9]|fatal error|FAILED:|ld: |ar: |Undefined symbols|undefined reference'
+            grep -nE "$PATTERN" "$TAIL_LOG" | head -8 | while IFS=: read -r ln _; do
+              from=$(( ln > 2 ? ln - 2 : 1 ))
+              ctx=$(sed -n "${from},$(( ln + 3 ))p" "$TAIL_LOG" | tr '\n' ' ' | cut -c1-400)
+              echo "::error::${ctx}"
             done
             exit 1
           fi
