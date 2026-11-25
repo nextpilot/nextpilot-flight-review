@@ -1,0 +1,164 @@
+name: pack-dryrun
+
+# Linux packaging dry-run gate.
+#
+# Why a separate workflow: every packaging failure mode in this repo happens *after*
+# compilation already succeeded — the order in which linuxdeploy/AppRun are applied,
+# the $ORIGIN/lib RPATH written by patchelf, missing Qt platform plugins, the deb
+# Depends list. ci.yml's build + ctest cannot see any of them.
+#
+# Concrete history: AppImage was once produced before the offscreen plugin was added
+# (`--cli` fell through to the GUI and died on `Could not load the Qt platform plugin
+# "xcb"`); pack-deb.sh once lacked libxcb-cursor0/libxcb-xkb1 and the RPATH precheck.
+#
+# Steps and smoke criteria are kept *identical* to build-packages.yml's linux job on
+# purpose: a dry-run that is green while the real release is red would be worse than
+# no gate at all.
+#
+# Scope: Linux only. NSIS/DMG at PR time would cost hours of runner minutes and stay
+# with build-packages.yml (tag / -workflow-packaging / manual dispatch).
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  linux-pack:
+    # ubuntu-22.04 keeps the glibc 2.35 baseline the release job also uses; running the
+    # dry-run on a newer image would silently mask a glibc regression.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Verify version (versions.env is the single source of truth)
+        shell: bash
+        run: |
+          set -euo pipefail
+          source versions.env
+          echo "PS_VER=${PS_APP_VERSION}" >> "$GITHUB_ENV"
+          echo "PS_QT_VER=${PS_QT_VERSION}" >> "$GITHUB_ENV"
+          grep -q "project(PlotScope VERSION ${PS_APP_VERSION}" CMakeLists.txt \
+            || { echo "::error::CMakeLists project VERSION does not match versions.env"; exit 1; }
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build patchelf build-essential curl file \
+            libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
+            libxkbcommon-x11-0 libfontconfig1 libdbus-1-3
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.PS_QT_VER }}
+          modules: 'qtcharts'
+
+      - name: Set up ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          # Own key: a dry-run must not evict the release job's cache, and vice versa.
+          key: linux-pack-dryrun
+
+      - name: Configure CMake
+        run: |
+          # QT_ROOT_DIR already contains gcc_64 (install-qt-action v4); do not append another level.
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
+            -DPS_BUILD_TESTS=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build targets (plotscope-gui, plotscope)
+        run: cmake --build build --target plotscope-gui plotscope -j"$(nproc)"
+
+      - name: Build AppImage
+        run: bash tools/pack-appimage.sh build dist "$QT_ROOT_DIR"
+
+      - name: Build DEB package
+        run: bash tools/pack-deb.sh build dist
+
+      - name: Smoke test - AppImage CLI
+        run: |
+          chmod +x dist/*.AppImage
+          # The runner has no FUSE; use extract-and-run, otherwise fusermount is missing.
+          env -i HOME="$HOME" PATH=/usr/bin:/bin APPIMAGE_EXTRACT_AND_RUN=1 \
+            dist/PlotScope-*.AppImage --cli --help
+          echo "AppImage CLI smoke test passed"
+
+      - name: Smoke test - AppImage GUI (offscreen)
+        run: |
+          # Not exiting within 10s (rc 124) means the offscreen window opened: success.
+          set +e
+          env -i HOME="$HOME" PATH=/usr/bin:/bin APPIMAGE_EXTRACT_AND_RUN=1 \
+            QT_QPA_PLATFORM=offscreen timeout 10 dist/PlotScope-*.AppImage
+          AI_RC=$?
+          set -e
+          [ "$AI_RC" -eq 124 ] || { echo "::error::AppImage GUI failed to start (exit code $AI_RC)"; exit 1; }
+          echo "AppImage GUI smoke test passed"
+
+      - name: Smoke test - DEB CLI
+        run: |
+          # DEB: extract and run the real binary (FHS layout, RPATH=$ORIGIN/lib).
+          mkdir -p /tmp/deb-root
+          dpkg-deb -x dist/*.deb /tmp/deb-root
+          env -i HOME="$HOME" PATH=/usr/bin:/bin /tmp/deb-root/usr/lib/plotscope/plotscope --help
+          echo "DEB CLI smoke test passed"
+
+      - name: Smoke test - DEB GUI (offscreen)
+        run: |
+          # This is the core value of the DEB: the CLI does not touch platform plugins,
+          # so a passing CLI does not prove the GUI can start.
+          set +e
+          env -i HOME="$HOME" PATH=/usr/bin:/bin QT_QPA_PLATFORM=offscreen \
+            timeout 10 /tmp/deb-root/usr/lib/plotscope/plotscope-gui
+          GUI_RC=$?
+          set -e
+          [ "$GUI_RC" -eq 124 ] || { echo "::error::DEB GUI failed to start (exit code $GUI_RC)"; exit 1; }
+          echo "DEB GUI smoke test passed (offscreen window opened, timed out without exit)"
+
+      - name: Audit ELF glibc baseline (<= 2.35)
+        run: |
+          set -euo pipefail
+          FLOOR=2.35
+          # shellcheck disable=SC2016  # $0 is expanded by the inner sh, not by this shell
+          MAX="$(find dist/AppDir -type f \( -name '*.so*' -o -perm -u+x \) -print0 2>/dev/null \
+            | xargs -0 -r -n1 sh -c 'objdump -T "$0" 2>/dev/null | grep -oE "GLIBC_[0-9]+\.[0-9]+"' \
+            | sed 's/GLIBC_//' | sort -V | tail -1 || true)"
+          if [ -z "$MAX" ]; then echo "::error::No GLIBC requirement extracted from AppDir"; exit 1; fi
+          echo "Highest glibc requirement: $MAX"
+          NEED="$(printf '%s\n%s\n' "$FLOOR" "$MAX" | sort -V | tail -1)"
+          if [ "$NEED" != "$FLOOR" ]; then
+            echo "::error::glibc baseline $MAX exceeds $FLOOR; older distributions would be blocked"; exit 1
+          fi
+          echo "glibc baseline audit passed (<= $FLOOR, matching ubuntu-22.04 builder)"
+
+      - name: Upload package artifacts (diagnostics only, not a release)
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-pack-dryrun
+          path: |
+            dist/*.AppImage
+            dist/*.deb
+          if-no-files-found: error
+          retention-days: 7
