@@ -3,7 +3,7 @@ name: release-packages
 # 三平台发布包：Linux AppImage / Windows 安装器+便携包 / macOS dmg。
 #
 # 触发（三种，方案 A：验证构建与正式发布分层）：
-#   1. 推分支名以 -workflow-test-packing 结尾的分支 → 三平台构建 + 出包 + 冒烟，
+#   1. 推分支名以 -workflow-packaging 结尾的分支 → 三平台构建 + 出包 + 冒烟，
 #      产物仅上传 artifact，不挂 Release（release job 的 tag 门禁会跳过）。
 #      用途：日常改打包脚本/CI 后推分支即可回归验证，无需手动点触发。
 #   2. 推 v* tag → 完整发布，构建产物挂到 GitHub Release。
@@ -17,7 +17,7 @@ name: release-packages
 
 on:
   push:
-    branches: ['**/*-workflow-test-packing']
+    branches: ['**/*-workflow-packaging']
     tags: ['v*']
   workflow_dispatch:
 
