@@ -28,8 +28,8 @@ log() { printf '[pack-linux] %s\n' "$*"; }
 die() { log "错误：$*" >&2; exit 1; }
 
 # GUI 与 CLI 都要发布，缺一即报错，避免产出不完整发布包。
-[ -f "$GUI_BIN" ] || die "找不到 GUI $GUI_BIN（先构建：cmake --build <build> --target plotscope-gui plotscope）"
-[ -f "$CLI_BIN" ] || die "找不到 CLI $CLI_BIN（构建目标需包含 plotscope）"
+[ -f "$GUI_BIN" ] || die "找不到 GUI ${GUI_BIN}（先构建：cmake --build <build> --target plotscope-gui plotscope）"
+[ -f "$CLI_BIN" ] || die "找不到 CLI ${CLI_BIN}（构建目标需包含 plotscope）"
 command -v ldd >/dev/null || die "缺 ldd"
 HAS_PATCHELF=0
 command -v patchelf >/dev/null 2>&1 && HAS_PATCHELF=1
@@ -169,5 +169,5 @@ chmod +x "$STAGE/run.sh" "$STAGE/run-cli.sh"
 # ---- 6. 打 tar.gz ----
 mkdir -p "$OUT_DIR"
 tar -czf "$ARCHIVE" -C "$OUT_DIR" "$PKG"
-log "打包完成：$ARCHIVE（$(du -h "$ARCHIVE" | cut -f1)）"
+log "打包完成：${ARCHIVE}（$(du -h "$ARCHIVE" | cut -f1)）"
 log "解压即用：tar -xzf $(basename "$ARCHIVE") && cd $PKG && ./plotscope-gui  或  ./plotscope"

@@ -28,7 +28,7 @@ ARCH="${ARCH:-x86_64}"
 log() { printf '[appimage] %s\n' "$*"; }
 die() { log "错误：$*" >&2; exit 1; }
 
-[ -f "$GUI_BIN" ] || die "找不到 GUI $GUI_BIN（先构建：cmake --build <build> --target plotscope-gui plotscope）"
+[ -f "$GUI_BIN" ] || die "找不到 GUI ${GUI_BIN}（先构建：cmake --build <build> --target plotscope-gui plotscope）"
 [ -f "$CLI_BIN" ] || die "找不到 CLI $CLI_BIN"
 
 # Qt 目录：参数优先，其次从 CMakeCache 的 Qt6_DIR 反推，最后用仓库内 deps/Qt。
@@ -132,4 +132,4 @@ log "appimagetool 打包：$DEST"
 "$AIT" --no-appstream "$APPDIR" "$DEST" 2>&1 | sed 's/^/[appimagetool] /' || die "appimagetool 失败"
 [ -f "$DEST" ] || die "未生成 $DEST"
 chmod +x "$DEST"
-log "完成：$DEST（$(du -h "$DEST" | cut -f1)）"
+log "完成：${DEST}（$(du -h "$DEST" | cut -f1)）"

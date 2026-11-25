@@ -106,4 +106,4 @@ else
   log "跳过公证（未提供 APPLE_ID/APPLE_TEAM_ID/APPLE_APP_PASSWORD）"
 fi
 
-log "完成：$DMG（$(du -h "$DMG" | cut -f1)）"
+log "完成：${DMG}（$(du -h "$DMG" | cut -f1)）"
