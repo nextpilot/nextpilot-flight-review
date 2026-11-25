@@ -43,8 +43,10 @@ VIAddVersionKey /LANG=2052 "FileVersion" "${VERSION}"
 VIAddVersionKey /LANG=2052 "ProductVersion" "${VERSION}"
 VIAddVersionKey /LANG=2052 "LegalCopyright" "BSD 3-Clause"
 
-!define MUI_ICON "${__FILEDIR__}plotscope.ico"
-!define MUI_UNICON "${__FILEDIR__}plotscope.ico"
+; ${__FILEDIR__} 末尾不带分隔符，必须自己补 '\'，否则 NSIS 会拼成
+; packaging\windowsplotscope.ico 并报 "Error while loading icon ... can't open file"。
+!define MUI_ICON "${__FILEDIR__}\plotscope.ico"
+!define MUI_UNICON "${__FILEDIR__}\plotscope.ico"
 !define MUI_ABORTWARNING
 
 !insertmacro MUI_PAGE_WELCOME
