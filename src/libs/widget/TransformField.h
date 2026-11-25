@@ -13,8 +13,7 @@ class QPlainTextEdit;
 class QPushButton;
 class QVBoxLayout;
 
-namespace nextpilot::plotscope::gui
-{
+namespace nextpilot::plotscope::gui {
 
 using nextpilot::plotscope::uischema::TransformCapability;
 using nextpilot::plotscope::uischema::TransformDescriptor;
@@ -26,8 +25,8 @@ class TransformField : public QWidget
 {
     Q_OBJECT
 public:
-    explicit TransformField(nextpilot::plotscope::context::AppContext &appCtx,
-                            uint32_t capability, QWidget *parent = nullptr);
+    explicit TransformField(nextpilot::plotscope::context::AppContext &appCtx, uint32_t capability,
+                            QWidget *parent = nullptr);
     ~TransformField() override;
 
     QJsonObject request() const;

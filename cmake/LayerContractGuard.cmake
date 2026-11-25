@@ -22,7 +22,7 @@ function(_ps_layer_of _target _out)
     set(_layer 1)
   elseif(_target STREQUAL "ps_host" OR _target STREQUAL "ps_recording" OR
          _target STREQUAL "ps_app" OR
-         _target STREQUAL "ps_gui_theme" OR _target STREQUAL "ps_gui_transform")
+         _target STREQUAL "ps_gui_theme" OR _target STREQUAL "ps_widgets")
     set(_layer 3)
   elseif(_target MATCHES "^ps_module_" OR _target MATCHES "^ps_toolbox_" OR _target MATCHES "^ps_parser_")
     set(_layer 4)

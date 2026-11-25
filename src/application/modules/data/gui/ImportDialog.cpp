@@ -1,10 +1,13 @@
 #include "ImportDialog.h"
 #include "ThemeManager.h"
 
-#include "ToolboxHub.h"
 #include "IMessageParser.h"
 #include "QtFieldRenderer.h"
 #include "SchemaEngine.h"
+#include "DialogLauncherHub.h"
+#include "Intent.h"
+#include "IIntentExecutor.h"
+#include "AppContext.h"
 
 #include <QCheckBox>
 #include <QComboBox>
@@ -27,8 +30,7 @@
 
 #include <functional>
 
-namespace nextpilot::plotscope::gui
-{
+namespace nextpilot::plotscope::gui {
 
 namespace {
 
@@ -70,8 +72,8 @@ public:
     QString chosenPath;
 };
 
-ImportDialog::ImportDialog(nextpilot::plotscope::registry::ToolboxHub &registry, QWidget *parent)
-    : QDialog(parent), m_registry(registry), d(new Private)
+ImportDialog::ImportDialog(const QList<nextpilot::plotscope::parser::IMessageParser *> &drivers, QWidget *parent)
+    : QDialog(parent), m_drivers(drivers), d(new Private)
 {
     setWindowTitle(QStringLiteral("打开数据"));
     setMinimumSize(620, 520);
@@ -83,18 +85,19 @@ ImportDialog::ImportDialog(nextpilot::plotscope::registry::ToolboxHub &registry,
     const QString dim = ThemeManager::themeColor(QStringLiteral("textDim")).name();
     const QString border = ThemeManager::themeColor(QStringLiteral("border")).name();
     const QString accent = ThemeManager::themeColor(QStringLiteral("accent")).name();
-    setStyleSheet(QStringLiteral(
-        "QDialog{background:%1;color:%2;}"
-        "QLabel{color:%2;}"
-        "QLabel#hint{color:%3;}"
-        "QGroupBox{color:%2;border:1px solid %4;margin-top:8px;padding-top:6px;}"
-        "QGroupBox::title{color:%3;}"
-        "QComboBox,QSpinBox,QLineEdit{background:%1;color:%2;border:1px solid %4;padding:4px 6px;min-height:22px;}"
-        "QPushButton{background:%1;color:%2;border:1px solid %4;padding:5px 16px;}"
-        "QPushButton:hover{border-color:%5;}"
-        "QTableWidget{background:%1;color:%2;gridline-color:%4;border:1px solid %4;}"
-        "QHeaderView::section{background:%1;color:%3;border:0;border-right:1px solid %4;padding:4px;}")
-        .arg(bg, fg, dim, border, accent));
+    setStyleSheet(
+        QStringLiteral(
+            "QDialog{background:%1;color:%2;}"
+            "QLabel{color:%2;}"
+            "QLabel#hint{color:%3;}"
+            "QGroupBox{color:%2;border:1px solid %4;margin-top:8px;padding-top:6px;}"
+            "QGroupBox::title{color:%3;}"
+            "QComboBox,QSpinBox,QLineEdit{background:%1;color:%2;border:1px solid %4;padding:4px 6px;min-height:22px;}"
+            "QPushButton{background:%1;color:%2;border:1px solid %4;padding:5px 16px;}"
+            "QPushButton:hover{border-color:%5;}"
+            "QTableWidget{background:%1;color:%2;gridline-color:%4;border:1px solid %4;}"
+            "QHeaderView::section{background:%1;color:%3;border:0;border-right:1px solid %4;padding:4px;}")
+            .arg(bg, fg, dim, border, accent));
 
     auto *root = new QVBoxLayout(this);
 
@@ -149,16 +152,12 @@ ImportDialog::ImportDialog(nextpilot::plotscope::registry::ToolboxHub &registry,
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
 
     rebuildFormatList();
-    connect(d->formats, qOverload<int>(&QComboBox::currentIndexChanged), this,
-            [this](int) { onFormatChanged(); });
+    connect(d->formats, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) { onFormatChanged(); });
     connect(d->browse, &QPushButton::clicked, this, [this] { chooseFile(); });
     onFormatChanged();
 }
 
-ImportDialog::~ImportDialog()
-{
-    delete d;
-}
+ImportDialog::~ImportDialog() { delete d; }
 
 void ImportDialog::setPath(const QString &path)
 {
@@ -186,7 +185,7 @@ void ImportDialog::rebuildFormatList()
     d->drivers.clear();
     d->formats->clear();
     // 只列"声明了导入 schema"的格式驱动——其它格式走简化路径（无选项）。
-    for (nextpilot::plotscope::parser::IMessageParser *drv : m_registry.drivers())
+    for (nextpilot::plotscope::parser::IMessageParser *drv : m_drivers)
     {
         if (drv->configSchema().isEmpty())
             continue;
@@ -223,8 +222,7 @@ void ImportDialog::onFormatChanged()
 void ImportDialog::chooseFile()
 {
     const QString filter = d->browse->property("filter").toString();
-    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("选择数据文件"),
-                                                      QString(), filter);
+    const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("选择数据文件"), QString(), filter);
     if (path.isEmpty())
         return;
     d->chosenPath = path;
@@ -280,16 +278,15 @@ void ImportDialog::rebuildFields()
             connect(cb, qOverload<int>(&QComboBox::currentIndexChanged), this,
                     [this] { QtFieldRenderer::applyEnabled(d->form, d->fieldsHost); });
         else if (auto *chk = qobject_cast<QCheckBox *>(w))
-            connect(chk, &QCheckBox::toggled, this,
-                    [this] { QtFieldRenderer::applyEnabled(d->form, d->fieldsHost); });
+            connect(chk, &QCheckBox::toggled, this, [this] { QtFieldRenderer::applyEnabled(d->form, d->fieldsHost); });
     }
     updatePreview();
 }
 
 void ImportDialog::updatePreview()
 {
-    const QJsonObject ui = d->current ? d->current->configSchema().value(QStringLiteral("ui")).toObject()
-                                      : QJsonObject();
+    const QJsonObject ui =
+        d->current ? d->current->configSchema().value(QStringLiteral("ui")).toObject() : QJsonObject();
     const QJsonObject pv = ui.value(QStringLiteral("preview")).toObject();
     if (pv.isEmpty())
     {
@@ -353,8 +350,8 @@ void ImportDialog::accept()
     std::function<void(const QVector<FieldSpec> &)> collect = [&](const QVector<FieldSpec> &fields) {
         for (const FieldSpec &f : fields)
         {
-            if (f.type == FieldType::Tab || f.type == FieldType::Section
-                || f.type == FieldType::Horizontal || f.type == FieldType::Vertical)
+            if (f.type == FieldType::Tab || f.type == FieldType::Section || f.type == FieldType::Horizontal ||
+                f.type == FieldType::Vertical)
             {
                 collect(f.fields);
                 continue;
@@ -386,27 +383,41 @@ int ImportDialog::fieldCount() const
     return n;
 }
 
-QString ImportDialog::currentFormatId() const
-{
-    return d->current ? d->current->id() : QString();
-}
+QString ImportDialog::currentFormatId() const { return d->current ? d->current->id() : QString(); }
 
-int ImportDialog::previewRowCount() const
-{
-    return d->preview->rowCount();
-}
+int ImportDialog::previewRowCount() const { return d->preview->rowCount(); }
 
-QString ImportDialog::warningText() const
-{
-    return d->warning->text();
-}
+QString ImportDialog::warningText() const { return d->warning->text(); }
 
-ImportDialog::Result ImportDialog::run(nextpilot::plotscope::registry::ToolboxHub &registry, QWidget *parent)
+ImportDialog::Result ImportDialog::run(const QList<nextpilot::plotscope::parser::IMessageParser *> &drivers,
+                                       QWidget *parent)
 {
-    ImportDialog dlg(registry, parent);
+    ImportDialog dlg(drivers, parent);
     if (dlg.exec() == QDialog::Accepted)
         return dlg.result();
     return Result{};
 }
 
 } // namespace nextpilot::plotscope::gui
+
+// D18a 接缝：外壳只按 id 触发，不 include 本对话框、不知道 data.load 的细节。
+// 对话框收集 path/format/options 后发 data.load 意图（与 CLI/脚本同路径）。
+namespace {
+void launchImportDialog(QWidget *parent, nextpilot::plotscope::context::AppContext &appCtx,
+                        nextpilot::plotscope::intent::IIntentExecutor &executor)
+{
+    const auto picked = nextpilot::plotscope::gui::ImportDialog::run(appCtx.toolbox().drivers(), parent);
+    if (!picked.ok())
+        return; // 用户取消
+    nextpilot::plotscope::intent::Intent intent;
+    intent.op = QStringLiteral("data.load");
+    intent.params[QStringLiteral("path")] = picked.path;
+    if (!picked.format.isEmpty())
+        intent.params[QStringLiteral("format")] = picked.format;
+    if (!picked.optionsJson.isEmpty())
+        intent.params[QStringLiteral("options")] = QString::fromUtf8(picked.optionsJson);
+    (void)executor.execute(intent);
+}
+} // namespace
+
+PS_REGISTER_DIALOG_LAUNCHER("app.action.openData", importDialog, launchImportDialog)

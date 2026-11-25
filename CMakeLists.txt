@@ -86,3 +86,8 @@ ps_lib_guard_boundary()
 # 全层依赖方向守卫：层定义见 src/LAYERS.md，拦跨层倒挂与同层横向。
 include("${CMAKE_SOURCE_DIR}/cmake/LayerContractGuard.cmake")
 ps_layer_guard_contract()
+
+# 三条铁律源码级守卫（A4a）：include 黑名单 + 文件夹归属，
+# 专拦"纸面合规、源码偷编"（ShellLinkGuard 只看 target 链接面，看不见 include）。
+include("${CMAKE_SOURCE_DIR}/cmake/ArchitectureGuard.cmake")
+ps_arch_guard_contract()

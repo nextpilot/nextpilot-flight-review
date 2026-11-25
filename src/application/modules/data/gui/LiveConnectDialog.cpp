@@ -1,7 +1,6 @@
 #include "LiveConnectDialog.h"
 
 #include "Intent.h"
-#include "ParserHub.h"
 #include "Result.h"
 
 #include <QComboBox>
@@ -14,13 +13,12 @@
 #include <QVBoxLayout>
 
 using namespace nextpilot::plotscope::intent;
-using nextpilot::plotscope::parser::ParserHub;
 
 namespace nextpilot::plotscope::gui
 {
 
-LiveConnectDialog::LiveConnectDialog(IIntentExecutor &executor, QWidget *parent)
-    : QDialog(parent), m_executor(executor)
+LiveConnectDialog::LiveConnectDialog(IIntentExecutor &executor, const QStringList &parserIds, QWidget *parent)
+    : QDialog(parent), m_executor(executor), m_parserIds(parserIds)
 {
     setWindowTitle(QStringLiteral("连接实时源"));
     setModal(true);
@@ -96,7 +94,7 @@ void LiveConnectDialog::buildUi()
 
     m_parser = new QComboBox(formHost);
     // 只列已注册的解析器，不硬编码——扩展包注册后自动出现。
-    for (const QString &id : ParserHub::ids())
+    for (const QString &id : m_parserIds)
         m_parser->addItem(id);
     if (m_parser->count() == 0)
         m_parser->addItem(QStringLiteral("custom-protocol"));

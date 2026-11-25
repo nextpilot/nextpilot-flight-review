@@ -18,14 +18,12 @@ using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::uischema;
 using namespace nextpilot::plotscope::context;
 
-namespace nextpilot::plotscope::gui
-{
+namespace nextpilot::plotscope::gui {
 
 FilterEditorDialog::FilterEditorDialog(AppContext &appCtx, const QString &contextTitle, QWidget *parent)
     : QDialog(parent), m_appCtx(appCtx)
 {
-    setWindowTitle(QStringLiteral("过滤器 · %1").arg(
-        contextTitle.isEmpty() ? QStringLiteral("通道") : contextTitle));
+    setWindowTitle(QStringLiteral("过滤器 · %1").arg(contextTitle.isEmpty() ? QStringLiteral("通道") : contextTitle));
     resize(520, 460);
 
     if (m_appCtx.interactions().hasFilterOps())
@@ -55,18 +53,14 @@ FilterEditorDialog::FilterEditorDialog(AppContext &appCtx, const QString &contex
     root->addWidget(buttons);
     connect(buttons, &QDialogButtonBox::accepted, this, &QDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
-    connect(m_combo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &FilterEditorDialog::onCurrentChanged);
+    connect(m_combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &FilterEditorDialog::onCurrentChanged);
 
     onCurrentChanged(m_combo->currentIndex());
 }
 
 FilterEditorDialog::~FilterEditorDialog() = default;
 
-int FilterEditorDialog::descriptorCount() const
-{
-    return m_descriptors.size();
-}
+int FilterEditorDialog::descriptorCount() const { return m_descriptors.size(); }
 
 bool FilterEditorDialog::setCurrentFilter(const QString &id)
 {
@@ -87,8 +81,7 @@ QJsonObject FilterEditorDialog::currentDescriptor() const
     return m_descriptors.at(idx).toObject();
 }
 
-namespace
-{
+namespace {
 // descriptor 参数 JSON → ParamSpec（字段名在这里一次性对齐 SchemaEngine 约定）。
 ParamSpec toParamSpec(const QJsonObject &po)
 {
@@ -111,8 +104,8 @@ ParamSpec toParamSpec(const QJsonObject &po)
     for (const QJsonValue &ov : po.value(QStringLiteral("values")).toArray())
     {
         const QJsonObject e = ov.toObject();
-        s.options.append(EnumOption{e.value(QStringLiteral("value")).toString(),
-                                    e.value(QStringLiteral("label")).toString()});
+        s.options.append(
+            EnumOption{e.value(QStringLiteral("value")).toString(), e.value(QStringLiteral("label")).toString()});
     }
     return s;
 }
@@ -132,7 +125,11 @@ void FilterEditorDialog::rebuildParamWidgets()
             QLayoutItem *item = form->takeAt(0);
             if (!item)
                 break;
-            if (QWidget *w = item->widget()) { w->setParent(nullptr); delete w; }
+            if (QWidget *w = item->widget())
+            {
+                w->setParent(nullptr);
+                delete w;
+            }
             delete item;
         }
     }
@@ -141,7 +138,8 @@ void FilterEditorDialog::rebuildParamWidgets()
     const QJsonArray params = d.value(QStringLiteral("parameters")).toArray();
     QVector<ParamSpec> specs;
     for (const QJsonValue &pv : params)
-        if (pv.isObject()) specs.append(toParamSpec(pv.toObject()));
+        if (pv.isObject())
+            specs.append(toParamSpec(pv.toObject()));
 
     m_paramForm = SchemaEngine::compile(d.value(QStringLiteral("name")).toString(), specs);
     if (m_paramForm.empty())

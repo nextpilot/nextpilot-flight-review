@@ -43,22 +43,9 @@ target_include_directories(ps_gui_theme PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/theme
 target_link_libraries(ps_gui_theme PUBLIC ps_context ps_uischema Qt6::Gui Qt6::Widgets Qt6::Core)
 set_target_properties(ps_gui_theme PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
 
-# 变换编辑器 + 在线调试对话框：独立 OBJECT 库，被 gui（曲线/协议）与 data_gui
-# （数据源衍生）共用。只依赖 ps_context（AppContext.evalTransform 回调 + TransformHub）
-# 与 Qt Widgets，不含任何 script 类，故不会引入层依赖环。
-add_library(ps_gui_transform OBJECT
-    shell/TransformEditorDialog.cpp
-    shell/TransformEditorDialog.h
-    shell/FilterEditorDialog.cpp
-    shell/FilterEditorDialog.h
-    shell/TransformField.cpp
-    shell/TransformField.h
-    shell/LuaEditor.cpp
-    shell/LuaEditor.h
-)
-target_include_directories(ps_gui_transform PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/shell)
-target_link_libraries(ps_gui_transform PUBLIC ps_context ps_uischema_widgets Qt6::Widgets Qt6::Gui Qt6::Core)
-set_target_properties(ps_gui_transform PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
+# 变换编辑器 + 在线调试对话框已迁至 libs/widget（ps_widgets）：
+# 这些是被 data / plot / protocol 多模块直接复用的通用控件，物理归属与 target 名一并纠正。
+# 外壳只按能力回调使用，不编译任何控件源文件，也不 include 控件头。
 
 add_library(ps_gui OBJECT
     # --- 外壳层 ---
@@ -74,8 +61,7 @@ add_library(ps_gui OBJECT
     shell/CommandPalette.h
     shell/KeybindingDialog.cpp
     shell/KeybindingDialog.h
-    shell/ImportDialog.cpp
-    shell/ImportDialog.h
+    # 导入对话框已迁至 modules/data/gui（D18a）：外壳按 id 经 DialogLauncherHub 触发。
     # 协议编辑器/检查器对话框已迁至 modules/protocol/gui（D18a）：
     # 外壳零业务对话框，只通过意图触发；ps_gui 不再编译任何协议 UI。
     # 全局偏好设置（App 作用域，跨工作区持久）：外壳级系统能力，不属于任何功能模块。
@@ -83,8 +69,7 @@ add_library(ps_gui OBJECT
     shell/PreferencesDialog.h
     shell/PreferencesIntentHandler.cpp
     shell/PreferencesIntentHandler.h
-    shell/ReportExporter.cpp
-    shell/ReportExporter.h
+    # 报告导出已迁至 modules/report/gui（D18a）：装配层注册 viewAction，外壳零业务 include。
     # --- 通用属性面板（dock.right）：PropertySchema 契约的纯视图 ---
     views/PropertyPanel.cpp
     views/PropertyPanel.h
@@ -107,15 +92,13 @@ target_include_directories(ps_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/shell
     ${CMAKE_CURRENT_SOURCE_DIR}/theme)
-# fastplot：独立绘图库（只依赖 Qt Widgets）。绘图视图通过它绘制，
-# 因此 GUI 侧公共依赖；CLI 不链它，保持 headless 纯净。
-#
 # c8（契约 §11 链接关 / 验收 6）：ps_gui 的链接依赖**只许**是 libs 层
-# （ps_host / ps_context / ps_command / ps_gui_theme / ps_gui_transform /
-# ps_protocol / 其余 libs/*）、Qt 与 fastplot；不许出现任何
-# 任何业务模块、工具箱、解析器库。装配权上移到组合根（exe / 装配层），
-# 壳只接收"已装配好的 Pack + ToolboxHub"。下方护栏在 configure 期硬拦。
-target_link_libraries(ps_gui PUBLIC ps_host ps_context ps_command ps_gui_theme ps_gui_transform ps_protocol fastplot
+# （ps_host / ps_context / ps_command / ps_gui_theme / ps_widgets / 其余 libs/*）
+# 与 Qt；不许出现任何业务模块、工具箱、解析器库，也不含 fastplot / ps_protocol——
+# 绘图在 plot 模块、协议在 protocol 模块，外壳零业务链接（A1a）。
+# 装配权上移到组合根（exe / 装配层），壳只接收"已装配好的 Pack + ToolboxHub"。
+# 下方护栏在 configure 期硬拦。
+target_link_libraries(ps_gui PUBLIC ps_host ps_context ps_command ps_gui_theme ps_widgets
                                     ads::ads SARibbonBar::SARibbonBar
                                     Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ps_gui PROPERTIES AUTOMOC ON AUTORCC ON CXX_STANDARD 17)

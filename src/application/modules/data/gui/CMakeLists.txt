@@ -19,11 +19,13 @@ add_library(ps_module_data_gui OBJECT
     LiveConnectDialog.h
     DataTablePanel.cpp
     DataTablePanel.h
+    ImportDialog.cpp
+    ImportDialog.h
 )
 target_include_directories(ps_module_data_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
 )
 # 主题是横向 GUI 基础设施（状态点等取色走它），单独成库，谁需要谁链——
 # 不必为此链接整个外壳库 ps_gui。
-target_link_libraries(ps_module_data_gui PUBLIC ps_context ps_data_tablemodel ps_gui_theme ps_gui_transform Qt6::Widgets Qt6::Gui Qt6::Core)
+target_link_libraries(ps_module_data_gui PUBLIC ps_context ps_registry ps_parser ps_uischema ps_uischema_widgets ps_data_tablemodel ps_gui_theme ps_widgets Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ps_module_data_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

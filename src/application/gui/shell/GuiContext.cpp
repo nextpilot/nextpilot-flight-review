@@ -4,7 +4,6 @@
 #include "ShellBinder.h"
 
 #include "AppContext.h"
-#include "ToolboxHub.h"
 
 #include <algorithm>
 

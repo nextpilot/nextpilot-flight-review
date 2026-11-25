@@ -21,5 +21,5 @@ target_include_directories(ps_module_protocol_gui PUBLIC ${CMAKE_CURRENT_SOURCE_
 # 不依赖 ps_gui —— 模块呈现层不反向依赖整个外壳层（层契约守卫）。
 target_link_libraries(ps_module_protocol_gui PUBLIC
     ps_context ps_registry ps_parser ps_intent ps_protocol
-    ps_gui_theme ps_gui_transform Qt6::Widgets Qt6::Gui Qt6::Core)
+    ps_gui_theme ps_widgets Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ps_module_protocol_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

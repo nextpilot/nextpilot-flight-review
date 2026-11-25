@@ -155,7 +155,7 @@ set_tests_properties(ps_state_view PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offsc
 # B8-b：TransformField 输入控件输出契约验收（offscreen GUI，链 gui_transform + core）。
 add_executable(ps_test_transform_field test_transform_field.cpp)
 target_link_libraries(ps_test_transform_field PRIVATE
-    ps_gui_transform ps_context ps_uischema_widgets Qt6::Widgets Qt6::Gui Qt6::Core)
+    ps_widgets ps_context ps_uischema_widgets Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ps_test_transform_field PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_transform_field COMMAND ps_test_transform_field)
 set_tests_properties(ps_transform_field PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
@@ -215,8 +215,8 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Test)
 add_executable(ps_ui_driver ui_driver.cpp)
 target_include_directories(ps_ui_driver PRIVATE ${CMAKE_SOURCE_DIR}/src/application/app/core)
 target_link_libraries(ps_ui_driver PRIVATE
-    ps_gui ps_gui_theme ps_gui_transform
-    ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_protocol_gui ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
+    ps_gui ps_gui_theme ps_widgets
+    ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_protocol_gui ps_module_analysis ps_module_settings ps_module_report ps_module_report_gui ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
     ps_toolbox_automotive_gui
     ps_app ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core Qt6::Test)
@@ -231,8 +231,8 @@ target_link_libraries(ps_test_gui PRIVATE
     ps_gui
     # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。
     ps_gui_theme
-    ps_gui_transform
-    ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_protocol_gui ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
+    ps_widgets
+    ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_protocol_gui ps_module_analysis ps_module_settings ps_module_report ps_module_report_gui ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
     # 领域面板呈现层（OBJECT 库）：自注册 TU 必须显式链接进来。
     ps_toolbox_automotive_gui
@@ -308,8 +308,8 @@ target_link_libraries(ps_test_instrument PRIVATE
     ps_gui
     # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。
     ps_gui_theme
-    ps_gui_transform
-    ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_protocol_gui ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
+    ps_widgets
+    ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_protocol_gui ps_module_analysis ps_module_settings ps_module_report ps_module_report_gui ps_module_workspace
     ps_recording
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
     ps_app ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)
@@ -324,8 +324,8 @@ target_link_libraries(ps_test_plot_io PRIVATE
     ps_gui
     # 主题库：OBJECT 库之间不传播目标文件，必须显式链进可执行文件。
     ps_gui_theme
-    ps_gui_transform
-    ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_protocol_gui ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
+    ps_widgets
+    ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_protocol_gui ps_module_analysis ps_module_settings ps_module_report ps_module_report_gui ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
     ps_recording
     ps_app ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)
@@ -356,8 +356,8 @@ add_test(NAME ps_mcp_bridge COMMAND ps_test_mcp_bridge)
 add_executable(ps_test_live_udp test_live_udp.cpp)
 target_include_directories(ps_test_live_udp PRIVATE ${CMAKE_SOURCE_DIR}/src/application/app/core)
 target_link_libraries(ps_test_live_udp PRIVATE
-    ps_gui ps_gui_theme ps_gui_transform
-    ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_protocol_gui ps_module_analysis ps_module_settings ps_module_report ps_module_workspace
+    ps_gui ps_gui_theme ps_widgets
+    ps_module_data ps_module_data_gui ps_module_plot ps_module_plot_gui ps_module_script ps_module_script_gui ps_module_protocol ps_module_protocol_gui ps_module_analysis ps_module_settings ps_module_report ps_module_report_gui ps_module_workspace
     ps_toolbox_common ps_toolbox_autopilot ps_toolbox_automotive ps_parser_mdf ps_parser_rosbag2 ps_parser_blf ps_parser_apbin ps_toolbox_robotics ps_toolbox_gnss
     ps_toolbox_automotive_gui
     ps_app ps_host ps_context ps_recording Qt6::Widgets Qt6::Gui Qt6::Core)

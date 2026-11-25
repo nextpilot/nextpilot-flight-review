@@ -73,6 +73,9 @@ void DataModule::initialize(RuntimeHost &host)
     // 注册在 initialize（host 可用）；m_ui 在 onAttach 才有——
     // 动作是运行时触发的，届时 GUI 已 attach。
     AppContext &appCtx = host.app();
+
+    // A0b 清场：活动通道取数接缝注册（Q1 违规领域接缝）已按施工令删除，
+    // A1b 将以泛化能力接缝重接。
     appCtx.interactions().registerViewAction(
         QStringLiteral("data.table.open"),
         [this, &appCtx](const QVariantMap &params) -> Result<QVariant> {

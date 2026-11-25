@@ -1853,7 +1853,7 @@ void DataManagerPanel::openLogFile()
 
 void DataManagerPanel::openLiveConnect()
 {
-    LiveConnectDialog dlg(m_executor, this);
+    LiveConnectDialog dlg(m_executor, m_appCtx.toolbox().ids(), this);
     if (dlg.exec() == QDialog::Accepted)
     {
         refresh();

@@ -1,7 +1,5 @@
 #include "MainWindow.h"
 
-#include "fastplot/SemanticColors.h"
-
 #include <cstdio>
 
 #include "GuiContext.h"
@@ -9,10 +7,8 @@
 #include "command/CommandRegistry.h"
 #include "KeybindingDialog.h"
 #include "command/KeybindingRegistry.h"
-#include "ImportDialog.h"
 #include "PreferencesIntentHandler.h"
 #include "DialogLauncherHub.h"
-#include "ReportExporter.h"
 #include "ShellBinder.h"
 #include "theme/PlotThumbnails.h"
 #include "ThemeManager.h"
@@ -24,7 +20,6 @@
 #include "Result.h"
 #include "ErrorCodes.h"
 #include "UiSlotHub.h"
-#include "IMessageParser.h"
 #include "Contribution.h"
 
 #include "SARibbonMainWindow.h"
@@ -354,27 +349,8 @@ void MainWindow::build(RuntimeHost &host)
         (void)m_host->execute(intent);
     });
 
-    // 报告导出同路径：脚本 app.call("report.export", {path,...}) 走
-    // 与 Ribbon 按钮（report.workbench.export 特判）完全相同的 QPdfWriter 管线。
-    // path 必填；title/subtitle/notes/templateId 可选（templateId 查工具箱 reports 表）。
-    m_appCtx.interactions().registerViewAction(
-        QStringLiteral("report.export"),
-        [this](const QVariantMap &params) -> Result<QVariant> {
-            gui::ReportRequest req;
-            req.path = params.value(QStringLiteral("path")).toString();
-            req.title = params.value(QStringLiteral("title")).toString();
-            if (req.title.isEmpty())
-                req.title = !m_spec.reportTitle.isEmpty() ? m_spec.reportTitle : m_spec.displayName;
-            req.creator = m_spec.displayName;
-            req.subtitle = params.value(QStringLiteral("subtitle")).toString();
-            req.notes = params.value(QStringLiteral("notes")).toString();
-            req.templateId = params.value(QStringLiteral("template")).toString();
-            const auto r = gui::exportReportPdf(
-                m_appCtx, m_binder->centralWidgets(), m_binder->centralTitles(), req);
-            if (!r)
-                return Result<QVariant>(r.error());
-            return Result<QVariant>(QVariant(req.path));
-        });
+    // 报告导出的 viewAction "report.export" 由 report 模块呈现层注册（装配层
+    // installReportExport）；外壳零业务 include。脚本与 Ribbon 按钮共用该入口。
 
     // 1) 骨架插槽
     declareStandardSlots();
@@ -478,9 +454,11 @@ void MainWindow::build(RuntimeHost &host)
         // 少数动作需要 GUI 交互（选文件），外壳按 **id** 特判；
         // 其余动作一律用 UiAction 声明的 **intentOp** 走意图层——与 CLI/脚本同一条路径。
         // 注意两者不可混用：id 是 UI 元素标识，intentOp 才是要发的意图 op。
+        // 打开数据对话框已归 data 模块呈现层（D18a）：外壳按 id 经启动器表触发，
+        // 不 include、不构造业务对话框；未注册（裸壳/headless）时 no-op。
         if (actionId == QStringLiteral("app.action.openData"))
         {
-            openDataFile(host);
+            registry::DialogLauncherHub::launch(actionId, this, m_appCtx, host);
             return;
         }
         // 协议对话框归模块呈现层（D18a）：外壳只把 id 交给启动器表，不 include、
@@ -506,23 +484,10 @@ void MainWindow::build(RuntimeHost &host)
             saveWorkspacePreset(host);
             return;
         }
-        // 报告导出：选保存路径 → QPdfWriter 矢量管线（画布+元数据+结论）。
-        // Ribbon 按钮与脚本 app.call("report.export") 最终都汇聚到 exportReportPdf。
+        // 报告导出 GUI 交互（选路径）归 report 模块呈现层（D18a）：按 id 触发启动器。
         if (actionId == QStringLiteral("report.workbench.export"))
         {
-            const QString path = QFileDialog::getSaveFileName(
-                this, QStringLiteral("导出报告"), QStringLiteral("report.pdf"),
-                QStringLiteral("PDF (*.pdf);;全部 (*)"));
-            if (path.isEmpty())
-                return;
-            gui::ReportRequest req;
-            req.path = path;
-            req.title = !m_spec.reportTitle.isEmpty() ? m_spec.reportTitle : m_spec.displayName;
-            req.creator = m_spec.displayName;
-            const auto r = gui::exportReportPdf(
-                m_appCtx, m_binder->centralWidgets(), m_binder->centralTitles(), req);
-            statusBar()->showMessage(r ? QStringLiteral("报告已导出: %1").arg(path)
-                                       : QStringLiteral("导出失败: %1").arg(r.error().message));
+            registry::DialogLauncherHub::launch(actionId, this, m_appCtx, host);
             return;
         }
         // 视图页面板开关：动作 id = "view.toggleDock." + 面板类型 id（pageKey）。
@@ -804,31 +769,6 @@ void MainWindow::rebuildGridMenu()
         if (!m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.grid"), p, r))
             statusBar()->showMessage(QStringLiteral("网格线关闭失败"));
     });
-}
-
-void MainWindow::openDataFile(RuntimeHost &host)
-{
-    // 通用导入对话框（schema 驱动）：选格式 + 选文件 + 配置解析选项 + 预览。
-    // 对话框只负责收集"怎么做"，真正加载仍走 data.load 意图——与 CLI/脚本同路径。
-    const ImportDialog::Result picked = ImportDialog::run(m_appCtx.toolbox(), this);
-    if (!picked.ok())
-        return; // 用户取消
-
-    Intent intent;
-    intent.op = QStringLiteral("data.load");
-    intent.params[QStringLiteral("path")] = picked.path;
-    if (!picked.format.isEmpty())
-        intent.params[QStringLiteral("format")] = picked.format;
-    if (!picked.optionsJson.isEmpty())
-        intent.params[QStringLiteral("options")] = QString::fromUtf8(picked.optionsJson);
-    const Result<IntentResult> r = host.execute(intent);
-    if (!r)
-    {
-        statusBar()->showMessage(QStringLiteral("载入失败: %1").arg(r.error().message));
-        return;
-    }
-    const int dsId = r.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
-    statusBar()->showMessage(QStringLiteral("已载入数据集 #%1").arg(dsId));
 }
 
 void MainWindow::saveWorkspacePreset(RuntimeHost &host)

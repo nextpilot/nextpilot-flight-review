@@ -5,7 +5,6 @@
 
 #include "PanelFactoryHub.h"
 #include "PanelReferenceValidator.h"
-#include "ToolboxHub.h"
 
 #include "Intent.h"
 

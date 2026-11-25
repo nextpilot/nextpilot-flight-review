@@ -23,6 +23,7 @@
 #include "BatchPanel.h"
 #include "GuiContext.h"
 #include "MainWindow.h"
+#include "ReportExporter.h" // 装配层：测试不走 gui_main，须显式注册 report.export viewAction
 #include "views/PropertyPanel.h"
 #include "ThemeManager.h"
 #include "ToolboxHub.h"
@@ -169,6 +170,8 @@ int main(int argc, char *argv[])
     int g_derivedCount = 0, g_filterCount = 0, g_scriptFilterCount = 0;
     QString g_derivedName;
     window.build(application.host());
+    // 测试不走 gui_main，须在此显式装配 report.export viewAction（业务在 report 模块呈现层）。
+    nextpilot::plotscope::gui::installReportExport(application.context());
     // 先给窗口一个确定尺寸：画布按自身像素宽请求数据，尺寸确定后断言才可复现。
     window.resize(1280, 800);
 
@@ -2681,7 +2684,7 @@ int main(int argc, char *argv[])
 
     // --- 通用导入对话框：schema 驱动渲染 + probe + 选项收集 ---
     {
-        ImportDialog dlg(application.context().toolbox());
+        ImportDialog dlg(application.context().toolbox().drivers());
 
         // (1) 预填路径立即探测（与 MainWindow::openDataFile 同一条真实链路）。
         dlg.setPath(fixture);
@@ -2699,7 +2702,7 @@ int main(int argc, char *argv[])
         CHECK(QJsonDocument(opts).isObject());  // 反序列化成功 = 合法 JSON
 
         // (3) 探测失败路径：文件不存在 → probeFile 报错进警告条，result 仍为空。
-        ImportDialog dlg2(application.context().toolbox());
+        ImportDialog dlg2(application.context().toolbox().drivers());
         dlg2.setPath(QStringLiteral("/nonexistent/missing_file.csv"));
         CHECK(!dlg2.warningText().isEmpty());   // probe 错误文案可见
         CHECK(dlg2.previewRowCount() == 0);     // 无预览

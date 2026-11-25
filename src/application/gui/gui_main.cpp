@@ -1,5 +1,8 @@
 #include "MainWindow.h"
 #include "ShellBinder.h"
+#ifdef PS_HAS_REPORT_GUI
+#include "ReportExporter.h" // 装配层：注册 report.export viewAction（业务在 report 模块）
+#endif
 
 #include "App.h"
 #include "ProductSpec.h"
@@ -138,6 +141,13 @@ int main(int argc, char *argv[])
     nextpilot::plotscope::app::App application(settingsPath);
     nextpilot::plotscope::gui::MainWindow window(application.context(), productSpec);
     window.build(application.host());
+
+#ifdef PS_HAS_REPORT_GUI
+    // 装配层注册 report.export viewAction（业务实现在 report 模块呈现层）。
+    // 外壳零业务 include；脚本与 Ribbon 按钮共用该入口。
+    // 宏守护：反证剔除 report_gui 模块时不编译此钩子，产品仍能装配（A4a）。
+    nextpilot::plotscope::gui::installReportExport(application.context());
+#endif
 
     int loadFailures = 0;
     auto loadOneReported = [&](const QString &path) {

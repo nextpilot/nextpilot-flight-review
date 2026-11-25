@@ -14,15 +14,14 @@ using namespace nextpilot::plotscope::registry;
 using namespace nextpilot::plotscope::parser;
 using namespace nextpilot::plotscope::context;
 
-namespace nextpilot::plotscope::gui
-{
+namespace nextpilot::plotscope::gui {
 
-TransformEditorDialog::TransformEditorDialog(AppContext &appCtx, uint32_t capability,
-                                             const QString &contextTitle, QWidget *parent)
+TransformEditorDialog::TransformEditorDialog(AppContext &appCtx, uint32_t capability, const QString &contextTitle,
+                                             QWidget *parent)
     : QDialog(parent)
 {
-    setWindowTitle(QStringLiteral("变换 · %1").arg(
-        contextTitle.isEmpty() ? capabilityNames(capability) : contextTitle));
+    setWindowTitle(
+        QStringLiteral("变换 · %1").arg(contextTitle.isEmpty() ? capabilityNames(capability) : contextTitle));
     resize(560, 480);
 
     auto *root = new QVBoxLayout(this);
@@ -37,15 +36,9 @@ TransformEditorDialog::TransformEditorDialog(AppContext &appCtx, uint32_t capabi
 
 TransformEditorDialog::~TransformEditorDialog() = default;
 
-QJsonObject TransformEditorDialog::currentRequest() const
-{
-    return m_field->request();
-}
+QJsonObject TransformEditorDialog::currentRequest() const { return m_field->request(); }
 
-int TransformEditorDialog::descriptorCount() const
-{
-    return m_field->descriptorCount();
-}
+int TransformEditorDialog::descriptorCount() const { return m_field->descriptorCount(); }
 
 QJsonObject TransformEditorDialog::run(QWidget *parent, AppContext &appCtx, uint32_t capability,
                                        const QString &contextTitle, const QJsonObject &initial)

@@ -3,6 +3,7 @@
 #include "IIntentExecutor.h"
 
 #include <QDialog>
+#include <QStringList>
 
 class QComboBox;
 class QLabel;
@@ -24,7 +25,9 @@ class LiveConnectDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit LiveConnectDialog(nextpilot::plotscope::intent::IIntentExecutor &executor,
+    // parserIds 是可用解析器 id 目录快照（经 AppContext::parserIds() 提供），
+    // 对话框不 include ParserHub、不硬编码解析器清单。
+    explicit LiveConnectDialog(nextpilot::plotscope::intent::IIntentExecutor &executor, const QStringList &parserIds,
                                QWidget *parent = nullptr);
 
     // 成功连接后返回实际使用的 url（供调用方写日志/回填）；未连接返回空。
@@ -40,6 +43,7 @@ private:
     void submit();
 
     nextpilot::plotscope::intent::IIntentExecutor &m_executor;
+    QStringList m_parserIds;
 
     QComboBox *m_transport = nullptr;
     QLineEdit *m_host = nullptr;   // UDP/TCP 的 host（0.0.0.0 = 监听）

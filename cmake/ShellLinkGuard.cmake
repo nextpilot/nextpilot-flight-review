@@ -1,10 +1,10 @@
 # ShellLinkGuard.cmake —— 壳链接护栏（契约 §11 链接关 / 验收 6）。
 #
 # 壳 target（ps_gui 与裸壳 ps_shell_bare）的链接依赖**只许**是 libs 层
-# （ps_host / ps_context / ps_command / ps_gui_theme / ps_gui_transform /
-# ps_protocol / 其余 libs/*）、Qt 与 fastplot；不许出现任何
-# ps_module_* / ps_toolbox_* / ps_parser_*。装配权上移到组合根（exe / 装配层），
-# 壳只接收"已装配好的 Pack + ToolboxHub"。
+# （ps_host / ps_context / ps_command / ps_gui_theme / ps_widgets / 其余 libs/*）
+# 与 Qt；不许出现任何 ps_module_* / ps_toolbox_* / ps_parser_*，也不含
+# fastplot / ps_protocol（A1a 去死链接后，绘图归 plot 模块、协议归 protocol 模块）。
+# 装配权上移到组合根（exe / 装配层），壳只接收"已装配好的 Pack + ToolboxHub"。
 #
 # 护栏比纪律可靠：后来者把模块塞回壳链接面，configure 期即 FATAL_ERROR，
 # 编译还没开始就红。本函数同时罩 ps_gui 与 ps_shell_bare 两个壳产物。
@@ -21,7 +21,7 @@ function(ps_guard_shell_links _target)
             endif()
             if(_l MATCHES "^ps_module_|^ps_toolbox_|^ps_parser_")
                 message(FATAL_ERROR
-                    "${_target} 链了业务模块 ${_l}：壳只许依赖 libs 层 + Qt + fastplot"
+                    "${_target} 链了业务模块 ${_l}：壳只许依赖 libs 层 + Qt"
                     "（契约 §11 链接关 / 验收 6），装配权归组合根。")
             endif()
         endforeach()

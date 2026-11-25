@@ -1,7 +1,7 @@
 #include "TransformField.h"
 
 #include "AppContext.h"
-#include "LuaEditor.h"
+#include "TransformScriptDialog.h"
 #include "QtFieldRenderer.h"
 #include "Result.h"
 #include "SchemaEngine.h"
@@ -30,8 +30,7 @@ using namespace nextpilot::plotscope::registry;
 using namespace nextpilot::plotscope::parser;
 using namespace nextpilot::plotscope::context;
 
-namespace nextpilot::plotscope::gui
-{
+namespace nextpilot::plotscope::gui {
 
 TransformField::TransformField(AppContext &appCtx, uint32_t capability, QWidget *parent)
     : QWidget(parent), m_appCtx(appCtx), m_capability(capability)
@@ -61,8 +60,7 @@ TransformField::TransformField(AppContext &appCtx, uint32_t capability, QWidget 
     m_paramHost = new QWidget(this);
     root->addWidget(m_paramHost);
 
-    connect(m_combo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &TransformField::onCurrentChanged);
+    connect(m_combo, QOverload<int>::of(&QComboBox::currentIndexChanged), this, &TransformField::onCurrentChanged);
     connect(m_combo, &QComboBox::editTextChanged, this, &TransformField::onTextEdited);
     connect(m_editLua, &QPushButton::clicked, this, &TransformField::onEditLua);
 
@@ -71,15 +69,9 @@ TransformField::TransformField(AppContext &appCtx, uint32_t capability, QWidget 
 
 TransformField::~TransformField() = default;
 
-int TransformField::descriptorCount() const
-{
-    return m_descriptors.size();
-}
+int TransformField::descriptorCount() const { return m_descriptors.size(); }
 
-void TransformField::setLabel(const QString &label)
-{
-    m_description->setText(label);
-}
+void TransformField::setLabel(const QString &label) { m_description->setText(label); }
 
 void TransformField::rebuildDescriptors()
 {
@@ -104,10 +96,7 @@ void TransformField::refreshScripts()
         m_combo->setCurrentIndex(idx);
 }
 
-QString TransformField::currentDescriptorId() const
-{
-    return m_combo->currentData().toString();
-}
+QString TransformField::currentDescriptorId() const { return m_combo->currentData().toString(); }
 
 void TransformField::onCurrentChanged(int index)
 {
@@ -143,9 +132,8 @@ void TransformField::onTextEdited(const QString &text)
 void TransformField::applyDescriptor(const TransformDescriptor &d, const QJsonObject &initial)
 {
     m_updating = true;
-    m_description->setText(QStringLiteral("%1\n示例：%2")
-                               .arg(d.description,
-                                    d.example.isEmpty() ? QStringLiteral("—") : d.example));
+    m_description->setText(
+        QStringLiteral("%1\n示例：%2").arg(d.description, d.example.isEmpty() ? QStringLiteral("—") : d.example));
     const TransformRequest init = TransformRequest::fromJson(initial);
 
     const bool isExpr = d.kind == TransformKind::Expression;
@@ -291,7 +279,7 @@ void TransformField::onEditLua()
 {
     if (!m_appCtx.interactions().hasTransformScriptOps())
         return;
-    LuaEditor editor(m_appCtx, this);
+    TransformScriptDialog editor(m_appCtx, this);
     const TransformRequest cur = TransformRequest::fromJson(m_lastLuaRequest);
     editor.loadScript(cur.scriptId, cur.luaSource, cur.descriptorId);
     if (editor.exec() != QDialog::Accepted)

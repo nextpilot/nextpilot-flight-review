@@ -5,7 +5,6 @@
 #include "DialogLauncherHub.h"
 
 #include "DecodedFrame.h"
-#include "ToolboxHub.h"
 #include "Domain.h"
 #include "IMessageParser.h"
 #include "QtFieldRenderer.h"
@@ -37,9 +36,9 @@
 namespace nextpilot::plotscope::protocol
 {
 
-ProtocolInspectorDialog::ProtocolInspectorDialog(nextpilot::plotscope::registry::ToolboxHub &registry,
+ProtocolInspectorDialog::ProtocolInspectorDialog(const QList<nextpilot::plotscope::parser::IMessageParser *> &parsers,
                                                  QWidget *parent)
-    : QDialog(parent), m_registry(registry)
+    : QDialog(parent), m_parsers(parsers)
 {
     setWindowTitle(QStringLiteral("协议检查器"));
     resize(980, 640);
@@ -139,8 +138,7 @@ void ProtocolInspectorDialog::applyTheme()
 void ProtocolInspectorDialog::rebuildProtocolList()
 {
     m_protocolList->clear();
-    const auto parsers = m_registry.messageParsers();
-    for (nextpilot::plotscope::parser::IMessageParser *p : parsers)
+    for (nextpilot::plotscope::parser::IMessageParser *p : m_parsers)
     {
         auto *item = new QListWidgetItem(QStringLiteral("%1  ·  %2")
                                              .arg(p->protocolName(), nextpilot::plotscope::registry::domainName(p->domain())));
@@ -156,7 +154,19 @@ void ProtocolInspectorDialog::rebuildProtocolList()
 void ProtocolInspectorDialog::onProtocolChanged()
 {
     auto *item = m_protocolList->currentItem();
-    m_current = item ? m_registry.messageParser(item->data(Qt::UserRole).toString()) : nullptr;
+    m_current = nullptr;
+    if (item)
+    {
+        const QString id = item->data(Qt::UserRole).toString();
+        for (auto *p : m_parsers)
+        {
+            if (p->id() == id)
+            {
+                m_current = p;
+                break;
+            }
+        }
+    }
     if (!m_current)
     {
         m_info->clear();
@@ -306,22 +316,22 @@ void ProtocolInspectorDialog::doParse()
     m_status->setText(QStringLiteral("已解析 %1 个字段").arg(frame.fields.size()));
 }
 
-void ProtocolInspectorDialog::run(nextpilot::plotscope::registry::ToolboxHub &registry, QWidget *parent)
+void ProtocolInspectorDialog::run(const QList<nextpilot::plotscope::parser::IMessageParser *> &parsers, QWidget *parent)
 {
-    ProtocolInspectorDialog dlg(registry, parent);
+    ProtocolInspectorDialog dlg(parsers, parent);
     dlg.exec();
 }
 
 } // namespace nextpilot::plotscope::protocol
 
-// D18a：协议检查器自注册启动器。其 run() 只需 ToolboxHub + parent，
-// 从外壳传入的 AppContext 取 toolbox，executor 本对话框不用。
+// A0b：协议检查器自注册启动器。经 main 已有的 toolbox() 取解析目录快照，
+// executor 本对话框不用。
 namespace
 {
 void launchProtocolInspector(QWidget *parent, nextpilot::plotscope::context::AppContext &appCtx,
                              nextpilot::plotscope::intent::IIntentExecutor &)
 {
-    nextpilot::plotscope::protocol::ProtocolInspectorDialog::run(appCtx.toolbox(), parent);
+    nextpilot::plotscope::protocol::ProtocolInspectorDialog::run(appCtx.toolbox().parsers(), parent);
 }
 } // namespace
 

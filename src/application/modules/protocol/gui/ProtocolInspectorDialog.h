@@ -2,10 +2,10 @@
 
 #include <QDialog>
 #include <QJsonObject>
+#include <QList>
 #include <QString>
 
 #include "FormSchema.h"
-#include "ToolboxHub.h"
 #include "IMessageParser.h"
 
 class QComboBox;
@@ -35,11 +35,13 @@ class ProtocolInspectorDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit ProtocolInspectorDialog(nextpilot::plotscope::registry::ToolboxHub &registry,
+    // parsers 是解析目录快照（IMessageParser* 抽象接口列表），由 AppContext::parsers() 提供；
+    // 对话框不 include ToolboxHub、不认识工具箱容器。
+    explicit ProtocolInspectorDialog(const QList<nextpilot::plotscope::parser::IMessageParser *> &parsers,
                                      QWidget *parent = nullptr);
     ~ProtocolInspectorDialog() override;
 
-    static void run(nextpilot::plotscope::registry::ToolboxHub &registry, QWidget *parent = nullptr);
+    static void run(const QList<nextpilot::plotscope::parser::IMessageParser *> &parsers, QWidget *parent = nullptr);
 
 private:
     void rebuildProtocolList();
@@ -50,7 +52,7 @@ private:
     QJsonObject collectParams() const;
     void applyTheme();
 
-    nextpilot::plotscope::registry::ToolboxHub &m_registry;
+    QList<nextpilot::plotscope::parser::IMessageParser *> m_parsers;
     nextpilot::plotscope::parser::IMessageParser *m_current = nullptr;
 
     QListWidget *m_protocolList = nullptr;

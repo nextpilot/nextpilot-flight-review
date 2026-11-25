@@ -103,6 +103,10 @@ add_subdirectory(libs/command)
 # schema 契约与渲染：ParamSpec metadata -> FormSchema -> QWidget。
 add_subdirectory(libs/uischema)
 
+# 通用 UI 控件库：跨模块复用的控件级底座（Transform/Filter/脚本配置弹窗）。
+# 只依赖 libs + Qt，不含任何业务模块/dataset/toolbox 依赖。
+add_subdirectory(libs/widget)
+
 # 消息解析契约与 C ABI（IMessageParser / ParserHub / ps_*_spi）。
 add_subdirectory(libs/parser)
 

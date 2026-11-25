@@ -1,7 +1,7 @@
-#include "LuaEditor.h"
+#include "TransformScriptDialog.h"
 
 #include "AppContext.h"
-#include "Dataset.h"
+#include "InteractionHub.h"
 #include "Result.h"
 #include "Transform.h"
 
@@ -18,18 +18,13 @@
 #include <QVBoxLayout>
 
 using namespace nextpilot::plotscope::foundation;
-using namespace nextpilot::plotscope::dataset;
 using namespace nextpilot::plotscope::intent;
 using namespace nextpilot::plotscope::uischema;
-using namespace nextpilot::plotscope::registry;
-using namespace nextpilot::plotscope::parser;
 using namespace nextpilot::plotscope::context;
 
-namespace nextpilot::plotscope::gui
-{
+namespace nextpilot::plotscope::gui {
 
-LuaEditor::LuaEditor(AppContext &appCtx, QWidget *parent)
-    : QDialog(parent), m_appCtx(appCtx)
+TransformScriptDialog::TransformScriptDialog(AppContext &appCtx, QWidget *parent) : QDialog(parent), m_appCtx(appCtx)
 {
     setWindowTitle(QStringLiteral("Lua 编辑器"));
     resize(720, 680);
@@ -83,16 +78,16 @@ LuaEditor::LuaEditor(AppContext &appCtx, QWidget *parent)
     auto *closeBtn = buttons->addButton(QDialogButtonBox::Close);
     root->addWidget(buttons);
 
-    connect(saveBtn, &QPushButton::clicked, this, &LuaEditor::onSave);
+    connect(saveBtn, &QPushButton::clicked, this, &TransformScriptDialog::onSave);
     connect(closeBtn, &QPushButton::clicked, this, &QDialog::reject);
-    connect(dbgSingle, &QPushButton::clicked, this, &LuaEditor::onDebugSingle);
-    connect(dbgBatch, &QPushButton::clicked, this, &LuaEditor::onDebugBatch);
-    connect(fillBtn, &QPushButton::clicked, this, &LuaEditor::onFillFromActiveChannel);
+    connect(dbgSingle, &QPushButton::clicked, this, &TransformScriptDialog::onDebugSingle);
+    connect(dbgBatch, &QPushButton::clicked, this, &TransformScriptDialog::onDebugBatch);
+    connect(fillBtn, &QPushButton::clicked, this, &TransformScriptDialog::onFillFromActiveChannel);
 }
 
-LuaEditor::~LuaEditor() = default;
+TransformScriptDialog::~TransformScriptDialog() = default;
 
-void LuaEditor::loadScript(const QString &scriptId, const QString &source, const QString &name)
+void TransformScriptDialog::loadScript(const QString &scriptId, const QString &source, const QString &name)
 {
     m_loadedScriptId = scriptId;
     if (!scriptId.isEmpty())
@@ -103,7 +98,7 @@ void LuaEditor::loadScript(const QString &scriptId, const QString &source, const
         m_code->setPlainText(source);
 }
 
-QJsonObject LuaEditor::currentRequest() const
+QJsonObject TransformScriptDialog::currentRequest() const
 {
     TransformRequest req;
     req.descriptorId = QStringLiteral("lua.inline");
@@ -112,12 +107,9 @@ QJsonObject LuaEditor::currentRequest() const
     return req.toJson();
 }
 
-void LuaEditor::showResult(const QString &text)
-{
-    m_result->setText(QStringLiteral("结果：%1").arg(text));
-}
+void TransformScriptDialog::showResult(const QString &text) { m_result->setText(QStringLiteral("结果：%1").arg(text)); }
 
-void LuaEditor::onDebugSingle()
+void TransformScriptDialog::onDebugSingle()
 {
     if (!m_appCtx.interactions().hasTransformEvaluator())
     {
@@ -134,11 +126,10 @@ void LuaEditor::onDebugSingle()
         return;
     }
     const QVector<double> &vals = out.value();
-    showResult(vals.isEmpty() ? QStringLiteral("空结果")
-                              : QString::number(vals.first(), 'g', 10));
+    showResult(vals.isEmpty() ? QStringLiteral("空结果") : QString::number(vals.first(), 'g', 10));
 }
 
-void LuaEditor::onDebugBatch()
+void TransformScriptDialog::onDebugBatch()
 {
     if (!m_appCtx.interactions().hasTransformEvaluator())
     {
@@ -173,29 +164,15 @@ void LuaEditor::onDebugBatch()
     showResult(QStringLiteral("%1 点，前几个：%2").arg(vals.size()).arg(preview.join(QStringLiteral(", "))));
 }
 
-void LuaEditor::onFillFromActiveChannel()
+void TransformScriptDialog::onFillFromActiveChannel()
 {
-    const int dsId = m_appCtx.activeDatasetId();
-    const Dataset *ds = m_appCtx.data().get(dsId);
-    if (!ds || ds->tableCount() <= 0)
-    {
-        QMessageBox::information(this, QStringLiteral("取活动通道"), QStringLiteral("当前没有活动数据集"));
-        return;
-    }
-    const Table *t = ds->table(0);
-    if (!t || t->columns.isEmpty())
-        return;
-    auto ch = ds->channel(t->name, t->columns.first().name);
-    if (!ch)
-        return;
-    QStringList lines;
-    const int take = qMin(2000, ch->size());
-    for (int i = 0; i < take; ++i)
-        lines << QString::number(ch->value.value(i), 'g', 10);
-    m_batch->setPlainText(lines.join(QStringLiteral("\n")));
+    // A0b 清场：原经交互中枢注入的"活动通道取数"接缝（Q1 违规领域词）已按施工令删除。
+    // A1b 将以泛化的能力接缝重接；当前给出明确提示。
+    QMessageBox::information(this, QStringLiteral("取活动通道"),
+                             QStringLiteral("批量试算取数能力待 A1b 以泛化接缝重接，当前暂不可用"));
 }
 
-void LuaEditor::onSave()
+void TransformScriptDialog::onSave()
 {
     if (!m_appCtx.interactions().hasTransformScriptOps())
     {
@@ -221,9 +198,6 @@ void LuaEditor::onSave()
     accept();
 }
 
-QJsonObject LuaEditor::savedRequest() const
-{
-    return m_savedRequest;
-}
+QJsonObject TransformScriptDialog::savedRequest() const { return m_savedRequest; }
 
 } // namespace nextpilot::plotscope::gui

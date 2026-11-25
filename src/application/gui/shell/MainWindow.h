@@ -117,14 +117,8 @@ private:
     // 声明 app 骨架提供的标准插槽（ribbon 页签/分组、停靠区、菜单）。
     void declareStandardSlots();
 
-    // 骨架自带的标准动作"打开数据"：选文件 -> 走 data.load 意图。
-    //
-    // 为什么它在骨架而不是数据模块：
-    //   - data.load 本来就是**系统级**意图（不归属任何可卸载模块），
-    //     放在骨架里与意图的归属一致；
-    //   - "选文件"是 GUI 交互能力，只有外壳有 QWidget 与 QFileDialog。
-    // 加载完成后依然走意图层，于是 GUI 与 CLI/脚本行为一致。
-    void openDataFile(nextpilot::plotscope::host::RuntimeHost &host);
+    // 打开数据对话框已归 data 模块呈现层（D18a/A2a）：由模块自注册启动器
+    // （DialogLauncherHub）处理，外壳按 id 触发、不 include 业务对话框。
 
     // 来源库项：按指定格式驱动直接弹文件对话框（跳过格式选择步骤），
     // 选中的文件逐条走 data.load 意图——与通用导入、CLI/脚本同一条加载路径。

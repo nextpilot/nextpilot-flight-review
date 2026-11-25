@@ -11,17 +11,16 @@ class QLineEdit;
 class QPlainTextEdit;
 class QPushButton;
 
-namespace nextpilot::plotscope::gui
-{
+namespace nextpilot::plotscope::gui {
 
 // Lua 编辑器：代码编辑 + 单点/批量在线调试 + 保存到 scripts/ops 并注册。
 // 调试逻辑从旧 TransformEditorDialog 抽出复用，不重写。
-class LuaEditor : public QDialog
+class TransformScriptDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit LuaEditor(nextpilot::plotscope::context::AppContext &appCtx, QWidget *parent = nullptr);
-    ~LuaEditor() override;
+    explicit TransformScriptDialog(nextpilot::plotscope::context::AppContext &appCtx, QWidget *parent = nullptr);
+    ~TransformScriptDialog() override;
 
     // 载入已有脚本或内联代码。scriptId 非空表示脚本库引用。
     void loadScript(const QString &scriptId, const QString &source, const QString &name);

@@ -72,6 +72,6 @@ target_link_libraries(ps_module_plot_gui PUBLIC
     fastplot
     ads::ads
     ps_gui_theme
-    ps_gui_transform
+    ps_widgets
     Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ps_module_plot_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

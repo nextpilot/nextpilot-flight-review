@@ -12,8 +12,7 @@ class QFormLayout;
 class QLabel;
 class QWidget;
 
-namespace nextpilot::plotscope::gui
-{
+namespace nextpilot::plotscope::gui {
 
 // 过滤器编辑器：从 FilterOps 拿 descriptor 列表（下拉选 + 说明 + 参数表单），
 // 输出 { filter:<id>, params:{...} } 供 data.filter 意图直接消费。
@@ -22,8 +21,8 @@ class FilterEditorDialog : public QDialog
 {
     Q_OBJECT
 public:
-    explicit FilterEditorDialog(nextpilot::plotscope::context::AppContext &appCtx,
-                                const QString &contextTitle, QWidget *parent = nullptr);
+    explicit FilterEditorDialog(nextpilot::plotscope::context::AppContext &appCtx, const QString &contextTitle,
+                                QWidget *parent = nullptr);
     ~FilterEditorDialog() override;
 
     // 当前选择：{ filter, params }。无有效选择时 filter 为空。

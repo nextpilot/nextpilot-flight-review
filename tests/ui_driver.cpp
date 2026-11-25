@@ -175,7 +175,7 @@ bool shotDialog(QWidget &dlg, const QString &path, int waitMs)
 
 bool dialogImport(App &application, const QJsonObject &params, const QString &path)
 {
-    ImportDialog dlg(application.context().toolbox());
+    ImportDialog dlg(application.context().toolbox().drivers());
     const QString p = params.value(QStringLiteral("path")).toString();
     if (!p.isEmpty())
         dlg.setPath(p); // 预填路径立即探测（与"打开方式"同路径）

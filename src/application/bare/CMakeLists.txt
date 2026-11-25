@@ -12,11 +12,10 @@ if(PS_BUILD_BARE)
     target_link_libraries(ps_shell_bare PRIVATE
         ps_gui
         ps_gui_theme
-        ps_gui_transform
+        ps_widgets
         ps_host
         ps_context
         ps_command
-        ps_protocol
         ps_registry
         Qt6::Widgets Qt6::Gui Qt6::Core)
     set_target_properties(ps_shell_bare PROPERTIES AUTOMOC ON CXX_STANDARD 17)
