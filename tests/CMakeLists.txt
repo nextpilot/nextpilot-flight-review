@@ -169,6 +169,10 @@ target_compile_definitions(ps_test_protocol PRIVATE
     PS_TEST_FIXTURE_DIR="${CMAKE_SOURCE_DIR}/tests/fixture")
 set_target_properties(ps_test_protocol PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_protocol COMMAND ps_test_protocol)
+# 含性能断言（设计 §9.7 第1条：单轮解析 ≤ 5ms）。该断言度量的是单轮最坏耗时，
+# 与并行调度强相关：-j4 下其他测试抢 CPU 时最坏轮次会被拉长到 5ms 以上而误红
+# （CI 首次门禁即此现象）。用 RUN_SERIAL 让它在独占 CPU 下跑，保住断言不放宽。
+set_tests_properties(ps_protocol PROPERTIES RUN_SERIAL TRUE)
 
 # === 协议模块意图面（ng/modules/protocol 建立在 ps_protocol 之上）===
 # headless：只链模块 + 库 + foundation，不拉 Widgets。
