@@ -17,6 +17,7 @@ public:
 
     // GUI 环境下声明本模块的界面入口（headless 时宿主不调用）。
     void onAttach(nextpilot::plotscope::host::IUiContext &ui) override;
+    nextpilot::plotscope::registry::ModuleContributions contributes() const override;
 
 private:
     class Handler;

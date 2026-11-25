@@ -10,6 +10,9 @@
 #include "ExtensionActivationService.h"
 #include "command/CommandRegistry.h"
 #include "ContributionParser.h"
+#include "ViewRegistry.h"
+#include "IViewsService.h"
+#include "IActionProvider.h"
 #include "Intent.h"
 
 #include <QApplication>
@@ -49,14 +52,23 @@ int main(int argc, char *argv[])
     // 样例扩展的 contributes（与 tests/e2e/cmd-ext/extensions 的 manifest 等价）。
     const char *manifest = R"({
         "commands":[{"command":"hello.say","title":"说你好","category":"测试","order":10}],
-        "menus":{"commandPalette":[{"command":"hello.say","group":"z@1"}]}})";
+        "menus":{
+            "commandPalette":[{"command":"hello.say","group":"z@1"}],
+            "view/title":[{"command":"hello.say","group":"navigation","when":"view == hello.view"}],
+            "view/item/context":[{"command":"hello.say","group":"inline","when":"view == hello.view && item.kind == demo"}]
+        },
+        "viewsContainers":[{"id":"hello.container","title":"示例视图","area":"sidebar","order":20}],
+        "views":[{"id":"hello.view","name":"示例","container":"hello.container","order":0}],
+        "colors":{"hello.accent":{"dark":"#4fc3f7","light":"#0277bd"}},
+        "statusbar":[{"id":"hello.status","side":"right","priority":30,"text":"示例: --","commandId":"hello.say"}]
+    })";
     auto obj = QJsonDocument::fromJson(QByteArray(manifest)).object();
     ContributesDoc doc = parseContributes(obj, QStringLiteral("plotscope.helloworld")).doc;
     CHECK(application.context().toolbox().mountContribution(doc));
 
     // 装配层同款接线：激活服务把贡献命令灌进一个命令表 + 注册执行 handler。
     CommandRegistry commands;
-    assembly::ExtensionActivationService activation(application.context().toolbox());
+    assembly::ExtensionActivationService activation(application.context());
     activation.bind(&commands, application.host());
 
     // 面板出现：贡献命令已进命令表（buildCommandItems 从 commands() 读）。
@@ -70,6 +82,70 @@ int main(int argc, char *argv[])
         CHECK(d->category == QStringLiteral("测试"));
         CHECK(d->intentOp == QLatin1String("hello.say"));
         CHECK(d->provider == QLatin1String("plotscope.helloworld"));
+    }
+
+    // A8b-M2 e2e 视图用例：contributes 声明经唯一扩展注册表可读，侧栏容器/视图/视图标题动作
+    // /右键项/colors/statusbar 都在；ViewRegistry 能按容器查视图并挂 provider。
+    auto &ext = application.context().toolbox();
+    CHECK(ext.contributedViewContainers().size() == 1);
+    CHECK(ext.contributedViewContainers().at(0).item.id == QLatin1String("hello.container"));
+    CHECK(ext.contributedViewContainers().at(0).item.area == QLatin1String("sidebar"));
+    CHECK(ext.contributedViews().size() == 1);
+    CHECK(ext.contributedViews().at(0).item.container == QLatin1String("hello.container"));
+    // view/title 与 view/item/context 两个 place 的菜单项可见（侧栏视图的动作）。
+    const auto titleItems = ext.menuItemsIn(QStringLiteral("view/title"));
+    CHECK(titleItems.size() == 1);
+    CHECK(titleItems.at(0).item.command == QLatin1String("hello.say"));
+    CHECK(ext.menuItemsIn(QStringLiteral("view/item/context")).size() == 1);
+    CHECK(ext.contributedColors().size() == 1);
+    CHECK(ext.contributedColors().at(0).item.light == QLatin1String("#0277bd"));
+    CHECK(ext.contributedStatuses().size() == 1);
+    CHECK(ext.contributedStatuses().at(0).item.id == QLatin1String("hello.status"));
+
+    // A8b-M2 裁定 52442006 Step 5 e2e：bind 已把扩展包 views 声明灌进组合根的
+    // ViewRegistry（views.registry 服务），壳读回走 IViewsService（views.readback）。
+    auto *services = application.host().services();
+    CHECK(services != nullptr);
+    auto *viewSvc =
+        services ? services->getService<nextpilot::plotscope::workbench::IViewsService>(
+                       QStringLiteral("views.readback"))
+                 : nullptr;
+    CHECK(viewSvc != nullptr);
+    if (viewSvc)
+    {
+        const auto containers = viewSvc->containersIn(QStringLiteral("sidebar"));
+        CHECK(containers.size() == 1);
+        if (!containers.isEmpty())
+        {
+            CHECK(containers.at(0).id == QLatin1String("hello.container"));
+            CHECK(containers.at(0).title == QStringLiteral("示例视图"));
+        }
+        const auto inContainer = viewSvc->viewsInContainer(QStringLiteral("hello.container"));
+        CHECK(inContainer.size() == 1);
+        if (!inContainer.isEmpty())
+            CHECK(inContainer.at(0).id == QLatin1String("hello.view"));
+        const auto one = viewSvc->viewForId(QStringLiteral("hello.view"));
+        CHECK(one.owner == QLatin1String("plotscope.helloworld"));
+        CHECK(viewSvc->viewForId(QStringLiteral("nope")).owner.isEmpty());
+    }
+
+    // viewId 注册内容工厂后 openView 走 ViewRegistry::create 同一条链（这里工厂
+    // headless 返回 nullptr，只验证链路命中 provider）。
+    ViewRegistry *viewsReg =
+        services ? services->getService<ViewRegistry>(QStringLiteral("views.registry")) : nullptr;
+    CHECK(viewsReg != nullptr);
+    if (viewsReg)
+    {
+        CHECK(viewsReg->viewsIn(QStringLiteral("hello.container")).size() == 1);
+        CHECK(viewsReg->registerViewProvider(
+            QStringLiteral("hello.view"),
+            [](context::AppContext &, intent::IIntentExecutor &, QWidget *) -> QWidget * {
+                return nullptr;
+            },
+            QStringLiteral("plotscope.helloworld")));
+        CHECK(viewsReg->provider(QStringLiteral("hello.view")) != nullptr);
+        CHECK(viewSvc->openView(QStringLiteral("hello.view"), application.context(),
+                                application.host(), nullptr) == nullptr);
     }
 
     // 执行成功：命令面板激活 → executeCommand(id) → intentOp → host.execute → handler。
@@ -90,6 +166,26 @@ int main(int argc, char *argv[])
     activation.unbind(QStringLiteral("plotscope.helloworld"), &commands);
     CHECK(!commands.contains(QStringLiteral("hello.say")));
     CHECK(activation.boundCommandCount() == 0);
+    // 视图声明也整批撤回（侧栏容器/视图/标题动作/colors/status 全消失）。
+    CHECK(ext.contributedViewContainers().isEmpty());
+    CHECK(ext.contributedViews().isEmpty());
+    CHECK(ext.menuItemsIn(QStringLiteral("view/title")).isEmpty());
+    CHECK(ext.menuItemsIn(QStringLiteral("view/item/context")).isEmpty());
+    CHECK(ext.contributedColors().isEmpty());
+    CHECK(ext.contributedStatuses().isEmpty());
+    if (viewsReg)
+    {
+        CHECK(viewsReg->provider(QStringLiteral("hello.view")) == nullptr);
+    }
+    // Step 5：unbind 经同一 ViewRegistry 按 owner 整批撤，服务读回同步为空。
+    if (viewsReg)
+        CHECK(viewsReg->viewsIn(QStringLiteral("hello.container")).isEmpty());
+    if (viewSvc)
+    {
+        CHECK(viewSvc->viewsInContainer(QStringLiteral("hello.container")).isEmpty());
+        CHECK(viewSvc->containersIn(QStringLiteral("sidebar")).isEmpty());
+        CHECK(viewSvc->viewForId(QStringLiteral("hello.view")).owner.isEmpty());
+    }
     // host 再 execute 该 op 无 handler 认领。
     auto afterUnmount = application.host().execute(intent);
     CHECK(!static_cast<bool>(afterUnmount));

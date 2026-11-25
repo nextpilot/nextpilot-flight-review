@@ -24,4 +24,5 @@ public:
     nextpilot::plotscope::host::ModuleInfo info() const override;
     void initialize(nextpilot::plotscope::instantiation::InstantiationService &services) override;
     void onAttach(nextpilot::plotscope::host::IUiContext &ui) override;
+    nextpilot::plotscope::registry::ModuleContributions contributes() const override;
 };

@@ -8,7 +8,7 @@
 //   - slot 注册表只承载 Ribbon 页签与分组这两类有真实消费者的容器；
 //   - 壳保留自己的页与分组：开始（产品级聚合页，暂留壳，等出现独立 home 模块再迁）、
 //     文件、视图；其余业务页（数据/绘图/脚本/协议/分析/报告）由各模块在 `onAttach`
-//     里经 `IUiContext::declareRibbonPage` / `declareRibbonGroup` 自声明。
+//     的页/组由各模块经 contributes() 声明式贡献。
 //
 // 本文件是 app 骨架的配置（app 长什么样），不是 core 机制；core 只提供
 // 插槽注册表与页/组声明能力。GUI 侧 MainWindow 脱离宿主单独使用时可再调一次
@@ -16,9 +16,18 @@
 
 #include "UiSlotHub.h"
 
+namespace nextpilot::plotscope::workbench
+{
+class ISlotsService;
+}
+
 namespace nextpilot::plotscope::host
 {
 
 void declareShellContributions(nextpilot::plotscope::registry::UiSlotHub &registry);
+
+// A8b-M2 裁定 52442006 Step 4：壳（gui 目录）不再持 UiSlotHub，骨架声明经
+// ISlotsService 通道（同一份声明清单，与 UiSlotHub 版完全等价）。
+void declareShellContributions(nextpilot::plotscope::workbench::ISlotsService &slots);
 
 } // namespace nextpilot::plotscope::host

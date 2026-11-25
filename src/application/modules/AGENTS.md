@@ -27,7 +27,7 @@
 - `ps_module_<x>`：headless 部分，只链 Qt Core，CLI/GUI 都装载
 - `ps_module_<x>_gui`：Qt Widgets 部分，**只被 GUI 可执行文件链接**（OBJECT 库，静态自注册依赖 TU 构造函数），CLI 二进制里物理不存在
 
-写 UI 走两条通道：① `onAttach` 里 `ui()->addAction/declareRibbonPage/declareRibbonGroup` 声明；② 面板实现 `PS_REGISTER_PANEL(type, ...)` 自注册进 PanelFactoryHub，模块用 `ui()->requestPanel(Region, type)` 按枚举区域请求。**headless target 严禁链 Qt Widgets 或 include 本模块 `*_gui` 头**。
+写 UI 走两条通道：① override `contributes()` 返回声明式数据（Ribbon 页/组/动作，宿主统一灌回）；② 面板实现 `PS_REGISTER_PANEL(type, ...)` 自注册进 PanelFactoryHub，模块用 `ui()->requestPanel(Region, type)` 按枚举区域请求。**headless target 严禁链 Qt Widgets 或 include 本模块 `*_gui` 头**。
 
 ## 动手前自查
 

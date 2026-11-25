@@ -145,8 +145,10 @@ int main(int argc, char *argv[])
 
     // A8b-M1：把扩展 contributes 的命令接进命令面板。MainWindow 零改动——
     // 装配层用 public getter 拿 CommandRegistry*，激活服务只按声明摆放、不解释 id。
+    // 裁定 52441633 §四：只传 AppContext，扩展注册表的获取留在装配层，
+    // gui 目录不再出现扩展注册表的获取路径（§9 e) 判据）。
     nextpilot::plotscope::assembly::ExtensionActivationService extensionActivation(
-        application.context().toolbox());
+        application.context());
     extensionActivation.bind(window.commandRegistry(), application.host());
 
 #ifdef PS_HAS_REPORT_GUI

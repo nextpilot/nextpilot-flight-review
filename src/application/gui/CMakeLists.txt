@@ -96,7 +96,7 @@ target_include_directories(ps_gui PUBLIC
 # （ps_host / ps_context / ps_command / ps_gui_theme / ps_widgets / 其余 libs/*）
 # 与 Qt；不许出现任何业务模块、工具箱、解析器库，也不含 fastplot / ps_protocol——
 # 绘图在 plot 模块、协议在 protocol 模块，外壳零业务链接（A1a）。
-# 装配权上移到组合根（exe / 装配层），壳只接收"已装配好的 Pack + ToolboxHub"。
+# 装配权上移到组合根（exe / 装配层），壳只接收服务接口（ISlotsService 等，经装配层注册）。
 # 下方护栏在 configure 期硬拦。
 target_link_libraries(ps_gui PUBLIC ps_host ps_context ps_command ps_gui_theme ps_widgets
                                     ads::ads SARibbonBar::SARibbonBar

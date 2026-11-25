@@ -42,6 +42,15 @@ class QEvent;
 class QMenu;
 class QAction;
 
+namespace nextpilot::plotscope::workbench
+{
+class IPanelsService;
+class IFormatHints;
+class IThemeService;
+class ISlotsService;
+}
+
+
 namespace nextpilot::plotscope::gui
 {
 class KeybindingDialog;
@@ -194,6 +203,13 @@ private:
     // 启动期面板引用校验未命中清单（诊断/测试回读；空 = 全部命中工厂表）。
     QStringList m_panelReferenceIssues;
     ThemeManager *m_theme = nullptr;   // 系统级主题管理，生命周期归宿主
+    // 壳读回服务（A8b-M2 裁定 52441633 §三）：包面板声明/格式提示/扩展主题 token
+    // 都经 workbench 接口读回，MainWindow 不直连扩展注册表。借用指针，归装配层。
+    const nextpilot::plotscope::workbench::IPanelsService *m_panelsService = nullptr;
+    const nextpilot::plotscope::workbench::IFormatHints *m_formatHints = nullptr;
+    const nextpilot::plotscope::workbench::IThemeService *m_themeService = nullptr;
+    // 槽位表服务（裁定 52442006 Step 4）：壳读写唯一通道；未装配（bare 壳）为 nullptr。
+    nextpilot::plotscope::workbench::ISlotsService *m_slotsService = nullptr;
     // 系统级 preferences.open handler（打开全局偏好对话框）；随窗口存亡。
     PreferencesIntentHandler *m_preferencesHandler = nullptr;
     bool m_sessionRestored = false;   // 会话恢复只跑一次（首次显示后）

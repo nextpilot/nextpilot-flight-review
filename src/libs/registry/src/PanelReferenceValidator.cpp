@@ -25,6 +25,42 @@ QList<PanelReferenceIssue> validatePanelReferences(const ToolboxHub &toolbox,
                                                    const UiSlotHub &slotHub,
                                                    const QList<ProductPanelPlacement> &placements)
 {
+    return validatePanelReferences(toolbox.panels.values(), slotHub, placements);
+}
+
+QList<PanelReferenceIssue> validatePanelReferences(const QList<PanelSpec> &panels,
+                                                   const QList<ActivitySpec> &activities,
+                                                   const QList<ProductPanelPlacement> &placements)
+{
+    QList<PanelReferenceIssue> issues;
+    const QStringList known = PanelFactoryHub::types();
+
+    auto check = [&issues, &known](const QString &source, const QString &type) {
+        if (type.isEmpty() || known.contains(type))
+            return;
+        issues.append(makeIssue(source, type));
+    };
+
+    for (const PanelSpec &panel : panels)
+        check(QStringLiteral("面板声明（provider=%1）").arg(panel.provider), panel.id);
+
+    for (const ActivitySpec &activity : activities)
+    {
+        for (const QString &type : activity.panelTypes)
+            check(QStringLiteral("Activity \"%1\" panelTypes").arg(activity.id), type);
+        check(QStringLiteral("Activity \"%1\" centralPanel").arg(activity.id), activity.centralPanel);
+    }
+
+    for (const ProductPanelPlacement &placement : placements)
+        check(QStringLiteral("产品默认布局 %1").arg(regionName(placement.region)), placement.panelType);
+
+    return issues;
+}
+
+QList<PanelReferenceIssue> validatePanelReferences(const QList<PanelSpec> &panels,
+                                                   const UiSlotHub &slotHub,
+                                                   const QList<ProductPanelPlacement> &placements)
+{
     QList<PanelReferenceIssue> issues;
     const QStringList known = PanelFactoryHub::types();
 
@@ -35,7 +71,7 @@ QList<PanelReferenceIssue> validatePanelReferences(const ToolboxHub &toolbox,
     };
 
     // 1) 包声明的领域面板：provider 由 mount() 自动写入，诊断可直接归到包。
-    for (const PanelSpec &panel : toolbox.panels.values())
+    for (const PanelSpec &panel : panels)
         check(QStringLiteral("面板声明（provider=%1）").arg(panel.provider), panel.id);
 
     // 2) Activity Bar 入口关联的左栏 section 面板与中央面板。

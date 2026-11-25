@@ -15,6 +15,7 @@
 #include "JobRecorder.h"
 #include "ModuleInfo.h"
 #include "UiSlotHub.h"
+#include "ModuleContributions.h"
 
 #include <QObject>
 
@@ -31,25 +32,13 @@ class IUiContext
 public:
     virtual ~IUiContext() = default;
 
-    // 声明 Ribbon 页签（纯数据容器）：模块把自己的业务页登记进壳的 Ribbon，
-    // 壳不再预置业务页（D13）。同 id 重复声明先到者为准。
-    virtual void declareRibbonPage(const QString &id, const QString &label, int order) = 0;
+    // A8b-M2 裁定 52442006 Step 3：灌回已搬出壳——原 installContributions 虚函数
+    // 删除，改由装配层 ContributionsInstaller（IContributionsInstaller）实现，
+    // host.activate 收集 contributes 后直接调它。IUiContext 只剩工作台服务。
 
-    // 声明 Ribbon 分组，挂到指定页签下；order 决定同页内左右位置。
-    virtual void declareRibbonGroup(const QString &id, const QString &label, const QString &pageId, int order = 0) = 0;
-
-    // 声明 Activity Bar 入口。模块只描述 id/标签/图标/对应 ribbon 页/左栏 section，
-    // 控件由外壳创建；headless 下不调用 onAttach，声明仍可落表。
-    virtual void declareActivity(const nextpilot::plotscope::registry::ActivitySpec &activity) = 0;
-
-    // 声明模块贡献的语义色 token（验收 8 / VS Code 对位）：模块说自己需要哪些语义色
-    // 及兜底色，壳汇总后灌进主题；内置主题未定义的键才用兜底色。headless 不调 onAttach，
-    // 故模块 token 只在 GUI 装配路径出现，不影响 CLI 纯净。
-    virtual void declareThemeToken(const nextpilot::plotscope::registry::ThemeTokenSpec &token) = 0;
-
-    // 声明状态栏项（验收 7 / D8 推模式）：模块只描述 id/side/priority/when 等元数据，
-    // 控件由壳按 side/priority 排布；同 id 重复声明先到者为准。
-    virtual void declareStatus(const nextpilot::plotscope::registry::StatusSpec &status) = 0;
+    // A8b-M2 裁定 52441074：声明类方法（declare*/addAction/bindActionProvider/
+    // refreshActions）已从 IUiContext 移除——模块改走 contributes() 声明式数据，
+    // 宿主收集后经 IContributionsInstaller::install 一次性灌回。
 
     // 推送状态文本（不轮询）：模块在数据变化时调用，壳更新对应项的显示。
     // 未声明的 id 被忽略（headless 下无实现，声明/推送都不影响 CLI 纯净）。
@@ -60,20 +49,6 @@ public:
 
     // 更新 Activity Bar 徽标数量（0 表示不显示）。
     virtual void setActivityBadge(const QString &activityId, int count) = 0;
-
-    // 往已声明的插槽里放一个动作（ribbon 按钮 / 图库项）。
-    // 归属插槽由 action.slotId 单一来源给出——不另传 slotId 参数，
-    // 杜绝"参数 area 与 action.slotId 不一致"的双源隐患。
-    // 动态可见性用 action.when 表达（命令层 when 求值器），不再设动态 provider 通道。
-    virtual void addAction(const nextpilot::plotscope::registry::UiAction &action) = 0;
-
-    // 注册动作提供器：ribbon 装配时实时回调取当前条目（MRU / 收藏等运行期变化的清单）。
-    // 提供器只返回纯数据 UiAction；条目内容变化后调 refreshActions() 触发重建。
-    virtual void bindActionProvider(const QString &area, const QString &provider,
-                                    std::function<QList<nextpilot::plotscope::registry::UiAction>()> providerFn) = 0;
-
-    // 提供器内容已变化：通知外壳重建 ribbon（不直接碰控件）。
-    virtual void refreshActions() = 0;
 
     // 请求 app 骨架提供一个部件，放到指定逻辑区域——通用面板与扩展包领域面板的唯一入口。
     //
@@ -125,6 +100,11 @@ public:
     // 阶段一：声明能力、订阅事件、注册命令。不碰 UI。
     // 只收服务容器：模块按 VSCode 名字从 services 取能力，不接触宿主/AppContext。
     virtual void initialize(nextpilot::plotscope::instantiation::InstantiationService &services) = 0;
+
+    // A8b-M2 裁定 52441074：UI 声明改为声明式数据（单一通道）。
+    // 宿主在 initialize 后收集所有模块的 contributes()，统一灌回壳的 slot/status/theme；
+    // 模块不再过程式调 IUiContext::declare*/addAction。默认空，兼容不贡献 UI 的模块。
+    virtual nextpilot::plotscope::registry::ModuleContributions contributes() const { return {}; }
 
     // 阶段二：创建 UI 并 parent 给自己，然后请求宿主放置。
     // headless 时宿主不调用；默认空实现。

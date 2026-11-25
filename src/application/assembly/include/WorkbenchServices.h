@@ -8,6 +8,7 @@
 
 #include "InstantiationService.h"
 #include "WorkbenchAdapters.h"
+#include "ExtensionActivationService.h" // ContributionsInstaller（裁定 52442006 Step 3）
 #include "NullWindow.h"
 #include "RuntimeHost.h"
 
@@ -27,6 +28,10 @@ public:
 
     inst::InstantiationService &services() { return m_services; }
 
+    // 模块声明灌回入口（裁定 52442006 Step 3）：App 组合根接线到 RuntimeHost，
+    // host.activate 收集 contributes 后调它——壳不再灌回。
+    wb::IContributionsInstaller *contributionsInstaller() { return &m_contribInstaller; }
+
 private:
     inst::InstantiationService m_services;
 
@@ -38,6 +43,18 @@ private:
     WorkspaceAdapter m_workspace;
     CommandsAdapter m_commands;
     ScriptCapabilitiesAdapter m_scriptCaps;
+    // 壳读回三服务（A8b-M2 裁定 52441633 §三）：壳经 workbench 接口读回，
+    // src/application/gui 不再出现 ToolboxHub / toolbox()。
+    PanelsServiceAdapter m_panelsService;
+    FormatHintsAdapter m_formatHints;
+    ThemeServiceAdapter m_themeService;
+    // 槽位表服务（裁定 52442006 Step 1/2）：壳读写唯一通道；灌回经 m_contribInstaller。
+    SlotsServiceAdapter m_slotsService;
+    // 视图注册表（Step 5）：模块 contributes.views 与扩展包 manifest 汇同一张表，
+    // 壳经 IViewsService 读回/打开。
+    registry::ViewRegistry m_viewRegistry;
+    ViewsServiceAdapter m_viewsService;
+    ContributionsInstaller m_contribInstaller;
     wb::NullWindow m_window;
 };
 

@@ -33,6 +33,7 @@ public:
 
     // GUI 环境下请求自己的界面部件（headless 时宿主不调用）。
     void onAttach(nextpilot::plotscope::host::IUiContext &ui) override;
+    nextpilot::plotscope::registry::ModuleContributions contributes() const override;
 
     // 纯数据派生：按已装载的格式驱动生成"来源"画廊条目——每个驱动一条"文件格式"，
     // 前四条再进"常用"组。条目集合严格等于入参驱动列表的派生，壳里不保留常量表。

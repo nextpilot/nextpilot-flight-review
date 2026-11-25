@@ -15,11 +15,16 @@
 
 #include "AppContext.h"
 #include "RuntimeHost.h"
+#include "InstantiationService.h"
+#include "IPanelsService.h"
+#include "IFormatHints.h"
+#include "IThemeService.h"
 #include "ShellContributions.h"
 #include "Intent.h"
 #include "Result.h"
 #include "ErrorCodes.h"
-#include "UiSlotHub.h"
+#include "UiSlotTypes.h"
+#include "ISlotsService.h"
 #include "Contribution.h"
 
 #include "SARibbonMainWindow.h"
@@ -164,8 +169,10 @@ void MainWindow::declareStandardSlots()
     // app 骨架的壳级 Ribbon 页/组，声明清单在 host 层 ShellContributions（不写死在 core）。
     // 这里只做 GUI 侧的**幂等确认**（宿主已声明过，重复声明不会产生副本），
     // 保证即便脱离宿主单独使用 MainWindow，槽也齐备。
-    UiSlotHub &slotReg = m_context->slotHub();
-    nextpilot::plotscope::host::declareShellContributions(slotReg);
+    nextpilot::plotscope::workbench::ISlotsService *slotReg = m_context->slotsService();
+    if (!slotReg)
+        return; // bare 壳未装配槽位服务：骨架声明由 host 层直连通道完成，壳侧跳过
+    nextpilot::plotscope::host::declareShellContributions(*slotReg);
 
     // 骨架自带的**标准动作**：往标准插槽里放内容。
     //
@@ -186,7 +193,7 @@ void MainWindow::declareStandardSlots()
         a.icon = icon;
         a.shortcut = shortcut;
         a.order = order;
-        slotReg.bindLocal(area, a, QStringLiteral("app.skeleton"));
+        slotReg->bindLocal(area, a, QStringLiteral("app.skeleton"));
     };
 
     // 开始页 / 数据页 / 协议页 / 脚本页的业务入口已随各模块 onAttach 自声明
@@ -266,25 +273,28 @@ void MainWindow::declareStandardSlots()
 
     // 来源画廊条目由 DataModule 按已装载的格式驱动元数据派生（sourceGalleryActions），
     // 壳不遍历驱动、不保留格式常量表；这里只保留点击后的对话框分发入口。
-
-    // 诊断归外壳：数据/脚本/分析/绘图由各自模块声明（plot 见 PlotModule::onAttach）。
-    ActivitySpec diagnostics;
-    diagnostics.id = QStringLiteral("diagnostics");
-    diagnostics.label = QStringLiteral("诊断");
-    diagnostics.icon = QStringLiteral("diagnostics");
-    diagnostics.order = 3;
-    diagnostics.ribbonPage = QStringLiteral("ribbon.page.view");
-    diagnostics.provider = QStringLiteral("app.skeleton");
-    slotReg.declareActivity(diagnostics);
 }
 
 void MainWindow::build(RuntimeHost &host)
 {
     m_host = &host;
-    UiSlotHub &slotReg = host.uiSlotsMutable();
 
-    // 绑定器需要插槽表，构造时给。
-    m_binder = new ShellBinder(this, slotReg);
+    // 壳读回服务（裁定 52441633 §三 + 52442006 Step 4）：包面板声明/格式提示/
+    // 扩展主题 token/槽位表都经 workbench 接口；实现由装配层注册进服务容器。
+    // 未装配（bare 壳反证冒烟/极简装配）时保持 nullptr，各读回点退化为空。
+    using namespace nextpilot::plotscope::instantiation;
+    using namespace nextpilot::plotscope::workbench;
+    InstantiationService *services = host.services();
+    if (services)
+    {
+        m_panelsService = services->getService<IPanelsService>(QStringLiteral("panels.readback"));
+        m_formatHints = services->getService<IFormatHints>(QStringLiteral("format.hints"));
+        m_themeService = services->getService<IThemeService>(QStringLiteral("theme.readback"));
+        m_slotsService = services->getService<ISlotsService>(QStringLiteral("slots.binding"));
+    }
+
+    // 绑定器需要槽位服务，构造时给。
+    m_binder = new ShellBinder(this, m_slotsService);
     // Ribbon 上下文页签：binder 不认识命令库，求值器由外壳注入。
     // 用当前上下文快照求值；上下文一改，updateCommandContext 会触发重算。
     m_binder->setWhenEvaluator([this](const QString &when) {
@@ -302,7 +312,11 @@ void MainWindow::build(RuntimeHost &host)
         if (!m_commands)
             return actions;
         const QHash<QString, QVariant> ctx = m_commands->contextValues();
-        for (const ViewTitleActionSpec &spec : m_appCtx.toolbox().titleActionsFor(viewId))
+        // 标题动作声明经 IPanelsService 读回（裁定 52441633 §三），壳不直连扩展注册表。
+        const QList<nextpilot::plotscope::registry::ViewTitleActionSpec> specs =
+            m_panelsService ? m_panelsService->titleActions(viewId)
+                            : QList<nextpilot::plotscope::registry::ViewTitleActionSpec>{};
+        for (const ViewTitleActionSpec &spec : specs)
         {
             if (!spec.when.isEmpty() && !CommandRegistry::evaluateWhen(spec.when, ctx))
                 continue;
@@ -325,7 +339,7 @@ void MainWindow::build(RuntimeHost &host)
         }
         return actions;
     });
-    m_context = new GuiContext(this, slotReg, m_binder, m_appCtx, &host, this);
+    m_context = new GuiContext(this, m_slotsService, m_binder, m_appCtx, &host, m_panelsService, this);
     // 状态栏：先接好信号，模块 onAttach（activate 内）声明状态项时即可排布（验收 7）。
     setupStatusBar();
 
@@ -381,9 +395,6 @@ void MainWindow::build(RuntimeHost &host)
     //    SARibbon/ADS 的地方"。注册为系统级 handler，theme.* 意图走与按钮/脚本
     //    同一条执行路径；headless 无此 handler，会诚实报"无模块能处理意图"。
     m_theme = new ThemeManager(host.app().settings(), &host);
-    // 包声明 + 模块声明的语义色一起灌进主题：内置 token 优先，缺的才用兜底色。
-    // 此刻模块尚未 onAttach（见下方 host.activate），先灌包 token；activate 后再
-    // refreshThemeTokens() 把模块经 declareThemeToken 声明的语义色合并进去（验收 8）。
     refreshThemeTokens();
     host.registerSystemHandler(QStringLiteral("@system/theme"), m_theme);
     QObject::connect(m_theme, &ThemeManager::themeChanged, this,
@@ -410,10 +421,16 @@ void MainWindow::build(RuntimeHost &host)
     // 3) 装模块（GUI 模式：会调用 onAttach，模块可自带界面入口）
     host.activate(QStringList(), m_context);
 
+    // A8b-M2 裁定 52442006 Step 3：灌回已搬装配层（activate 内经 IContributionsInstaller），
+    // 灌回后由壳重建一次 ribbon 与 ActivityBar——原 GuiContext::installContributions 尾部的
+    // rebuild 调用随之搬家，壳在装配完成点统一重建（幂等）。
+    m_binder->rebuildRibbon();
+    m_binder->rebuildActivityBar();
+
     // 3.0a) 面板引用启动期校验（验收 4）：三源（包 PanelSpec / Activity panelTypes、
     // centralPanel / 产品 defaultPanels）必须在工厂表命中。binder 只收集，这里统一进
     // AppContext error 诊断 + stderr，同一问题不打两遍；不 abort。缺失列表由 test_gui 断言为空。
-    m_binder->setPanelReferenceContext(&m_appCtx.toolbox(), m_spec.defaultPanels);
+    m_binder->setPanelReferenceContext(m_panelsService, m_spec.defaultPanels);
     m_panelReferenceIssues = m_binder->missingPanelTypes();
     for (const QString &entry : m_panelReferenceIssues)
     {
@@ -837,23 +854,19 @@ void MainWindow::openWorkspacePreset(RuntimeHost &host)
 
 void MainWindow::openDataWithFormat(RuntimeHost &host, const QString &formatId)
 {
-    // 点图库里的加载器，直接弹该格式的文件对话框。
-    auto *driver = m_appCtx.toolbox().driverForFormat(formatId);
+    // 点图库里的加载器，直接弹该格式的文件对话框。格式提示（显示名/过滤串）经
+    // IFormatHints 读回（裁定 52441633 §三），壳不直连 IMessageParser。
     QString filter = QStringLiteral("全部 (*)");
-    if (driver)
+    QString displayName;
+    if (m_formatHints)
     {
-        const QStringList suf = driver->suffixes();
-        if (!suf.isEmpty())
-        {
-            QStringList patterns;
-            for (const QString &s : suf)
-                patterns << QStringLiteral("*.") + s;
-            filter = driver->displayName() + QStringLiteral(" (") + patterns.join(QLatin1Char(' '))
-                     + QLatin1Char(')') + QStringLiteral(";;全部 (*)");
-        }
+        const QString hint = m_formatHints->fileFilter(formatId);
+        if (!hint.isEmpty())
+            filter = hint + QStringLiteral(";;全部 (*)");
+        displayName = m_formatHints->displayName(formatId);
     }
     const QStringList files = QFileDialog::getOpenFileNames(
-        this, QStringLiteral("打开 %1").arg(driver ? driver->displayName() : formatId),
+        this, QStringLiteral("打开 %1").arg(displayName.isEmpty() ? formatId : displayName),
         QString(), filter);
     for (const QString &path : files)
     {
@@ -1073,22 +1086,10 @@ void MainWindow::refreshThemeTokens()
 {
     if (!m_theme)
         return;
-    // 内置 token 优先，包 token 次之，模块 token 兜底；三者按 id 去重（先到者优先）。
-    QList<nextpilot::plotscope::registry::ThemeTokenSpec> allTokens =
-        m_appCtx.toolbox().themeTokensAll();
-    if (m_context)
-    {
-        for (const auto &t : m_context->moduleThemeTokens())
-        {
-            bool dup = false;
-            for (const auto &e : allTokens)
-                if (e.id == t.id)
-                { dup = true; break; }
-            if (!dup)
-                allTokens.append(t);
-        }
-    }
-    m_theme->setExtensionTokens(allTokens);
+    // 扩展 token 全集（包 token 优先、模块 token 兜底、按 id 去重）经 IThemeService
+    // 一次取齐（裁定 52441633 §三），壳不再自己合并两路来源。
+    if (m_themeService)
+        m_theme->setExtensionTokens(m_themeService->tokens());
 
     // 语义色的消费由**画布自己**完成（验收 8）：AxesView::applyPalette 里
     // 从 ThemeManager 取已声明 token 的实色，注入本画布的 Axes；
@@ -1370,9 +1371,11 @@ void MainWindow::registerSlotCommands()
 {
     QSet<QString> seen;
     int added = 0;
-    for (const UiSlot &slot : m_context->slotHub().allSlots())
+    if (!m_context->slotsService())
+        return;
+    for (const UiSlot &slot : m_context->slotsService()->allSlots())
     {
-        for (const BoundUiAction &bound : m_context->slotHub().actionsIn(slot.slotId))
+        for (const BoundUiAction &bound : m_context->slotsService()->actionsIn(slot.slotId))
         {
             const UiAction &ua = bound.action;
             if (ua.id.isEmpty() || seen.contains(ua.id))
@@ -1439,7 +1442,8 @@ void MainWindow::registerShellCommands()
     const QStringList activities = m_binder->activityIds();
     for (const QString &activityId : activities)
     {
-        const ActivitySpec *spec = m_context->slotHub().activity(activityId);
+        const ActivitySpec *spec =
+            m_context->slotsService() ? m_context->slotsService()->activity(activityId) : nullptr;
         const QString label = spec ? spec->label : activityId;
         add(QStringLiteral("activity.activate.%1").arg(activityId),
             QStringLiteral("转到 %1").arg(label), QStringLiteral("导航"), QString(), QString());
@@ -1548,7 +1552,8 @@ QList<CommandPalette::Item> MainWindow::buildQuickItems() const
 
     for (const QString &activityId : m_binder->activityIds())
     {
-        const ActivitySpec *spec = m_context->slotHub().activity(activityId);
+        const ActivitySpec *spec =
+            m_context->slotsService() ? m_context->slotsService()->activity(activityId) : nullptr;
         CommandPalette::Item item;
         item.id = QStringLiteral("quick.activity.%1").arg(activityId);
         item.title = spec ? spec->label : activityId;

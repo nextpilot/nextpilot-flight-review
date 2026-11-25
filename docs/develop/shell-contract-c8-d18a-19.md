@@ -96,9 +96,9 @@ grep -rn "ProtocolInspectorDialog\|ProtocolEditorDialog" src/application/gui/she
 | 文案类别 | 归属 | 例子 |
 |---|---|---|
 | 面板标题 | 面板自注册的 `PanelSpec.title`（包内 `gui/` 注册） | `dataset-tree` → "数据源" |
-| 命令标签 / Ribbon 分组名 | 模块 `addAction` / `declareRibbonGroup` | "绘图"、"导出" |
-| 状态栏项文案 | 模块 `declareStatus` + `updateStatus` | "游标: 12.40 s" |
-| Activity 标签 | 模块 `declareActivity` | "脚本" |
+| 命令标签 / Ribbon 分组名 | 模块 `contributes().actions` / `.ribbonGroups` | "绘图"、"导出" |
+| 状态栏项文案 | 模块 `contributes().statuses` + `updateStatus` | "游标: 12.40 s" |
+| Activity 标签 | 模块 `contributes().activities` | "脚本" |
 | 空态/错误提示 | 模块或壳的通用诊断（不含业务名词） | "未装载任何数据源" |
 
 **规则**：`ProductSpec` 只承载**身份 + 装配**（id / displayName / version / reportTitle / aboutText / defaultPanels / moduleIds）。

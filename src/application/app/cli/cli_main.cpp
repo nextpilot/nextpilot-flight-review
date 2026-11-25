@@ -28,10 +28,18 @@ using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
 
 namespace {
-// qPrintable 走系统 ANSI，和源码里的 UTF-8 字面量混流会乱码，这里统一按 UTF-8 输出
+// qPrintable 走系统 ANSI，和源码里的 UTF-8 字面量混流会乱码，这里统一按 UTF-8 输出。
+// 注意：不能 return s.toUtf8().constData()——临时 QByteArray 在表达式结束即析构，
+// 同一 fprintf 里多次调用 u8() 时前一次的指针会被后一次的临时 buffer 覆盖，造成
+// 字段错位（--contributions 一行有 4~5 个 u8 时实测复现）。用轮转的持久 buffer，
+// 每行最多 5 个 u8 调用，8 槽足够且生命周期覆盖到 fprintf 返回。
 const char *u8(const QString &s)
 {
-    return s.toUtf8().constData();
+    static thread_local QByteArray u8Buffers[8];
+    static thread_local int u8Cursor = 0;
+    QByteArray &buf = u8Buffers[u8Cursor++ % 8];
+    buf = s.toUtf8();
+    return buf.constData();
 }
 }
 using namespace nextpilot::plotscope::intent;
@@ -185,6 +193,25 @@ int main(int argc, char **argv)
                     u8(e.owner), u8(e.item.command),
                     u8(e.item.group.isEmpty() ? QStringLiteral("-") : e.item.group),
                     u8(e.item.when.isEmpty() ? QStringLiteral("-") : e.item.when));
+        // A8b-M2：其余 contributes 键同样是纯声明数据，按 owner/key/id 输出，
+        // 供 headless 验收「扩展一个视图 → 各 place 可见」。不渲染、不解释业务。
+        for (const auto &c : extensions.contributedViewContainers())
+            fprintf(stdout, "%s viewsContainers %s area=%s order=%d\n",
+                    u8(c.owner), u8(c.item.id), u8(c.item.area), c.item.order);
+        for (const auto &v : extensions.contributedViews())
+            fprintf(stdout, "%s views %s container=%s order=%d\n",
+                    u8(v.owner), u8(v.item.id), u8(v.item.container), v.item.order);
+        for (const auto &m : extensions.contributedMenuItems())
+            fprintf(stdout, "%s menus.%s %s group=%s when=%s\n",
+                    u8(m.owner), u8(m.item.place), u8(m.item.command),
+                    u8(m.item.group.isEmpty() ? QStringLiteral("-") : m.item.group),
+                    u8(m.item.when.isEmpty() ? QStringLiteral("-") : m.item.when));
+        for (const auto &c : extensions.contributedColors())
+            fprintf(stdout, "%s colors %s dark=%s light=%s\n",
+                    u8(c.owner), u8(c.item.id), u8(c.item.dark), u8(c.item.light));
+        for (const auto &s : extensions.contributedStatuses())
+            fprintf(stdout, "%s statusbar %s side=%s priority=%d\n",
+                    u8(s.owner), u8(s.item.id), u8(s.item.side), s.item.priority);
         for (const auto &d : extensions.contributionDiagnostics())
             fprintf(stdout, "diagnostic %s %s %s\n", u8(d.owner), u8(d.keyPath), u8(d.message));
         return 0;

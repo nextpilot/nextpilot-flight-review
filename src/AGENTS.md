@@ -73,7 +73,7 @@ P1-1 | **外部插件只有入口** | `PluginScanner` 尚无 dlopen 与 ABI 校�
 P1-2 | **Intent 无 schema** | `op` 是裸字符串、payload 是 `QVariant`，拼错只能运行时失败，无 op 白名单 |
 P1-3 | **`QWidget*` 是唯一耦合后门** | `requestPanel` 返回 `QWidget*`，模块一旦 `qobject_cast` 成具体视图类，耦合复活。**测试里可以，生产代码禁止** |
 P1-4 | **面板类型字符串静默失败** | 找不到工厂时 `requestPanel` 返回 `nullptr`，无日志无断言；类型名与模块声明之间没有对账机制 |
-P1-6 | **幂等声明会静默丢弃后声明者** | `declareRibbonPage/declareRibbonGroup` 是"先到者为准"。任何新增的幂等声明接口都要问"谁先谁后，后来的会不会被吞" |
+P1-6 | **幂等声明会静默丢弃后声明者** | `contributes().ribbonPages/ribbonGroups` 声明是"先到者为准"。任何新增的幂等声明接口都要问"谁先谁后，后来的会不会被吞" |
 
 ---
 

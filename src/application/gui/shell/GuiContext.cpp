@@ -25,10 +25,11 @@ using namespace nextpilot::plotscope::host;
 namespace nextpilot::plotscope::gui
 {
 
-GuiContext::GuiContext(QMainWindow *window, UiSlotHub &slotReg, ShellBinder *binder,
-                       AppContext &appCtx, IIntentExecutor *executor, QObject *parent)
-    : QObject(parent), m_window(window), m_slots(slotReg), m_binder(binder), m_appCtx(appCtx),
-      m_executor(executor)
+GuiContext::GuiContext(QMainWindow *window, workbench::ISlotsService *slotSvc, ShellBinder *binder,
+                       AppContext &appCtx, IIntentExecutor *executor,
+                       const workbench::IPanelsService *panelsService, QObject *parent)
+    : QObject(parent), m_window(window), m_slots(slotSvc), m_binder(binder), m_appCtx(appCtx),
+      m_executor(executor), m_panelsService(panelsService)
 {
     // 状态栏中继：登记/文案/瞬时消息的真源在 AppContext::status()（libs/context），
     // 这里只把 hub 事件转发成壳侧信号，MainWindow 的订阅代码不用动。
@@ -68,51 +69,6 @@ void GuiContext::dockCentral(QWidget *widget, const QString &titleOverride)
         m_window->setCentralWidget(widget);
 }
 
-void GuiContext::declareRibbonPage(const QString &id, const QString &label, int order)
-{
-    m_slots.declareSlot(id, label, QStringLiteral("module"), SlotKind::RibbonPage,
-                        QString(), order);
-    if (m_binder)
-        m_binder->rebuildRibbon();
-}
-
-void GuiContext::declareRibbonGroup(const QString &id, const QString &label,
-                                    const QString &pageId, int order)
-{
-    m_slots.declareSlot(id, label, QStringLiteral("module"), SlotKind::RibbonGroup,
-                        pageId, order);
-    if (m_binder)
-        m_binder->rebuildRibbon();
-}
-
-void GuiContext::declareActivity(const ActivitySpec &activity)
-{
-    ActivitySpec spec = activity;
-    if (spec.provider.isEmpty())
-        spec.provider = QStringLiteral("module");
-    m_slots.declareActivity(spec);
-    if (m_binder)
-        m_binder->rebuildActivityBar();
-}
-
-void GuiContext::declareThemeToken(const ThemeTokenSpec &token)
-{
-    ThemeTokenSpec spec = token;
-    if (spec.provider.isEmpty())
-        spec.provider = QStringLiteral("module");
-    // 按 id 去重：先声明者优先（与 UiSlotHub 同口径）。
-    for (const ThemeTokenSpec &existing : m_moduleTokens)
-        if (existing.id == spec.id)
-            return;
-    m_moduleTokens.append(spec);
-}
-
-void GuiContext::declareStatus(const StatusSpec &status)
-{
-    // 元数据登记进 hub（同 id 先声明者优先、provider 缺省 module）；壳按 spec 建控件。
-    m_appCtx.status().registerSpec(status);
-}
-
 void GuiContext::updateStatus(const QString &id, const QString &text)
 {
     // 推模式（D8）：未声明 id 由 hub 忽略；**不做节流**，限频是生产方的事。
@@ -130,28 +86,8 @@ void GuiContext::setActivityBadge(const QString &activityId, int count)
         m_binder->setActivityBadge(activityId, count);
 }
 
-void GuiContext::addAction(const UiAction &action)
-{
-    // 模块本地登记的入口，provider 记为 "module"，卸载时按 provider 清理。
-    // 归属插槽取 action.slotId 单一来源（接口已不再另传 area 参数）。
-    m_slots.bindLocal(action.slotId, action, QStringLiteral("module"));
-    if (m_binder)
-        m_binder->rebuildRibbon();
-}
-
-void GuiContext::bindActionProvider(const QString &area, const QString &provider,
-                                    std::function<QList<UiAction>()> providerFn)
-{
-    m_slots.bindActionProvider(area, provider, std::move(providerFn));
-    if (m_binder)
-        m_binder->rebuildRibbon();
-}
-
-void GuiContext::refreshActions()
-{
-    if (m_binder)
-        m_binder->rebuildRibbon();
-}
+// A8b-M2 裁定 52442006 Step 3：installContributions 整段搬 assembly/ContributionsInstaller
+// （写 ISlotsService/StatusHub，壳只渲染）；壳不再灌回，见 ExtensionActivationService.cpp。
 
 QWidget *GuiContext::requestPanel(nextpilot::plotscope::registry::Region region,
                                   const QString &panelType)
@@ -183,10 +119,12 @@ QWidget *GuiContext::requestPanel(nextpilot::plotscope::registry::Region region,
 
     // 标题与图标：工厂登记优先；工厂缺标题/图标时回退扩展包 PanelSpec 描述
     // （领域面板用自己的 label/icon，如"CAN 报文"），provider 区分来源。
+    // 包声明读回经 IPanelsService（裁定 52441633 §三），壳不直连扩展注册表。
     QString title = nextpilot::plotscope::registry::PanelFactoryHub::title(panelType);
     QString iconName = nextpilot::plotscope::registry::PanelFactoryHub::icon(panelType);
-    if (const nextpilot::plotscope::registry::PanelSpec *spec =
-            m_appCtx.toolbox().panels.find(panelType))
+    const nextpilot::plotscope::registry::PanelSpec *spec =
+        m_panelsService ? m_panelsService->panelSpec(panelType) : nullptr;
+    if (spec)
     {
         if (title.isEmpty())
             title = spec->label;
@@ -213,13 +151,16 @@ QList<PanelSpec> GuiContext::availableDomainPanels(Domain domain) const
     // 模块据此知道"当前业务范围里有哪些面板可用"，而不必写死具体 id——
     // 面板由哪个包提供、叫什么，都由包自己决定。
     QList<PanelSpec> out;
-    const ToolboxHub &toolbox = m_appCtx.toolbox();
     // 领域过滤：面板归属由**包**的领域决定（条目的 domain 由 mount 写入）。
-    for (const PanelSpec &spec : toolbox.panels.values())
+    // 清单经 IPanelsService 读回（裁定 52441633 §三），壳不直连扩展注册表。
+    if (m_panelsService)
     {
-        if (domain != Domain::General && spec.domain != domain)
-            continue;
-        out.append(spec);
+        for (const PanelSpec &spec : m_panelsService->panels())
+        {
+            if (domain != Domain::General && spec.domain != domain)
+                continue;
+            out.append(spec);
+        }
     }
     // 顺序由声明决定：order 升序、同权重按 id 字典序（与包装载顺序解耦）。
     std::stable_sort(out.begin(), out.end(), [](const PanelSpec &a, const PanelSpec &b) {

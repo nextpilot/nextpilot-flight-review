@@ -1,12 +1,13 @@
 #pragma once
 
-// A8b-M1 贡献契约：把一个 owner 的 `contributes` 文档（VSCode package.json 同名字段）
+// A8b 贡献契约：把一个 owner 的 `contributes` 文档（VSCode package.json 同名字段）
 // 解析成 ContributesDoc 数据表。术语与键名一律照 VSCode，不另造模型。
 //
 // 设计约束（IKXXJ2 §3.0.14）：
 //   - 单次解析、无副作用、不崩：未知键 → issue 跳过；类型不符 → issue 且该条丢弃；
 //     重复 id → 后到者跳过 + issue（先到者保留，不静默覆盖）。
-//   - M1 阶段只认 `commands` 与 `menus.commandPalette` 两键；其余 place / 键由 M2/M3 解锁。
+//   - M1 只认 `commands` + `menus.commandPalette`；M2 补齐 `viewsContainers` / `views` /
+//     `menus` 其余 5 个 place / `colors` / `statusbar`；M3 解锁 `customEditors`/`configuration`。
 //   - registry 不认识命令库：when / group 只存字符串，求值与排序归命令层与外壳。
 //   - 全文唯一名 ContributesDoc（不再出现 ContributionDoc）。
 
@@ -35,6 +36,66 @@ struct CommandPaletteMenuItem
     QString when;    // 上下文表达式，只存串，求值归命令层
 };
 
+// contributes.menus 其余 place[]（§3.0.1 固定枚举）：
+//   editor/context | view/title | view/item/context | menubar/<pageId> | statusbar
+// 条目 {command, group, when}；label/icon/order 为本仓呈现扩展（VSCode 用命令 title）。
+// place 存原串；menubar/<pageId> 的 pageId 由外壳按 place 查页，不解析业务 id。
+struct ContributedMenuItem
+{
+    QString place;
+    QString command;
+    QString group;
+    QString when;
+    QString label;
+    QString icon;
+    int order = 0;
+};
+
+// contributes.viewsContainers[] —— VSCode 视图容器（activity bar 入口）。
+// area 只认 sidebar/bottom/auxiliary（§3.0.12 中央区只接受编辑器）；
+// 本仓 ribbon 页签也经此声明（area="ribbon"），因为它是容器不是内容。
+struct ContributedViewContainer
+{
+    QString id;    // 全局唯一
+    QString title;
+    QString area;  // sidebar | bottom | auxiliary | ribbon
+    QString icon;
+    int order = 0;
+    QString owner; // 声明者归属（parse 不填；ViewRegistry.declare 时写）
+};
+
+// contributes.views[] —— 视图（面板），container 指向 viewsContainers[].id。
+struct ContributedView
+{
+    QString id;        // 全局唯一
+    QString name;
+    QString container; // 所属 viewsContainers[].id
+    QString when;
+    int order = 0;
+    QString owner;     // 声明者归属（parse 不填；ViewRegistry.declare 时写）
+};
+
+// contributes.colors[] —— 语义色 token（原 IUiContext 主题 token 声明迁此）。
+struct ContributedColor
+{
+    QString id;    // 语义名，如 "plot.cursor"
+    QString dark;  // #RRGGBB
+    QString light; // #RRGGBB
+};
+
+// contributes.statusbar[] —— 状态栏项声明（原状态栏声明迁此）。
+struct ContributedStatus
+{
+    QString id;       // 全局唯一
+    QString side;     // left | right
+    int priority = 0;
+    QString when;
+    QString icon;
+    QString tooltip;
+    QString commandId;
+    QString text;
+};
+
 // 一个 owner 解析后的 contributes 表（全文唯一名）。
 struct ContributesDoc
 {
@@ -42,10 +103,21 @@ struct ContributesDoc
     QList<ContributedCommand> commands;
     QList<CommandPaletteMenuItem> commandPalette;
 
-    bool isEmpty() const { return commands.isEmpty() && commandPalette.isEmpty(); }
+    // M2 新增（M1 恒为空，向后兼容）。
+    QList<ContributedViewContainer> viewContainers;
+    QList<ContributedView> views;
+    QList<ContributedMenuItem> menuItems;
+    QList<ContributedColor> colors;
+    QList<ContributedStatus> statuses;
+
+    bool isEmpty() const
+    {
+        return commands.isEmpty() && commandPalette.isEmpty() && viewContainers.isEmpty() &&
+               views.isEmpty() && menuItems.isEmpty() && colors.isEmpty() && statuses.isEmpty();
+    }
 };
 
-// 一条诊断：keyPath 如 "menus.commandPalette[2]" / "commands[1].command"。
+// 一条诊断：keyPath 如 "menus.view/title[2]" / "commands[1].command"。
 struct ParseIssue
 {
     QString keyPath;

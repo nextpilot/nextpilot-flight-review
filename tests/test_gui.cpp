@@ -13,6 +13,7 @@
 //   6) 模块自注册：GUI 装载后模块全部激活。
 
 #include "App.h"
+#include "WorkbenchAdapters.h" // SlotsServiceAdapter（隔离窗口场景手工包装）
 
 #include "DataManagerPanel.h"
 #include "DataTablePanel.h"
@@ -88,6 +89,7 @@
 #include <cstdlib>
 
 using namespace nextpilot::plotscope::app;
+namespace assembly = nextpilot::plotscope::assembly;
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
 using namespace nextpilot::plotscope::intent;
@@ -236,10 +238,15 @@ int main(int argc, char *argv[])
         QStringList tokenIds;
         for (const auto &t : moduleTokens)
             tokenIds << t.id;
-        CHECK(moduleTokens.size() >= 3);
-        CHECK(tokenIds.contains(QStringLiteral("plot.cursor")));
-        CHECK(tokenIds.contains(QStringLiteral("data.source")));
-        CHECK(tokenIds.contains(QStringLiteral("script.breakpoint")));
+        // A8b-M2 裁定 52442006 Step 6：阈值断言改**精确集合**。5 个 = 裁定 3 个
+        // （plot.cursor/data.source/script.breakpoint）+ plot 模块后续正常声明
+        // 的 plot.abMeasure/plot.grid（新增 token 走精确集合快照，不回退阈值写法）。
+        const QSet<QString> expectedTokens = {
+            QStringLiteral("plot.cursor"), QStringLiteral("data.source"),
+            QStringLiteral("script.breakpoint"), QStringLiteral("plot.abMeasure"),
+            QStringLiteral("plot.grid")};
+        CHECK(tokenIds.size() == expectedTokens.size());
+        CHECK(QSet<QString>(tokenIds.begin(), tokenIds.end()) == expectedTokens);
         // 模块声明的 token 有合法兜底色，且能进主题（ThemeManager 取到非洋红）。
         for (const auto &t : moduleTokens)
         {
@@ -372,7 +379,14 @@ int main(int argc, char *argv[])
     CHECK(slotReg.actionsIn(QStringLiteral("ribbon.group.plot.action")).size() >= 1);
     // 数据模块 onAttach 往数据页"常用"分组放了 reload/export/clearCache 三个动作
     const auto dataActs = slotReg.actionsIn(QStringLiteral("ribbon.group.data.common"));
-    CHECK(dataActs.size() >= 3);
+    // Step 6：精确集合（5 条：quickOpen/recent/reload/export/clearCache，快照 2026-11-26）。
+    CHECK(dataActs.size() == 5);
+    const QSet<QString> dataCommonIds = {
+        QStringLiteral("data.action.quickOpen"), QStringLiteral("data.action.recent"),
+        QStringLiteral("data.action.reload"), QStringLiteral("data.action.export"),
+        QStringLiteral("data.action.clearCache")};
+    { QSet<QString> ids; for (const auto &b : dataActs) ids.insert(b.action.id);
+      CHECK(ids == dataCommonIds); }
     bool hasReload = false, hasExport = false;
     for (const auto &entry : dataActs)
     {
@@ -410,7 +424,16 @@ int main(int argc, char *argv[])
         CHECK(groups.contains(QStringLiteral("仪表")));
         // 来源库：至少 csv/ulog/custom-protocol 三种格式驱动进了 gallery。
         const auto srcActs = slotReg.actionsIn(QStringLiteral("ribbon.group.data.sources"));
-        CHECK(srcActs.size() >= 3);
+        // Step 6：精确集合（11 条 = 4 个 common 前置 + 7 个格式驱动 gallery 项，
+        // 快照 2026-11-26；新增格式驱动在此表显式加行，防静默漂移）。
+        CHECK(srcActs.size() == 11);
+        { QSet<QString> ids; for (const auto &b : srcActs) ids.insert(b.action.id);
+          for (const char *id : {"data.source.common.csv", "data.source.common.custom-protocol",
+                                 "data.source.common.ulog", "data.source.common.mdf4",
+                                 "data.source.csv", "data.source.custom-protocol", "data.source.ulog",
+                                 "data.source.mdf4", "data.source.rosbag2", "data.source.blf",
+                                 "data.source.apbin"})
+              CHECK(ids.contains(QString::fromLatin1(id))); }
         bool hasCsv = false, hasCustom = false;
         for (const auto &entry : srcActs)
         {
@@ -703,7 +726,8 @@ int main(int argc, char *argv[])
         RegistryTree registryTree;
         auto slotHub = std::make_unique<UiSlotHub>(registryTree);
         QMainWindow isolated;
-        ShellBinder binder2{&isolated, *slotHub};
+        assembly::SlotsServiceAdapter isolatedSlots(*slotHub);
+        ShellBinder binder2{&isolated, &isolatedSlots};
         auto *bottom = new QLabel(QStringLiteral("底部面板"));
         binder2.dock(Region::Panel, QStringLiteral("底部"), bottom);
         isolated.resize(900, 640);
@@ -728,7 +752,8 @@ int main(int argc, char *argv[])
         RegistryTree emptyTree;
         auto emptySlots = std::make_unique<UiSlotHub>(emptyTree);
         QMainWindow emptyWindow;
-        ShellBinder emptyBinder{&emptyWindow, *emptySlots};
+        assembly::SlotsServiceAdapter emptySlotSvc(*emptySlots);
+        ShellBinder emptyBinder{&emptyWindow, &emptySlotSvc};
         emptyWindow.resize(900, 640);
         emptyWindow.show();
         QEventLoop emptyLoop;
@@ -2762,7 +2787,8 @@ int main(int argc, char *argv[])
             else if (b.action.galleryGroup == QStringLiteral("收藏"))
                 ++favGroup;
         }
-        CHECK(allGroup >= 3);
+        // Step 6：精确数（快照 2026-11-26）。
+        CHECK(allGroup == 3);
 
         // (2) 收藏切换：toggle 飞控复盘 → 收藏组出现条目 + settings 持久化。
         Intent fav; fav.op = QStringLiteral("analysis.favorite");
@@ -3322,7 +3348,8 @@ int main(int argc, char *argv[])
         {
             const QVariantMap m = r.toMap();
             if (m.value(QStringLiteral("kind")).toString() == QStringLiteral("panel-factory"))
-                CHECK(m.value(QStringLiteral("count")).toInt() >= 3);
+                // Step 6：精确数（快照 2026-11-26；新增面板在此显式加行）。
+                CHECK(m.value(QStringLiteral("count")).toInt() == 16);
         }
 
         // 打开诊断面板（首次按需创建），面板行数 == 树上节点数
@@ -3443,7 +3470,7 @@ int main(int argc, char *argv[])
         binder->setWhenEvaluator([&hoverTest](const QString &when) {
             return when == QStringLiteral("hoverTest == true") ? hoverTest : true;
         });
-        window.context()->slotHub().declareSlot(
+        window.context()->slotsService()->declareSlot(
             QStringLiteral("ribbon.page.c3test"), QStringLiteral("C3 测试页"), QStringLiteral("test"),
             SlotKind::RibbonPage, QString(), 0, QStringLiteral("hoverTest == true"));
         binder->rebuildRibbon();

@@ -49,7 +49,7 @@ void UiSlotHub::bindActionProvider(const QString &area, const QString &provider,
     m_providers[area].insert(provider, std::move(fn));
 }
 
-void UiSlotHub::declareActivity(ActivitySpec activity)
+void UiSlotHub::registerActivity(ActivitySpec activity)
 {
     if (activity.id.isEmpty())
         return;
@@ -71,9 +71,23 @@ QList<ActivitySpec> UiSlotHub::activities() const
     return out;
 }
 
-const ActivitySpec *UiSlotHub::activity(const QString &id) const
+void UiSlotHub::registerModuleThemeToken(const ThemeTokenSpec &token)
 {
-    for (const ActivitySpec &a : m_activities)
+    if (token.id.isEmpty())
+        return;
+    for (const ThemeTokenSpec &existing : m_moduleThemeTokens)
+        if (existing.id == token.id)
+            return; // 同 id 先到者为准
+    m_moduleThemeTokens.append(token);
+}
+
+QList<ThemeTokenSpec> UiSlotHub::moduleThemeTokens() const
+{
+    return m_moduleThemeTokens;
+}
+
+const ActivitySpec *UiSlotHub::activity(const QString &id) const
+{    for (const ActivitySpec &a : m_activities)
         if (a.id == id)
             return &a;
     return nullptr;

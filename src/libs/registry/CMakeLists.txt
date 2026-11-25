@@ -12,10 +12,13 @@ add_library(ps_registry STATIC
     src/PanelReferenceValidator.cpp
     src/ContributionParser.cpp
     src/ExtensionScanner.cpp
+    src/ViewRegistry.cpp
     include/Domain.h
     include/Contribution.h
     include/ContributionParser.h
     include/ExtensionScanner.h
+    include/ViewRegistry.h
+    include/IActionProvider.h
     include/NullContributionSink.h
     include/ProductSpec.h
     include/Region.h

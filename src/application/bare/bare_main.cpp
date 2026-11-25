@@ -106,7 +106,7 @@ int main(int argc, char *argv[])
 
     if (smoke)
     {
-        // 一轮事件循环：让 dock/ribbon/面板工厂补登、首帧布局跑完，再退出。
+        // 一轮事件循环：让 dock、ribbon、面板工厂补登、首帧布局跑完，再退出。
         QTimer::singleShot(0, &window, [&app]() {
             app.processEvents();
             app.quit();

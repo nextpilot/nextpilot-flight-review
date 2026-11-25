@@ -9,6 +9,7 @@
 #include "InteractionHub.h"
 #include "StaticRegistryNodes.h"
 #include "UiSlotHub.h"
+#include "ModuleContributions.h"
 #include "DataLoadHandler.h"
 #include "DataCommandsHandler.h"
 #include "AIToolsHandler.h"
@@ -21,6 +22,11 @@
 
 namespace nextpilot::plotscope::instantiation {
 class InstantiationService; // 只前向声明：host 不 include 装配层服务容器头
+}
+
+namespace nextpilot::plotscope::workbench
+{
+class IContributionsInstaller; // A8b-M2 裁定 52442006 Step 3：灌回唯一入口
 }
 
 namespace nextpilot::plotscope::host
@@ -47,6 +53,19 @@ public:
     // A1b §1.4.4：装配层在构造好服务容器后注入；activate 用它初始化模块。
     // 只存引用不拥有；只前向声明，host 不 include 装配层头。
     void setServices(nextpilot::plotscope::instantiation::InstantiationService &services) { m_services = &services; }
+
+    // 壳读回服务容器（A8b-M2 裁定 52441633 §三）：MainWindow::build 经
+    // getService<IPanelsService> 等取壳读回接口。bare 壳（A4a 反证冒烟）没有
+    // 装配服务，返回 nullptr——壳各读回点必须容忍空并退化。
+    nextpilot::plotscope::instantiation::InstantiationService *services() { return m_services; }
+
+    // A8b-M2 裁定 52442006 Step 3：装配层在组合根接线灌回实现（ContributionsInstaller）。
+    // activate 收集 contributes 后调它——写 ISlotsService/StatusHub，壳不再灌回。
+    // bare 壳不接（nullptr）：activate 无模块可灌，无影响。
+    void setContributionsInstaller(nextpilot::plotscope::workbench::IContributionsInstaller *installer)
+    {
+        m_contribInstaller = installer;
+    }
 
     // 注册一个模块的工厂（编译期或动态发现都走这里）。
     void registerModule(ModuleInfo info, ModuleFactory factory);
@@ -139,6 +158,13 @@ public:
     // 可变引用：GUI 层需要声明新插槽（新增模块自带界面入口时用）。
     nextpilot::plotscope::registry::UiSlotHub &uiSlotsMutable();
 
+    // A8b-M2：activate 期间收集的各模块声明式 contributes（owner=模块 id）。
+    // 装配层在 activate 后取来灌进壳；headless 也能读（纯数据，与 ui 无关）。
+    const QList<nextpilot::plotscope::registry::ModuleContributions> &contributions() const
+    {
+        return m_contributions;
+    }
+
 private:
     struct Node
     {
@@ -162,12 +188,14 @@ private:
 
     nextpilot::plotscope::context::AppContext &m_appCtx;             // 进程级运行态：唯一持有者
     nextpilot::plotscope::instantiation::InstantiationService *m_services = nullptr; // 装配层注入的服务容器
+    nextpilot::plotscope::workbench::IContributionsInstaller *m_contribInstaller = nullptr; // 装配层接线（Step 3）
     nextpilot::plotscope::registry::UiSlotHub m_uiSlotHub;   // UI 插槽：模块声明、工具箱填充（构造即上树）
     DataLoadHandler m_dataLoadHandler;           // 系统级 data.load 入口，不归属可卸载模块
     DataCommandsHandler m_dataCommandsHandler;   // 系统级 data.reload/export/recent/clearCache，与 load 归口
     AIToolsHandler m_aiToolsHandler;             // 系统级 ai.tools.list/ai.tool.call/ai.status
     QHash<QString, Node> m_nodes;
     QStringList m_order;
+    QList<nextpilot::plotscope::registry::ModuleContributions> m_contributions; // M2 声明式贡献收集
     QHash<QString, nextpilot::plotscope::intent::IIntentHandler *> m_handlers; // op -> handler
     QString m_initializing; // 当前正在 initialize 的模块 id，用于 handler 归属
     nextpilot::plotscope::intent::JobRecorder *m_recorder = nullptr; // 可选录制器，不拥有

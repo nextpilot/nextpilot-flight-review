@@ -68,6 +68,18 @@ target_link_libraries(ps_test_extension_scanner PRIVATE ps_registry Qt6::Core)
 set_target_properties(ps_test_extension_scanner PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_extension_scanner COMMAND ps_test_extension_scanner)
 
+# A8b-M2 视图注册表：视图声明 + registerViewProvider + unmount 整批撤，只链 ps_registry。
+add_executable(ps_test_view_registry test_view_registry.cpp)
+target_link_libraries(ps_test_view_registry PRIVATE ps_registry Qt6::Core)
+set_target_properties(ps_test_view_registry PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ps_view_registry COMMAND ps_test_view_registry)
+
+# A8b-M2 契约面：ISubscriptions/SubscriptionBag（补建 M1 e0 欠账接口）。
+add_executable(ps_test_subscriptions test_subscriptions.cpp)
+target_link_libraries(ps_test_subscriptions PRIVATE ps_workbench Qt6::Core)
+set_target_properties(ps_test_subscriptions PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ps_subscriptions COMMAND ps_test_subscriptions)
+
 # 验收 4：面板引用三源启动期校验（包 PanelSpec / Activity panelTypes+centralPanel /
 # 产品 defaultPanels）；负向用例故意声明不存在的面板类型，断言校验器真的报错。
 add_executable(ps_test_panel_ref test_panel_ref.cpp)

@@ -1,6 +1,7 @@
 #pragma once
 
-#include "UiSlotHub.h"
+#include "ISlotsService.h"
+#include "UiSlotTypes.h"
 #include "ProductSpec.h"
 
 #include <QHash>
@@ -27,9 +28,9 @@ class CDockManager;
 class CDockWidget;
 }
 
-namespace nextpilot::plotscope::registry
+namespace nextpilot::plotscope::workbench
 {
-class ToolboxHub;
+class IPanelsService;
 }
 
 namespace nextpilot::plotscope::gui
@@ -43,7 +44,7 @@ class ActivityBar;
 //   外壳层不设 "DockManager" / "RibbonManager" 这类中转类——
 //   ADS 已提供 ads::CDockManager，SARibbon 已提供 SARibbonBar，
 //   再包一层同名类只是零价值转发。本类把
-//       registry::UiSlotHub（纯数据贡献）
+//       槽位表的纯数据贡献（经 ISlotsService 通道）
 //   一次性绑定成
 //       SARibbonBar + ads::CDockManager
 //   绑定规则集中于此，一处可换、可测、可整体替换第三方库。
@@ -60,7 +61,7 @@ class ActivityBar;
 class ShellBinder
 {
 public:
-    ShellBinder(QMainWindow *window, nextpilot::plotscope::registry::UiSlotHub &slotReg);
+    ShellBinder(QMainWindow *window, nextpilot::plotscope::workbench::ISlotsService *slotSvc);
     ~ShellBinder();
 
     // 配置 ribbon 条（无边框窗体由 SARibbonMainWindow 提供 ribbon 条本体）。
@@ -106,9 +107,10 @@ public:
     // 诊断/状态栏用：pageKey 对应页签的标题（找不到返回空串）。
     QString dockPageTitle(const QString &pageKey) const;
 
-    // 注入面板引用校验所需的另外两源：工具箱（包 PanelSpec）与产品默认布局。
+    // 注入面板引用校验所需的另外两源：包面板声明（经 IPanelsService，裁定
+    // 52441633 §三——壳不直连扩展注册表）与产品默认布局。
     // 由外壳在模块 onAttach 完成后注入；未注入时退化为只查 Activity panelTypes。
-    void setPanelReferenceContext(const registry::ToolboxHub *toolbox,
+    void setPanelReferenceContext(const workbench::IPanelsService *panels,
                                   const QList<registry::ProductPanelPlacement> &placements);
 
     // --- Activity Bar / Side Bar ---
@@ -284,9 +286,11 @@ private:
     void installCentral();
 
     QMainWindow *m_window = nullptr;
-    nextpilot::plotscope::registry::UiSlotHub &m_slots;
+    // 槽位表服务（裁定 52442006 Step 4）：壳读写唯一通道，不再持扩展槽位表类型。
+    // 未装配（bare 壳）为 nullptr，全部读点判空退化为空清单。
+    nextpilot::plotscope::workbench::ISlotsService *m_slots = nullptr;
     // 面板引用校验的另外两源（外壳注入；空 = 退化为只查 Activity panelTypes）。
-    const nextpilot::plotscope::registry::ToolboxHub *m_toolbox = nullptr;
+    const nextpilot::plotscope::workbench::IPanelsService *m_panelsService = nullptr;
     QList<nextpilot::plotscope::registry::ProductPanelPlacement> m_placements;
     std::function<bool(const QString &)> m_whenEval;
     std::function<QList<QAction *>(QWidget *, const QString &)> m_viewTitleProvider;

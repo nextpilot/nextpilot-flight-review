@@ -111,6 +111,22 @@ public:
     };
     QList<PaletteEntry> paletteEntries() const { return m_contribPalette; }
 
+    // === M2：视图/菜单/颜色/状态声明（同一 contributes 文档的其余键）===
+    // 每条带 owner 归属，unmount(owner) 整批撤。纯数据，装配层读它摆 UI。
+    struct OwnedViewContainer { ContributedViewContainer item; QString owner; };
+    struct OwnedView { ContributedView item; QString owner; };
+    struct OwnedMenuItem { ContributedMenuItem item; QString owner; };
+    struct OwnedColor { ContributedColor item; QString owner; };
+    struct OwnedStatus { ContributedStatus item; QString owner; };
+
+    QList<OwnedViewContainer> contributedViewContainers() const { return m_contribViewContainers; }
+    QList<OwnedView> contributedViews() const { return m_contribViews; }
+    QList<OwnedMenuItem> contributedMenuItems() const { return m_contribMenuItems; }
+    QList<OwnedColor> contributedColors() const { return m_contribColors; }
+    QList<OwnedStatus> contributedStatuses() const { return m_contribStatuses; }
+    // 按 place 取菜单项（place 原串，如 "view/title" / "menubar/plot"）。
+    QList<OwnedMenuItem> menuItemsIn(const QString &place) const;
+
     struct ContributionDiagnostic
     {
         QString owner;
@@ -183,6 +199,11 @@ private:
     QHash<QString, QStringList> m_contribByOwner;          // owner → 该 owner 的 command id
     QList<QString> m_contribOwnerOrder;
     QList<PaletteEntry> m_contribPalette;
+    QList<OwnedViewContainer> m_contribViewContainers;
+    QList<OwnedView> m_contribViews;
+    QList<OwnedMenuItem> m_contribMenuItems;
+    QList<OwnedColor> m_contribColors;
+    QList<OwnedStatus> m_contribStatuses;
     QList<ContributionDiagnostic> m_contribDiagnostics;
 
     std::vector<std::unique_ptr<IMessageParser>> m_parsers; // 全部解析器（含旧 driver 包装包的）

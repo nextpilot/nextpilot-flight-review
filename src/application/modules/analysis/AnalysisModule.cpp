@@ -96,7 +96,8 @@ void writeWsJson(nextpilot::plotscope::workbench::IWorkspace &ws, const QString 
 // 最近使用在 run 成功后自动记录（MRU，最多 5 条）；最近/收藏两组条目由
 // **动作提供器**在 ribbon 装配时实时从 settings 取数（契约 §3.3 / D10），
 // 内容变化后调 refreshActions() 触发外壳重建，不再走"清空再全量重注册"的动态通道。
-class AnalysisModule::Handler final : public QObject, public IIntentHandler
+class AnalysisModule::Handler final : public QObject, public IIntentHandler,
+                                      public IActionProvider
 {
     Q_OBJECT
 public:
@@ -106,14 +107,14 @@ public:
     {
     }
 
-    void attachUi(IUiContext *ui) { m_ui = ui; }
-
     // onAttach 登记"全部应用"目录（也是收藏合法性的校验来源）。
     void setCatalog(const QStringList &catalog) { m_catalog = catalog; }
 
-    // 动作提供器回调：每次 ribbon 装配时实时取当前"最近使用/收藏"条目（纯数据）。
-    QList<UiAction> currentEntries() const
+    // IActionProvider（裁定 52441074 §2）：动态 gallery 换成对象接口，lambda 不进壳。
+    // 返回纯数据 UiAction，headless 可查；变化经 onDidChangeActions 通知外壳重建该 slot。
+    QList<UiAction> actionsFor(const QString &slotId) const override
     {
+        Q_UNUSED(slotId);
         QList<UiAction> out;
         int order = 100;
         for (const QString &app : recents())
@@ -123,6 +124,28 @@ public:
             out << makeEntry(app, QStringLiteral("收藏"), order++);
         return out;
     }
+
+    QMetaObject::Connection
+    onDidChangeActions(std::function<void(const QString &slotId)> listener) override
+    {
+        if (!listener)
+            return {};
+        return QObject::connect(this, &Handler::actionsChanged, this,
+                                [listener = std::move(listener)](const QString &slotId) {
+                                    listener(slotId);
+                                });
+    }
+
+    // 通知变化：收藏/最近条目变更后发信号，外壳只重建对应 slot（不再全局 refreshActions）。
+    void notifyActionsChanged()
+    {
+        Q_EMIT actionsChanged(QStringLiteral("ribbon.group.analysis.apps"));
+    }
+
+signals:
+    void actionsChanged(const QString &slotId);
+
+public:
 
     bool canHandle(const Intent &intent) const override
     {
@@ -138,9 +161,8 @@ public:
     }
 
 private:
-    // 应用目录（onAttach 时登记）：全部应用组展示的清单，也是收藏合法性校验的来源。
+    // 应用目录（initialize 时登记）：全部应用组展示的清单，也是收藏合法性校验的来源。
     QStringList m_catalog;
-    IUiContext *m_ui = nullptr;
 
     Result<IntentResult> run(const Intent &intent)
     {
@@ -176,8 +198,7 @@ private:
         else
             favs << app;
         writeWsJson(m_ws, kFavoritesKey, stringListToJson(favs));
-        if (m_ui)
-            m_ui->refreshActions();
+        notifyActionsChanged(); // IActionProvider 对象接口：通知外壳重建该 slot
         m_ws.flushConfiguration();
 
         IntentResult r;
@@ -202,8 +223,7 @@ private:
             rec.removeLast();
         writeWsJson(m_ws, kRecentsKey, stringListToJson(rec));
         m_ws.flushConfiguration();
-        if (m_ui)
-            m_ui->refreshActions();
+        notifyActionsChanged(); // IActionProvider 对象接口：MRU 变化通知
     }
 
     UiAction makeEntry(const QString &app, const QString &group, int order) const
@@ -303,6 +323,10 @@ void AnalysisModule::initialize(InstantiationService &services)
     if (!ws || !window || !cmds)
         return;
     m_handler = new Handler(*ws, *window, this);
+    // 应用目录（收藏合法性校验来源）：从 initialize 起即就绪，不依赖 UI（A8b-M2）。
+    m_handler->setCatalog({QStringLiteral("default"),
+                           QStringLiteral("autopilot.review.report"),
+                           QStringLiteral("autopilot.review.app")});
     auto reg = [cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
         cmds->registerCommand(id, nextpilot::plotscope::workbench::asCommandHandler(h, id));
     };
@@ -310,28 +334,27 @@ void AnalysisModule::initialize(InstantiationService &services)
     reg(QStringLiteral("analysis.favorite"), m_handler);
 }
 
-void AnalysisModule::onAttach(IUiContext &ui)
+ModuleContributions AnalysisModule::contributes() const
 {
-    m_handler->attachUi(&ui);
-
-    // 本域 Ribbon 页/组自声明（D13）。
-    ui.declareRibbonPage(QStringLiteral("ribbon.page.analysis"), QStringLiteral("分析"), 6);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.analysis.apps"), QStringLiteral("应用库"),
-                          QStringLiteral("ribbon.page.analysis"), 0);
-
+    ModuleContributions c;
+    c.owner = QStringLiteral("analysis");
+    c.ribbonPages.append(RibbonPageDecl{QStringLiteral("ribbon.page.analysis"),
+                                        QStringLiteral("分析"), 6});
+    c.ribbonGroups.append(RibbonGroupDecl{QStringLiteral("ribbon.group.analysis.apps"),
+                                          QStringLiteral("应用库"),
+                                          QStringLiteral("ribbon.page.analysis"), 0});
     ActivitySpec analysisActivity;
     analysisActivity.id = QStringLiteral("analysis");
     analysisActivity.label = QStringLiteral("分析");
     analysisActivity.icon = QStringLiteral("plot_refresh");
     analysisActivity.order = 2;
     analysisActivity.ribbonPage = QStringLiteral("ribbon.page.analysis");
-    ui.declareActivity(analysisActivity);
+    c.activities.append(analysisActivity);
 
     // 分析页"应用库"gallery："全部/最近/收藏"三组。
     const QString slotId = QStringLiteral("ribbon.group.analysis.apps");
-    // gallery 分组出现顺序：全部应用(0..) → 最近使用(100+) → 收藏(200+)。
-    auto entry = [&ui, &slotId](const QString &id, const QString &label,
-                              const QString &app, const QString &group, int order) {
+    auto entry = [&c, &slotId](const QString &id, const QString &label,
+                               const QString &app, const QString &group, int order) {
         UiAction a;
         a.id = id;
         a.label = label;
@@ -342,17 +365,9 @@ void AnalysisModule::onAttach(IUiContext &ui)
         a.visual = QStringLiteral("timeseries");
         a.galleryGroup = group;
         a.order = order;
-        ui.addAction(a);
+        c.actions.append(a);
     };
-
-    // "全部应用"组：默认曲线（真实可用）+ 两个领域应用占位（点了给出诚实提示）。
-    // 目录同时是收藏合法性校验的来源——Handler 只收藏清单里的应用。
-    const QStringList catalog = {
-        QStringLiteral("default"),
-        QStringLiteral("autopilot.review.report"),
-        QStringLiteral("autopilot.review.app"),
-    };
-    m_handler->setCatalog(catalog);
+    // "全部应用"组（真实默认 + 两个诚实占位）。
     entry(QStringLiteral("analysis.app.default"), QStringLiteral("默认曲线"),
           QStringLiteral("default"), QStringLiteral("全部应用"), 0);
     entry(QStringLiteral("analysis.app.report"), QStringLiteral("分析报告"),
@@ -360,10 +375,18 @@ void AnalysisModule::onAttach(IUiContext &ui)
     entry(QStringLiteral("analysis.app.review"), QStringLiteral("飞控复盘"),
           QStringLiteral("autopilot.review.app"), QStringLiteral("全部应用"), 2);
 
-    // "最近使用/收藏"两组：提供器在 ribbon 装配时实时从 Workspace settings 取数
-    // （跨会话持久），条目变化由 Handler 经 refreshActions() 触发重建。
-    ui.bindActionProvider(slotId, kDynamicProvider,
-                          [handler = m_handler]() { return handler->currentEntries(); });
+    // 动态"最近/收藏"：裁定 §2 换成 provider 对象（handler 即 IActionProvider），
+    // lambda 不进壳；变化经 onDidChangeActions 通知，外壳只重建该 slot。
+    if (m_handler)
+        c.actionProviders.append(ActionProviderDecl{QStringLiteral("analysis"),
+                                                    slotId, m_handler});
+    return c;
+}
+
+void AnalysisModule::onAttach(IUiContext &ui)
+{
+    Q_UNUSED(ui);
+    // A8b-M2：UI 声明（含动态 provider）已迁至 contributes()，宿主统一灌回。
 }
 
 #include "AnalysisModule.moc"

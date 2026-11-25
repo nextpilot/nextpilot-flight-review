@@ -687,21 +687,20 @@ void PlotModule::initialize(InstantiationService &services)
     reg(QStringLiteral("plot.layout.load"), m_handler);
 }
 
-void PlotModule::onAttach(IUiContext &ui)
+ModuleContributions PlotModule::contributes() const
 {
-    // 语义色 token（验收 8）：游标色由模块声明，壳零硬编码。
+    // A8b-M2 裁定 52441074：声明式数据（单一通道）。字段无损复用既有纯数据类型。
+    ModuleContributions c;
+    c.owner = QStringLiteral("plot");
+
+    // 语义色 token（验收 8）：兜底色对齐历史硬编码实色，token 接管不改变外观。
     {
         ThemeTokenSpec t;
         t.id = QStringLiteral("plot.cursor");
-        // 兜底刻意对齐历史上硬编码的实色 #f2b134：token 接管绘制后不得改变外观，
-        // 否则"接上 token"本身就是一次静默视觉回归（原写 #FFB454 从未被对照验证）。
         t.fallback = QStringLiteral("#f2b134");
         t.description = QStringLiteral("绘图游标线颜色");
-        ui.declareThemeToken(t);
+        c.themeTokens.append(t);
     }
-
-    // 状态栏项（验收 7 / D2）：游标时间由 plot 推；**节流归本模块**（D2 的"谁的状态谁节流"），
-    // 壳只负责渲染，不认识 plot 的业务键。
     {
         StatusSpec s;
         s.id = QStringLiteral("plot.axes.cursor");
@@ -710,29 +709,23 @@ void PlotModule::onAttach(IUiContext &ui)
         s.tooltip = QStringLiteral("当前游标时间");
         s.provider = QStringLiteral("plot");
         s.text = QStringLiteral("游标: --");
-        ui.declareStatus(s);
+        c.statuses.append(s);
     }
     {
         ThemeTokenSpec t;
         t.id = QStringLiteral("plot.abMeasure");
         t.fallback = QStringLiteral("#f2b134");
         t.description = QStringLiteral("A-B 测量线颜色");
-        ui.declareThemeToken(t);
+        c.themeTokens.append(t);
     }
     {
-        // 网格色是唯一"必须跟随明暗主题"的语义色：上层不推送，绘制点直接以平台
-        // 调色板取默认值（见 AxesView 里 semanticColor 的 fallback），本 token 只提供
-        // 显式覆盖位——将来主题真要固定网格色时，推送即可生效。
         ThemeTokenSpec t;
         t.id = QStringLiteral("plot.grid");
         t.fallback = QStringLiteral("#c8c8c8");
         t.description = QStringLiteral("绘图网格线颜色");
-        ui.declareThemeToken(t);
+        c.themeTokens.append(t);
     }
-    // GUI 环境下：声明本模块的 Activity 与界面入口。
-    //
-    // Activity：plot 域的 Activity Bar 入口；工作区是中央画布（centralPanel），
-    // 本域没有左栏 section 面板，panelTypes 留空。
+
     ActivitySpec plotActivity;
     plotActivity.id = QStringLiteral("plot");
     plotActivity.label = QStringLiteral("绘图");
@@ -740,49 +733,40 @@ void PlotModule::onAttach(IUiContext &ui)
     plotActivity.order = 3;
     plotActivity.ribbonPage = QStringLiteral("ribbon.page.plot");
     plotActivity.centralPanel = QStringLiteral("plot.workspace");
-    ui.declareActivity(plotActivity);
+    c.activities.append(plotActivity);
 
-    // 本域 Ribbon 页/组自声明（D13）：壳不再预置绘图页容器。
-    ui.declareRibbonPage(QStringLiteral("ribbon.page.plot"), QStringLiteral("绘图"), 3);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.plot.figure"), QStringLiteral("页面"),
-                          QStringLiteral("ribbon.page.plot"), 0);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.plot.layout"), QStringLiteral("布局"),
-                          QStringLiteral("ribbon.page.plot"), 1);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.plot.display"), QStringLiteral("显示"),
-                          QStringLiteral("ribbon.page.plot"), 2);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.plot.tool"), QStringLiteral("交互"),
-                          QStringLiteral("ribbon.page.plot"), 3);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.plot.action"), QStringLiteral("导出"),
-                          QStringLiteral("ribbon.page.plot"), 4);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.plot.type"), QStringLiteral("图表类型"),
-                          QStringLiteral("ribbon.page.plot"), 5);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.plot.series"), QStringLiteral("曲线与轴"),
-                          QStringLiteral("ribbon.page.plot"), 6);
+    c.ribbonPages.append(RibbonPageDecl{QStringLiteral("ribbon.page.plot"),
+                                        QStringLiteral("绘图"), 3});
+    c.ribbonGroups.append(RibbonGroupDecl{QStringLiteral("ribbon.group.plot.figure"),
+                                          QStringLiteral("页面"), QStringLiteral("ribbon.page.plot"), 0});
+    c.ribbonGroups.append(RibbonGroupDecl{QStringLiteral("ribbon.group.plot.layout"),
+                                          QStringLiteral("布局"), QStringLiteral("ribbon.page.plot"), 1});
+    c.ribbonGroups.append(RibbonGroupDecl{QStringLiteral("ribbon.group.plot.display"),
+                                          QStringLiteral("显示"), QStringLiteral("ribbon.page.plot"), 2});
+    c.ribbonGroups.append(RibbonGroupDecl{QStringLiteral("ribbon.group.plot.tool"),
+                                          QStringLiteral("交互"), QStringLiteral("ribbon.page.plot"), 3});
+    c.ribbonGroups.append(RibbonGroupDecl{QStringLiteral("ribbon.group.plot.action"),
+                                          QStringLiteral("导出"), QStringLiteral("ribbon.page.plot"), 4});
+    c.ribbonGroups.append(RibbonGroupDecl{QStringLiteral("ribbon.group.plot.type"),
+                                          QStringLiteral("图表类型"), QStringLiteral("ribbon.page.plot"), 5});
+    c.ribbonGroups.append(RibbonGroupDecl{QStringLiteral("ribbon.group.plot.series"),
+                                          QStringLiteral("曲线与轴"), QStringLiteral("ribbon.page.plot"), 6});
 
-    // 申请中央画布工作区：实现由绘图视图层自注册（"plot.workspace" 类型），
-    // 它内部管理 N 个画布 cell（多曲线/拆分/网格），并集中路由 plot.* view action。
-    // 本模块不依赖 Qt Widgets——CLI 构建保持纯净。
-    ui.requestPanel(nextpilot::plotscope::registry::Region::Editor,
-                    QStringLiteral("plot.workspace"));
-
-    // 动作声明全是纯数据：处理器由画布视图登记到 AppContext（registerViewAction），
-    // 外壳按 action id 查 view action、未命中再回落意图层；模块不持有 QWidget。
-    // intentOp 留空 = 仅占位，走 view action 路径（与脚本/回放同一语义）。
     const QString fig    = QStringLiteral("ribbon.group.plot.figure");
     const QString layout = QStringLiteral("ribbon.group.plot.layout");
     const QString disp   = QStringLiteral("ribbon.group.plot.display");
     const QString tool   = QStringLiteral("ribbon.group.plot.tool");
     const QString act    = QStringLiteral("ribbon.group.plot.action");
     const QString type   = QStringLiteral("ribbon.group.plot.type");
-    auto add = [&ui](const QString &id, const QString &label, const QString &area,
-                     const QString &icon, int order, const QString &data = QString(),
-                     bool large = false, bool checkable = false,
-                     const QString &intentOp = QString(), const QString &visual = QString(),
-                     const QString &galleryGroup = QString()) {
+    auto add = [&c](const QString &id, const QString &label, const QString &slot,
+                    const QString &icon, int order, const QString &data = QString(),
+                    bool large = false, bool checkable = false,
+                    const QString &intentOp = QString(), const QString &visual = QString(),
+                    const QString &galleryGroup = QString()) {
         UiAction a;
         a.id = id;
         a.label = label;
-        a.slotId = area;
+        a.slotId = slot;
         a.icon = icon;
         a.order = order;
         a.data = data;
@@ -791,16 +775,16 @@ void PlotModule::onAttach(IUiContext &ui)
         a.intentOp = intentOp;
         a.visual = visual;
         a.galleryGroup = galleryGroup;
-        ui.addAction(a);
+        c.actions.append(a);
     };
 
-    // 页面组：新建页 / 删除页。
+    // 页面组。
     add(QStringLiteral("figure.new"), QStringLiteral("新建页"), fig,
         QStringLiteral("newpage"), 0, QString(), true);
     add(QStringLiteral("figure.closeCurrent"), QStringLiteral("删除页"), fig,
         QStringLiteral("trash"), 1, QString(), true);
 
-    // 布局组：网格 m×n 选择器（data="pick" 弹行列选择；visual 分格缩略图）+ 增删拆分。
+    // 布局组。
     add(QStringLiteral("figure.grid"), QStringLiteral("2×1"), layout,
         QStringLiteral("grid"), 0, QStringLiteral("pick"), true, false,
         QString(), QStringLiteral("layout:2x1"));
@@ -813,7 +797,7 @@ void PlotModule::onAttach(IUiContext &ui)
     add(QStringLiteral("figure.splitVertical"), QStringLiteral("上下"), layout,
         QStringLiteral("split_v"), 4);
 
-    // 显示组：重绘（大）/ 网格下拉（大）/ 边框 / 图例。
+    // 显示组。
     add(QStringLiteral("plot.action.redraw"), QStringLiteral("重绘"), disp,
         QStringLiteral("plot_refresh"), 0, QString(), true, false,
         QStringLiteral("plot.render"));
@@ -821,12 +805,11 @@ void PlotModule::onAttach(IUiContext &ui)
         QStringLiteral("grid_lines"), 1, QString(), true);
     add(QStringLiteral("plot.box"), QStringLiteral("边框"), disp,
         QStringLiteral("box"), 2, QString(), false, true);
-    // id 与 view action 同名：外壳先查视图登记的处理器，按钮点击直接命中，无需回落意图层。
     add(QStringLiteral("plot.legend.toggle"), QStringLiteral("图例"), disp,
         QStringLiteral("legend"), 3, QString(), false, true,
         QStringLiteral("plot.legend.toggle"));
 
-    // 交互组：标记 / AB（切换型）+ 三个工具模式（data 带 tool 序号）+ 恢复自适应。
+    // 交互组。
     add(QStringLiteral("plot.bookmark.add"), QStringLiteral("标记"), tool,
         QStringLiteral("marker"), 0, QString(), true);
     add(QStringLiteral("plot.ab.toggle"), QStringLiteral("AB"), tool,
@@ -840,7 +823,7 @@ void PlotModule::onAttach(IUiContext &ui)
     add(QStringLiteral("plot.autoscale"), QStringLiteral("恢复"), tool,
         QStringLiteral("fit"), 5);
 
-    // 导出组：截图 + 导出 PNG / CSV。
+    // 导出组。
     add(QStringLiteral("plot.screenshot"), QStringLiteral("截图"), act,
         QStringLiteral("screenshot"), 0);
     add(QStringLiteral("plot.export.png"), QStringLiteral("导出 PNG"), act,
@@ -850,8 +833,7 @@ void PlotModule::onAttach(IUiContext &ui)
         QStringLiteral("export_data"), 2, QString(), false, false,
         QStringLiteral("plot.export.csv"));
 
-    // 图表类型库：12 种图型，纯 UiAction 进 gallery；点击走 view action plot.setType。
-    // 缩略图由 visual（图型 kind）交给 GUI 层绘制；order 十位=分类，个位=组内序。
+    // 图表类型库：12 种图型，纯 UiAction 进 gallery。
     struct PlotDef { const char *kind; QString label; QString group; int order; };
     static const PlotDef kPlots[] = {
         {"timeseries", QStringLiteral("时间序列"), QStringLiteral("常用"),       0},
@@ -874,6 +856,15 @@ void PlotModule::onAttach(IUiContext &ui)
             QString(), d.order, kind, false, false,
             QStringLiteral("plot.setType"), kind, d.group);
     }
+    return c;
+}
+
+void PlotModule::onAttach(IUiContext &ui)
+{
+    // A8b-M2：声明已迁至 contributes()，宿主统一灌回；onAttach 只保留运行时服务。
+    // 申请中央画布工作区（实现由绘图视图层自注册）。
+    ui.requestPanel(nextpilot::plotscope::registry::Region::Editor,
+                    QStringLiteral("plot.workspace"));
 }
 
 #include "PlotModule.moc"

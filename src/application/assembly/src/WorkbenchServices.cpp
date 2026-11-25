@@ -23,7 +23,13 @@ WorkbenchServices::WorkbenchServices(nextpilot::plotscope::context::AppContext &
               hostRef.registerSystemHandler(QStringLiteral("cmd/") + id, h);
           },
           this),
-      m_scriptCaps(appCtx.interactions(), appCtx, hostRef, &recorder, [&hostRef]() { return hostRef.registeredOps(); })
+      m_scriptCaps(appCtx.interactions(), appCtx, hostRef, &recorder, [&hostRef]() { return hostRef.registeredOps(); }),
+      m_panelsService(appCtx),
+      m_formatHints(appCtx),
+      m_themeService(appCtx, hostRef),
+      m_slotsService(hostRef.uiSlotsMutable()),
+      m_viewsService(m_viewRegistry),
+      m_contribInstaller(appCtx, m_slotsService, m_viewRegistry)
 {
     // §1.4.2 + §1.2.1：注册 4 条服务。owner=assembly，version=1。
     m_services.registerSingleton(
@@ -43,6 +49,34 @@ WorkbenchServices::WorkbenchServices(nextpilot::plotscope::context::AppContext &
     m_services.registerSingleton(QStringLiteral("script.capabilities"), &m_scriptCaps, QStringLiteral("assembly"), 1,
                                  nextpilot::plotscope::instantiation::ServiceTypeTag<
                                      nextpilot::plotscope::uischema::IScriptCapabilities>::value());
+    // 壳读回三服务（裁定 52441633 §三）：MainWindow::build 用同 id + 同 typeTag 取回。
+    m_services.registerSingleton(
+        QStringLiteral("panels.readback"), &m_panelsService, QStringLiteral("assembly"), 1,
+        nextpilot::plotscope::instantiation::ServiceTypeTag<
+            nextpilot::plotscope::workbench::IPanelsService>::value());
+    m_services.registerSingleton(
+        QStringLiteral("format.hints"), &m_formatHints, QStringLiteral("assembly"), 1,
+        nextpilot::plotscope::instantiation::ServiceTypeTag<
+            nextpilot::plotscope::workbench::IFormatHints>::value());
+    m_services.registerSingleton(
+        QStringLiteral("theme.readback"), &m_themeService, QStringLiteral("assembly"), 1,
+        nextpilot::plotscope::instantiation::ServiceTypeTag<
+            nextpilot::plotscope::workbench::IThemeService>::value());
+    // 槽位表服务（裁定 52442006 Step 2）：壳读写唯一通道。
+    m_services.registerSingleton(
+        QStringLiteral("slots.binding"), &m_slotsService, QStringLiteral("assembly"), 1,
+        nextpilot::plotscope::instantiation::ServiceTypeTag<
+            nextpilot::plotscope::workbench::ISlotsService>::value());
+    // 视图注册表（Step 5）：写面给装配层内部（ExtensionActivationService 经
+    // getService<ViewRegistry> 灌数），读/打开面给壳（IViewsService）。
+    m_services.registerSingleton(
+        QStringLiteral("views.registry"), &m_viewRegistry, QStringLiteral("assembly"), 1,
+        nextpilot::plotscope::instantiation::ServiceTypeTag<
+            nextpilot::plotscope::registry::ViewRegistry>::value());
+    m_services.registerSingleton(
+        QStringLiteral("views.readback"), &m_viewsService, QStringLiteral("assembly"), 1,
+        nextpilot::plotscope::instantiation::ServiceTypeTag<
+            nextpilot::plotscope::workbench::IViewsService>::value());
 }
 
 } // namespace nextpilot::plotscope::assembly

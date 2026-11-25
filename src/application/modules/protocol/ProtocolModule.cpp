@@ -56,41 +56,47 @@ void ProtocolModule::initialize(InstantiationService &services)
         reg(op, m_handler);
 }
 
-void ProtocolModule::onAttach(IUiContext &ui)
+ModuleContributions ProtocolModule::contributes() const
 {
-    // 本域 Ribbon 页/组自声明（D13）。
-    ui.declareRibbonPage(QStringLiteral("ribbon.page.protocol"), QStringLiteral("协议"), 5);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.protocol.editor"), QStringLiteral("编辑器"),
-                          QStringLiteral("ribbon.page.protocol"), 0);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.protocol.debug"), QStringLiteral("检查"),
-                          QStringLiteral("ribbon.page.protocol"), 1);
+    ModuleContributions c;
+    c.owner = QStringLiteral("protocol");
+    c.ribbonPages.append(RibbonPageDecl{QStringLiteral("ribbon.page.protocol"),
+                                        QStringLiteral("协议"), 5});
+    c.ribbonGroups.append(RibbonGroupDecl{QStringLiteral("ribbon.group.protocol.editor"),
+                                          QStringLiteral("编辑器"),
+                                          QStringLiteral("ribbon.page.protocol"), 0});
+    c.ribbonGroups.append(RibbonGroupDecl{QStringLiteral("ribbon.group.protocol.debug"),
+                                          QStringLiteral("检查"),
+                                          QStringLiteral("ribbon.page.protocol"), 1});
 
-    // 协议页"编辑器"组：新建 / 打开 / 校验协议 + 编辑器入口。
-    // 这些是 GUI 工具，按 action id 由外壳特判弹对话框（同 openData 的模式），
-    // intentOp 留空但 id 语义明确，CLI/脚本不依赖它们。
-    // 编辑器面板顺序：新建 / 打开 / 校验，编辑器入口排最后（整合入口）。
-    auto add = [&ui](const QString &id, const QString &label, const QString &area,
-                     const QString &icon, int order) {
+    // 协议页"编辑器"组：新建 / 打开 / 校验 + 编辑器入口；外壳按 id 特判弹窗。
+    auto add = [&c](const QString &id, const QString &label, const QString &area,
+                    const QString &icon, int order) {
         UiAction a;
         a.id = id;
         a.label = label;
         a.slotId = area;
         a.icon = icon;
         a.order = order;
-        ui.addAction(a);
+        c.actions.append(a);
     };
-
     const QString editor = QStringLiteral("ribbon.group.protocol.editor");
     add(QStringLiteral("protocol.new"), QStringLiteral("新建协议"), editor, QStringLiteral("plus"), 0);
     add(QStringLiteral("protocol.open"), QStringLiteral("打开编辑"), editor, QStringLiteral("file_open"), 1);
     add(QStringLiteral("protocol.validate"), QStringLiteral("校验协议"), editor, QStringLiteral("check"), 2);
     add(QStringLiteral("protocol.editor"), QStringLiteral("协议编辑器"), editor, QStringLiteral("settings"), 3);
-    // 外壳按 id 特判弹窗的两个入口（与 openData 同一模式），intentOp 留空。
     add(QStringLiteral("app.action.protocolEditor"), QStringLiteral("协议编辑器"),
         editor, QStringLiteral("file_open"), 4);
     const QString debug = QStringLiteral("ribbon.group.protocol.debug");
     add(QStringLiteral("app.action.protocolInspector"), QStringLiteral("协议检查器"),
         debug, QStringLiteral("file_open"), 0);
+    return c;
+}
+
+void ProtocolModule::onAttach(IUiContext &ui)
+{
+    Q_UNUSED(ui);
+    // A8b-M2：UI 声明已迁至 contributes()，宿主统一灌回。
 }
 
 #include "ProtocolModule.moc"

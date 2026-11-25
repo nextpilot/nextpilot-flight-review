@@ -171,22 +171,20 @@ QList<UiAction> DataModule::sourceGalleryActions(const QVector<QPair<QString, QS
     return buildSourceGalleryActions(metas);
 }
 
-void DataModule::onAttach(IUiContext &ui)
+ModuleContributions DataModule::contributes() const
 {
-    // 语义色 token（验收 8）：数据源标识色由模块声明，壳零硬编码。
+    ModuleContributions c;
+    c.owner = QStringLiteral("data");
+
     {
         ThemeTokenSpec t;
         t.id = QStringLiteral("data.source");
-        // fallback 与 SourceRowDelegate 激活竖条的历史色一致：接管 token 不改变外观。
         t.fallback = QStringLiteral("#f2b134");
         t.description = QStringLiteral("数据源标识颜色");
-        ui.declareThemeToken(t);
+        c.themeTokens.append(t);
     }
 
-    m_ui = &ui;
-
-    // 状态栏项（验收 7 / D8）：数据源数量、加载进度、回放状态。
-    // 壳按 side/priority 排布；文本由本模块在数据变化时经 updateStatus 推送。
+    // 状态栏项：数据源数量、加载进度、回放状态。文本由本模块经 updateStatus 推送。
     {
         StatusSpec s;
         s.id = QStringLiteral("data.source.count");
@@ -195,7 +193,7 @@ void DataModule::onAttach(IUiContext &ui)
         s.tooltip = QStringLiteral("已载入数据源数量");
         s.provider = QStringLiteral("data");
         s.text = QStringLiteral("数据源: 0");
-        ui.declareStatus(s);
+        c.statuses.append(s);
 
         StatusSpec p;
         p.id = QStringLiteral("data.loading.progress");
@@ -204,7 +202,7 @@ void DataModule::onAttach(IUiContext &ui)
         p.tooltip = QStringLiteral("数据加载进度");
         p.provider = QStringLiteral("data");
         p.text = QStringLiteral("空闲");
-        ui.declareStatus(p);
+        c.statuses.append(p);
 
         StatusSpec play;
         play.id = QStringLiteral("playback.state");
@@ -213,8 +211,96 @@ void DataModule::onAttach(IUiContext &ui)
         play.tooltip = QStringLiteral("回放状态");
         play.provider = QStringLiteral("data");
         play.text = QStringLiteral("停止");
-        ui.declareStatus(play);
+        c.statuses.append(play);
     }
+
+    c.ribbonPages.append(RibbonPageDecl{QStringLiteral("ribbon.page.data"),
+                                        QStringLiteral("数据"), 2});
+    c.ribbonGroups.append(RibbonGroupDecl{QStringLiteral("ribbon.group.data.common"),
+                                          QStringLiteral("常用"), QStringLiteral("ribbon.page.data"), 0});
+    c.ribbonGroups.append(RibbonGroupDecl{QStringLiteral("ribbon.group.data.record"),
+                                          QStringLiteral("录制"), QStringLiteral("ribbon.page.data"), 1});
+    c.ribbonGroups.append(RibbonGroupDecl{QStringLiteral("ribbon.group.data.sources"),
+                                          QStringLiteral("来源"), QStringLiteral("ribbon.page.data"), 2});
+
+    // 来源画廊：条目由 initialize 缓存的格式驱动元数据派生，壳不保留格式常量表。
+    for (const UiAction &a : sourceGalleryActions(m_driverMetas))
+        c.actions.append(a);
+
+    ActivitySpec dataActivity;
+    dataActivity.id = QStringLiteral("data");
+    dataActivity.label = QStringLiteral("数据");
+    dataActivity.icon = QStringLiteral("datasource");
+    dataActivity.order = 0;
+    dataActivity.ribbonPage = QStringLiteral("ribbon.page.data");
+    dataActivity.panelTypes = {QStringLiteral("dataset-tree")};
+    c.activities.append(dataActivity);
+
+    // 开始页"常用"组：打开 / 最近。
+    auto addHome = [&c](const QString &id, const QString &label, const QString &op,
+                        const QString &icon, const QString &shortcut, int order) {
+        UiAction a;
+        a.id = id;
+        a.label = label;
+        a.slotId = QStringLiteral("ribbon.group.home.data");
+        a.intentOp = op;
+        a.icon = icon;
+        a.shortcut = shortcut;
+        a.order = order;
+        c.actions.append(a);
+    };
+    addHome(QStringLiteral("app.action.openData"), QStringLiteral("打开数据"),
+            QStringLiteral("data.load"), QStringLiteral("file_open"), QStringLiteral("Ctrl+O"), 0);
+    addHome(QStringLiteral("home.action.recent"), QStringLiteral("最近打开"),
+            QStringLiteral("data.recent"), QStringLiteral("history"), QString(), 1);
+
+    // 数据功能 ribbon 的"常用"动作（每个绑定真实存在的意图处理器）。
+    auto add = [&c](const QString &id, const QString &label,
+                    const QString &op, const QString &icon, int order) {
+        UiAction a;
+        a.id = id;
+        a.label = label;
+        a.slotId = QStringLiteral("ribbon.group.data.common");
+        a.intentOp = op;
+        a.icon = icon;
+        a.order = order;
+        c.actions.append(a);
+    };
+    add(QStringLiteral("data.action.quickOpen"), QStringLiteral("快速打开"),
+        QStringLiteral("data.load"), QStringLiteral("open"), 0);
+    add(QStringLiteral("data.action.recent"), QStringLiteral("最近"),
+        QStringLiteral("data.recent"), QStringLiteral("history"), 1);
+    add(QStringLiteral("data.action.reload"), QStringLiteral("重载"),
+        QStringLiteral("data.reload"), QStringLiteral("reset"), 10);
+    add(QStringLiteral("data.action.export"), QStringLiteral("导出 CSV"),
+        QStringLiteral("data.export"), QStringLiteral("export_data"), 11);
+    add(QStringLiteral("data.action.clearCache"), QStringLiteral("清解析缓存"),
+        QStringLiteral("data.clearCache"), QStringLiteral("trash"), 12);
+
+    // 录制组：两态按钮。
+    auto addRec = [&c](const QString &id, const QString &label, const QString &op,
+                       const QString &icon, int order) {
+        UiAction a;
+        a.id = id;
+        a.label = label;
+        a.slotId = QStringLiteral("ribbon.group.data.record");
+        a.intentOp = op;
+        a.icon = icon;
+        a.order = order;
+        c.actions.append(a);
+    };
+    addRec(QStringLiteral("data.action.recordStart"), QStringLiteral("开始录制"),
+           QStringLiteral("data.record.start"), QStringLiteral("record"), 20);
+    addRec(QStringLiteral("data.action.recordStop"), QStringLiteral("停止录制"),
+           QStringLiteral("data.record.stop"), QStringLiteral("pause"), 21);
+    return c;
+}
+
+void DataModule::onAttach(IUiContext &ui)
+{
+    // A8b-M2：声明已迁至 contributes()，宿主统一灌回；onAttach 只保留运行时服务。
+    m_ui = &ui;
+
     // 数据源数量：订阅 DatasetHub 增删信号，推模式更新（不轮询）。
     if (m_host)
     {
@@ -230,8 +316,6 @@ void DataModule::onAttach(IUiContext &ui)
                          [refreshCount](DatasetId) { refreshCount(); });
         refreshCount();
 
-        // 加载进度：订阅上下文加载生命周期（真实 data.load 摄取入口驱动，非定时器刷值）。
-        // 开始摄取 → "加载中…"；摄取返回 → 成功回"空闲"，失败置"加载失败"。
         AppContext &appCtx = m_host->app();
         QObject::connect(&appCtx, &AppContext::dataLoadStarted, this, [this]() {
             if (m_ui)
@@ -244,9 +328,6 @@ void DataModule::onAttach(IUiContext &ui)
                                    ok ? QStringLiteral("空闲") : QStringLiteral("加载失败"));
         });
 
-        // 加载进度（验收 7）：订阅摄取管道的真实进度，覆盖上面 start 端的"加载中…"占位。
-        // total=0（CSV 等流式 parser 上报 consumed 字节、总量未知）显示"已读 N 字节"；
-        // total>0 显示百分比。finish 端仍回"空闲"/"加载失败"，不由本订阅收尾。
         IngestPipeline &ingest = appCtx.ingest();
         QObject::connect(&ingest, &IngestPipeline::progressChanged, this,
                          [this](int, uint64_t done, uint64_t total) {
@@ -258,102 +339,10 @@ void DataModule::onAttach(IUiContext &ui)
                              m_ui->updateStatus(QStringLiteral("data.loading.progress"), text);
                          });
     }
-    // GUI 环境下才走到这里（headless 时宿主不调用 onAttach）。
-    //
-    // 模块只声明"我需要一个数据集树面板"，由 app 骨架的部件工厂决定用哪个实现——
-    // 因此本模块不依赖 Qt Widgets，CLI（headless）构建保持纯净。
 
-    // 本域 Ribbon 页/组自声明（D13）：壳不再预置业务页。
-    // 注：开始页 ribbon.page.home 是产品级聚合页，暂由壳 ShellContributions 声明；
-    // 本模块只把"打开/最近"作为业务条目挂进 home.data 组，不声明该页/组容器。
-    ui.declareRibbonPage(QStringLiteral("ribbon.page.data"), QStringLiteral("数据"), 2);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.data.common"), QStringLiteral("常用"),
-                          QStringLiteral("ribbon.page.data"), 0);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.data.record"), QStringLiteral("录制"),
-                          QStringLiteral("ribbon.page.data"), 1);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.data.sources"), QStringLiteral("来源"),
-                          QStringLiteral("ribbon.page.data"), 2);
-    // 注：原 ribbon.group.data.debug「调试」组在 c7 解散 SkeletonSlots 时声明，
-    // 但从未有任何动作绑定（D13 零消费者死槽），验收 15 的零消费者检查抓到后删除。
-
-    // 来源画廊：条目由已装载的格式驱动元数据派生（sourceGalleryActions），
-    // 壳不保留格式常量表；装/卸解析器，图块随之增减。
-    // 驱动元数据在 initialize 阶段经 IWorkspace 按名取用并缓存（不再回头拿宿主）。
-    for (const UiAction &a : sourceGalleryActions(m_driverMetas))
-        ui.addAction(a);
-
-    ActivitySpec dataActivity;
-    dataActivity.id = QStringLiteral("data");
-    dataActivity.label = QStringLiteral("数据");
-    dataActivity.icon = QStringLiteral("datasource");
-    dataActivity.order = 0;
-    dataActivity.ribbonPage = QStringLiteral("ribbon.page.data");
-    dataActivity.panelTypes = {QStringLiteral("dataset-tree")};
-    ui.declareActivity(dataActivity);
+    // 数据集树面板（运行时服务）。
     ui.requestPanel(nextpilot::plotscope::registry::Region::PrimarySidebar,
                     QStringLiteral("dataset-tree"));
-
-    // 开始页"常用"组：打开 / 最近（落地页高频入口，id 与外壳文件对话框特判对齐）。
-    // 组容器由壳 ShellContributions 声明，这里只贡献业务条目。
-    auto addHome = [&ui](const QString &id, const QString &label, const QString &op,
-                         const QString &icon, const QString &shortcut, int order) {
-        UiAction a;
-        a.id = id;
-        a.label = label;
-        a.slotId = QStringLiteral("ribbon.group.home.data");
-        a.intentOp = op;
-        a.icon = icon;
-        a.shortcut = shortcut;
-        a.order = order;
-        ui.addAction(a);
-    };
-    addHome(QStringLiteral("app.action.openData"), QStringLiteral("打开数据"),
-            QStringLiteral("data.load"), QStringLiteral("file_open"), QStringLiteral("Ctrl+O"), 0);
-    addHome(QStringLiteral("home.action.recent"), QStringLiteral("最近打开"),
-            QStringLiteral("data.recent"), QStringLiteral("history"), QString(), 1);
-
-    // 数据功能 ribbon 的"常用"动作。
-    // 每个都绑定**真实存在**的意图处理器（宿主级 data.* handler），不是空按钮。
-    // 快速打开/最近占 0/1，重载/导出/清缓存从 10 起排。
-    auto add = [&ui](const QString &id, const QString &label,
-                     const QString &op, const QString &icon, int order) {
-        UiAction a;
-        a.id = id;
-        a.label = label;
-        a.slotId = QStringLiteral("ribbon.group.data.common");
-        a.intentOp = op;
-        a.icon = icon;
-        a.order = order;
-        ui.addAction(a);
-    };
-    add(QStringLiteral("data.action.quickOpen"), QStringLiteral("快速打开"),
-        QStringLiteral("data.load"), QStringLiteral("open"), 0);
-    add(QStringLiteral("data.action.recent"), QStringLiteral("最近"),
-        QStringLiteral("data.recent"), QStringLiteral("history"), 1);
-    add(QStringLiteral("data.action.reload"), QStringLiteral("重载"),
-        QStringLiteral("data.reload"), QStringLiteral("reset"), 10);
-    add(QStringLiteral("data.action.export"), QStringLiteral("导出 CSV"),
-        QStringLiteral("data.export"), QStringLiteral("export_data"), 11);
-    add(QStringLiteral("data.action.clearCache"), QStringLiteral("清解析缓存"),
-        QStringLiteral("data.clearCache"), QStringLiteral("trash"), 12);
-
-    // 录制组：两态按钮，参数全走缺省——活动源 + raw/file + 自动文件名，
-    // 点一下就录，不弹对话框（要选格式/后端属于高级用法，可走 CLI/脚本传参）。
-    auto addRec = [&ui](const QString &id, const QString &label, const QString &op,
-                        const QString &icon, int order) {
-        UiAction a;
-        a.id = id;
-        a.label = label;
-        a.slotId = QStringLiteral("ribbon.group.data.record");
-        a.intentOp = op;
-        a.icon = icon;
-        a.order = order;
-        ui.addAction(a);
-    };
-    addRec(QStringLiteral("data.action.recordStart"), QStringLiteral("开始录制"),
-           QStringLiteral("data.record.start"), QStringLiteral("record"), 20);
-    addRec(QStringLiteral("data.action.recordStop"), QStringLiteral("停止录制"),
-           QStringLiteral("data.record.stop"), QStringLiteral("pause"), 21);
 }
 
 #include "DataModule.moc"

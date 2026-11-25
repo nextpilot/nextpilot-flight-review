@@ -35,7 +35,7 @@
 | (2) extension 是知识库 | 贡献类型**开放字符串**，扩展是聚合单位 | 加一类知识 = 新接口 + 注册槽，不改 core 枚举 |
 | (2) 增一个扩展不改其他代码 | 扩展**静态自注册**进包表 | 同上 |
 | (3) 百万千万级数据 | 数据本体**只在 Rust**；一切取数**有界** | C++ 永不物化全量；绘图内存 = O(像素宽) |
-| (4) SARibbon + ADS | 外壳**只做绑定**，不自研 ribbon/docking | 第三方组件负责结构与交互，宿主只提供插槽数据 |
+| (4) SARibbon + ADS | 外壳**只做绑定**，不自研 ribbon、docking | 第三方组件负责结构与交互，宿主只提供插槽数据 |
 | (4) ps 数据 UI 管理与呈现 | 数据浏览与绘图是**两个独立模块** | 数据集浏览 ≠ 绘图渲染 |
 | (5) 同时打开多个数据源 | **Source 是一等对象**，有 id 与独立生命周期 | 数据源 ≠ 数据集；多源对比 = 多 dataset id |
 | (5) plot 页面直接交互 | View 是**可插拔类型**，交互框架由模块提供 | 12 种视图不必塞进一个 3800 行类 |
@@ -643,10 +643,10 @@ gui::ShellBinder（唯一知道 SARibbon / ADS 的地方）
 - **壳级容器**：文件 / 视图两页（外加暂留壳的开始聚合页）及其分组，声明在 host 层
   `ShellContributions::declareShellContributions()`——一处，headless 与 GUI 同一份。
 - **业务容器**：数据 / 绘图 / 脚本 / 协议 / 分析 / 报告等页与分组，由各模块在
-  `onAttach` 里经 `IUiContext::declareRibbonPage / declareRibbonGroup` 自声明；
+  override `contributes()` 经声明式数据贡献 Ribbon 页/组（宿主统一灌回）；
   壳不预置业务页。
 
-历史教训（仍成立）：`declareRibbonPage/declareRibbonGroup` 幂等（先到者为准），若同一容器在 host 与 GUI
+历史教训（仍成立）：`contributes().ribbonPages/ribbonGroups` 幂等（先到者为准），若同一容器在 host 与 GUI
 两处声明，信息更全的那份会被静默丢弃。因此壳级容器只在 `ShellContributions` 一处；
 模块容器只在该模块 `onAttach` 一处。`test_architecture` 死槽检查钉死：注册表内
 kind 仅限 RibbonPage/RibbonGroup，旧 Dock/Canvas/Menu 槽与方位名槽归零。
@@ -661,7 +661,7 @@ kind 仅限 RibbonPage/RibbonGroup，旧 Dock/Canvas/Menu 槽与方位名槽归�
 ```
 gui/
   shell/                    外壳层：只做装配，零业务
-    MainWindow               窗口骨架：建 ribbon/dock、装模块、存取状态
+    MainWindow               窗口骨架：建 ribbon、dock，装模块、存取状态
     ShellBinder              唯一知道 SARibbon / ADS 的地方
     GuiContext               host::IUiContext 的实现，把模块的 UI 需求路由出去
     PanelFactory     部件类型 → QWidget 工厂（视图层自注册进这里）

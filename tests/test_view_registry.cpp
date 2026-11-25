@@ -1,0 +1,168 @@
+// A8b-M2 ViewRegistry 单测：视图声明登记 + registerViewProvider + unmount 整批撤。
+// 只链 ps_registry + Qt6::Core，工厂返回空 QWidget*（不构造真实控件），不碰 Gui。
+
+#include "ViewRegistry.h"
+#include "ContributionParser.h"
+#include "IActionProvider.h"
+#include "RegistryTree.h"
+
+#include <QCoreApplication>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QString>
+
+#include <cstdio>
+
+using namespace nextpilot::plotscope::registry;
+
+namespace
+{
+int g_failed = 0;
+#define CHECK(cond)                                                            \
+    do                                                                         \
+    {                                                                          \
+        if (!(cond))                                                           \
+        {                                                                      \
+            std::printf("FAIL line %d: %s\n", __LINE__, #cond);                \
+            ++g_failed;                                                        \
+        }                                                                      \
+    } while (0)
+
+ContributesDoc doc(const char *json, const QString &owner)
+{
+    auto obj = QJsonDocument::fromJson(QByteArray(json)).object();
+    return parseContributes(obj, owner).doc;
+}
+
+// 一个不构造控件的假工厂：返回空指针，仅验证 provider 注册/撤销链路。
+ViewRegistry::ViewFactory dummyFactory()
+{
+    return [](nextpilot::plotscope::context::AppContext &,
+              nextpilot::plotscope::intent::IIntentExecutor &, QWidget *) -> QWidget * {
+        return nullptr;
+    };
+}
+
+// 假动作提供器：模拟 MRU/收藏动态 gallery（裁定 §2）。
+// 返回纯数据条目；内容变化经 onDidChangeActions 通知外壳只重建该 slot。
+class FakeActionProvider final : public QObject, public IActionProvider
+{
+    Q_OBJECT
+public:
+    QList<UiAction> actionsFor(const QString &slotId) const override
+    {
+        QList<UiAction> out;
+        for (const QString &group : m_groups)
+        {
+            UiAction a;
+            a.id = slotId + QStringLiteral(".") + group;
+            a.galleryGroup = group;
+            a.order = out.size();
+            out.append(a);
+        }
+        return out;
+    }
+    QMetaObject::Connection
+    onDidChangeActions(std::function<void(const QString &slotId)> listener) override
+    {
+        return QObject::connect(this, &FakeActionProvider::actionsChanged, this,
+                                [listener = std::move(listener)](const QString &slot) {
+                                    listener(slot);
+                                });
+    }
+    // 模拟"最近使用/收藏"条目变化。
+    void setGroups(const QStringList &g)
+    {
+        m_groups = g;
+        Q_EMIT actionsChanged(QStringLiteral("ribbon.group.analysis.apps"));
+    }
+    QStringList m_groups{QStringLiteral("最近使用"), QStringLiteral("收藏")};
+signals:
+    void actionsChanged(const QString &slotId);
+};
+} // namespace
+
+int main(int argc, char **argv)
+{
+    QCoreApplication app(argc, argv);
+    ViewRegistry views;
+
+    // 声明层：两个 owner 各一份 contributes。
+    views.declare(doc(R"({
+        "viewsContainers":[
+            {"id":"plot.side","title":"绘图","area":"sidebar","order":30},
+            {"id":"plot.bottom","title":"日志","area":"bottom"}
+        ],
+        "views":[
+            {"id":"plot.props","name":"属性","container":"plot.side","order":5},
+            {"id":"plot.canvas","name":"画布","container":"plot.side","order":1}
+        ]
+    })", QStringLiteral("plot")));
+    views.declare(doc(R"({
+        "viewsContainers":[{"id":"data.side","title":"数据","area":"sidebar"}],
+        "views":[{"id":"data.props","name":"数据源","container":"data.side"}]
+    })", QStringLiteral("data")));
+
+    CHECK(views.declaredOwners().size() == 2);
+    CHECK(views.containersOf(QStringLiteral("plot")).size() == 2);
+    CHECK(views.viewsOf(QStringLiteral("plot")).size() == 2);
+    CHECK(views.viewsIn(QStringLiteral("plot.side")).size() == 2);
+    // viewsIn 按 order：canvas(1) 在 props(5) 前。
+    CHECK(views.viewsIn(QStringLiteral("plot.side")).at(0).id == QLatin1String("plot.canvas"));
+    CHECK(views.viewsIn(QStringLiteral("plot.side")).at(1).id == QLatin1String("plot.props"));
+
+    // 运行层：registerViewProvider，先到者为准。
+    CHECK(views.registerViewProvider(QStringLiteral("plot.props"), dummyFactory(), QStringLiteral("plot")));
+    CHECK(!views.registerViewProvider(QStringLiteral("plot.props"), dummyFactory(), QStringLiteral("other")));
+    CHECK(views.provider(QStringLiteral("plot.props")) != nullptr);
+    CHECK(views.provider(QStringLiteral("plot.props"))->owner == QLatin1String("plot"));
+    CHECK(views.provider(QStringLiteral("missing")) == nullptr);
+
+    // 卸载 owner：声明 + provider 整批撤，另一 owner 不受影响。
+    CHECK(views.unregisterOwner(QStringLiteral("plot")) == 1);
+    views.undeclare(QStringLiteral("plot"));
+    CHECK(views.provider(QStringLiteral("plot.props")) == nullptr);
+    CHECK(views.containersOf(QStringLiteral("plot")).isEmpty());
+    CHECK(views.viewsOf(QStringLiteral("plot")).isEmpty());
+    CHECK(views.declaredOwners().size() == 1);
+    CHECK(views.viewsOf(QStringLiteral("data")).size() == 1); // data 不受影响
+
+    // 动作提供器（裁定 52441074 §2）：同层注册 + owner 校验 + 整批撤。
+    FakeActionProvider ap1;
+    FakeActionProvider ap2;
+    CHECK(views.registerActionProvider(QStringLiteral("plot"), QStringLiteral("ribbon.group.plot.series"), &ap1));
+    CHECK(!views.registerActionProvider(QStringLiteral("plot"), QStringLiteral("ribbon.group.plot.series"), &ap2)); // 同 owner 同 slot 拒
+    CHECK(views.registerActionProvider(QStringLiteral("data"), QStringLiteral("ribbon.group.plot.series"), &ap2)); // 不同 owner 可
+    CHECK(views.actionProvidersFor(QStringLiteral("ribbon.group.plot.series")).size() == 2);
+    CHECK(views.actionProvidersFor(QStringLiteral("no.such.slot")).isEmpty());
+    CHECK(views.actionProviders().size() == 2);
+
+    // MRU/收藏动态 gallery 活着（裁定 §2）：provider 初始返回"最近使用/收藏"两组，
+    // 内容变化经 onDidChangeActions 通知，actionsFor 立即反映新条目。
+    int notified = 0;
+    QString notifiedSlot;
+    ap1.onDidChangeActions([&](const QString &slot) { ++notified; notifiedSlot = slot; });
+    CHECK(ap1.actionsFor(QStringLiteral("ribbon.group.analysis.apps")).size() == 2);
+    ap1.setGroups({QStringLiteral("最近使用"), QStringLiteral("收藏"), QStringLiteral("固定")});
+    CHECK(notified == 1);
+    CHECK(notifiedSlot == QLatin1String("ribbon.group.analysis.apps"));
+    CHECK(ap1.actionsFor(QStringLiteral("ribbon.group.analysis.apps")).size() == 3);
+
+    // 卸载 plot：声明 + view provider + action provider 全撤，data 的 provider 留着。
+    views.undeclare(QStringLiteral("plot"));
+    CHECK(views.actionProviders().size() == 1);
+    CHECK(views.actionProvidersFor(QStringLiteral("ribbon.group.plot.series")).at(0).owner == QLatin1String("data"));
+
+    views.undeclare(QStringLiteral("data"));
+    CHECK(views.declaredOwners().isEmpty());
+    CHECK(views.viewsIn(QStringLiteral("data.side")).isEmpty());
+    CHECK(views.actionProviders().isEmpty());
+
+    if (g_failed == 0)
+        std::printf("view_registry: ALL PASS\n");
+    else
+        std::printf("view_registry: %d FAILED\n", g_failed);
+    return g_failed == 0 ? 0 : 1;
+}
+
+#include "test_view_registry.moc"

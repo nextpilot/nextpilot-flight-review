@@ -29,6 +29,10 @@ App::App(const QString &settingsPath, QObject *parent)
     // A1b §1.4.4：服务容器构造完毕后注入宿主，activate 用它初始化模块。
     m_host.setServices(m_services.services());
 
+    // A8b-M2 裁定 52442006 Step 3：灌回入口接线到装配层（ContributionsInstaller），
+    // host.activate 收集 contributes 后调它——壳（GuiContext）不再灌回。
+    m_host.setContributionsInstaller(m_services.contributionsInstaller());
+
     // 模块（module）：app 的组成部分，按依赖拓扑装载。
     // 模块在各自 TU 里静态自注册（PS_REGISTER_MODULE），这里只把已登记的
     // 全部装进宿主——新增一个 module 不用改本文件。

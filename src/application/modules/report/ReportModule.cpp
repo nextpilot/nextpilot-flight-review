@@ -29,17 +29,17 @@ void ReportModule::initialize(InstantiationService &)
     // 报告模块无需运行时装配：入口声明在 onAttach，导出管线在外壳层。
 }
 
-void ReportModule::onAttach(IUiContext &ui)
+ModuleContributions ReportModule::contributes() const
 {
-    // GUI 环境下才走到这里（headless 时宿主不调用 onAttach）。
-    //
-    // 「报告」页 = "导出"组：一键导出 PDF（多画布 + 元数据 + 结论）。
-    // action id 由外壳特判（弹保存路径 → QPdfWriter 矢量管线）；脚本侧
-    // app.call("report.export", {...}) 走同一管线（MainWindow 注册 view action）。
-    ui.declareRibbonPage(QStringLiteral("ribbon.page.report"), QStringLiteral("报告"), 7);
-    ui.declareRibbonGroup(QStringLiteral("ribbon.group.report.export"), QStringLiteral("导出"),
-                          QStringLiteral("ribbon.page.report"), 0);
-
+    // A8b-M2：声明式数据（单一通道）。「报告」页 = "导出"组：一键导出 PDF。
+    using namespace nextpilot::plotscope::registry;
+    ModuleContributions c;
+    c.owner = QStringLiteral("report");
+    c.ribbonPages.append(RibbonPageDecl{QStringLiteral("ribbon.page.report"),
+                                        QStringLiteral("报告"), 7});
+    c.ribbonGroups.append(RibbonGroupDecl{QStringLiteral("ribbon.group.report.export"),
+                                          QStringLiteral("导出"),
+                                          QStringLiteral("ribbon.page.report"), 0});
     UiAction a;
     a.id = QStringLiteral("report.workbench.export");
     a.label = QStringLiteral("导出报告");
@@ -47,7 +47,14 @@ void ReportModule::onAttach(IUiContext &ui)
     a.icon = QStringLiteral("file_save");
     a.large = true;
     a.order = 0;
-    ui.addAction(a);
+    c.actions.append(a);
+    return c;
+}
+
+void ReportModule::onAttach(IUiContext &ui)
+{
+    Q_UNUSED(ui);
+    // A8b-M2：UI 声明已迁至 contributes()，宿主统一灌回；onAttach 不再声明。
 }
 
 #include "ReportModule.moc"

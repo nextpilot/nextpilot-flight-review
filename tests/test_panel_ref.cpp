@@ -90,7 +90,7 @@ int main(int argc, char **argv)
     activity.id = QStringLiteral("test.activity");
     activity.panelTypes = {QStringLiteral("bogus-side-panel")};
     activity.centralPanel = QStringLiteral("bogus-central");
-    slotHub.declareActivity(activity);
+    slotHub.registerActivity(activity);
 
     Pack pack;
     pack.id = QStringLiteral("pack.test");
@@ -141,7 +141,7 @@ int main(int argc, char **argv)
     ActivitySpec hitActivity;
     hitActivity.id = QStringLiteral("hit.activity");
     hitActivity.panelTypes = {QStringLiteral("known-panel")};
-    slotHub.declareActivity(hitActivity);
+    slotHub.registerActivity(hitActivity);
 
     const auto afterHit = validatePanelReferences(toolbox, slotHub, placements);
     CHECK(findIssue(afterHit, QStringLiteral("known-panel")) == nullptr);

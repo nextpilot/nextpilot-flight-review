@@ -67,6 +67,31 @@ int main(int argc, char **argv)
     CHECK(extensions.keysAsStrings().contains(QStringLiteral("plot")));
     CHECK(extensions.keysAsStrings().contains(QStringLiteral("data")));
 
+    // M2：一份带视图/菜单/颜色/状态的 contributes 文档，mount 后各表可读、按 owner 归属。
+    CHECK(extensions.mountContribution(doc(R"({
+        "commands":[{"command":"view.open","title":"打开视图"}],
+        "viewsContainers":[{"id":"plot.side","title":"绘图","area":"sidebar","order":30}],
+        "views":[{"id":"plot.props","name":"属性","container":"plot.side"}],
+        "menus":{"view/title":[{"command":"view.open","when":"view == plot.props"}]},
+        "colors":{"plot.cursor":{"dark":"#fff","light":"#000"}},
+        "statusbar":[{"id":"plot.cursor.time","side":"right","priority":20}]
+    })", QStringLiteral("views.owner"))));
+    CHECK(extensions.contributedViewContainers().size() == 1);
+    CHECK(extensions.contributedViewContainers().at(0).owner == QLatin1String("views.owner"));
+    CHECK(extensions.contributedViews().size() == 1);
+    CHECK(extensions.contributedViews().at(0).item.container == QLatin1String("plot.side"));
+    CHECK(extensions.menuItemsIn(QStringLiteral("view/title")).size() == 1);
+    CHECK(extensions.menuItemsIn(QStringLiteral("view/title")).at(0).item.command == QLatin1String("view.open"));
+    CHECK(extensions.contributedColors().size() == 1);
+    CHECK(extensions.contributedStatuses().size() == 1);
+    // 卸载整批撤：M2 五张表全空，不留悬空。
+    CHECK(extensions.unmountContribution(QStringLiteral("views.owner")));
+    CHECK(extensions.contributedViewContainers().isEmpty());
+    CHECK(extensions.contributedViews().isEmpty());
+    CHECK(extensions.contributedMenuItems().isEmpty());
+    CHECK(extensions.contributedColors().isEmpty());
+    CHECK(extensions.contributedStatuses().isEmpty());
+
     // find / listAll
     const auto *c = extensions.findCommand(QStringLiteral("plot.new"));
     CHECK(c != nullptr);

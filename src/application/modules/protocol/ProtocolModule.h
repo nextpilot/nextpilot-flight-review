@@ -23,6 +23,7 @@ public:
     nextpilot::plotscope::host::ModuleInfo info() const override;
     void initialize(nextpilot::plotscope::instantiation::InstantiationService &services) override;
     void onAttach(nextpilot::plotscope::host::IUiContext &ui) override;
+    nextpilot::plotscope::registry::ModuleContributions contributes() const override;
 
 private:
     // 协议意图处理器（校验/试算/模板库）：headless 也注册，GUI 按钮最终也走它。

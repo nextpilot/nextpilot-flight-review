@@ -13,6 +13,12 @@
 #include "IWorkspace.h"
 #include "ICommands.h"
 #include "IScriptCapabilities.h"
+#include "IPanelsService.h"
+#include "IFormatHints.h"
+#include "IThemeService.h"
+#include "ISlotsService.h"
+#include "IContributionsInstaller.h"
+#include "IViewsService.h"
 
 #include "DatasetHub.h"
 #include "SourceHub.h"
@@ -23,9 +29,19 @@
 #include "InteractionHub.h"
 #include "AppContext.h"
 #include "Intent.h"
+#include "ToolboxHub.h"
+#include "UiSlotHub.h"
+#include "ViewRegistry.h"
+#include "RuntimeHost.h" // ThemeServiceAdapter 内联构造读 uiSlots()，需完整类型
 
 #include <QObject>
 #include <QVariantMap>
+#include <algorithm>
+
+namespace nextpilot::plotscope::host
+{
+class RuntimeHost; // ThemeServiceAdapter 引用成员；完整定义由包含方（WorkbenchServices.h）保证
+}
 
 namespace nextpilot::plotscope::assembly {
 namespace ds = nextpilot::plotscope::dataset;
@@ -34,7 +50,9 @@ namespace intent = nextpilot::plotscope::intent;
 namespace rec = nextpilot::plotscope::recording;
 namespace ui = nextpilot::plotscope::uischema;
 namespace wb = nextpilot::plotscope::workbench;
+namespace registry = nextpilot::plotscope::registry;
 namespace foundation = nextpilot::plotscope::foundation;
+namespace host = nextpilot::plotscope::host;
 
 // ---- IDatasetAccess ----
 class DatasetAccessAdapter : public QObject, public ds::IDatasetAccess
@@ -289,6 +307,198 @@ private:
     intent::IIntentExecutor &m_executor;
     intent::JobRecorder *m_recorder;
     std::function<QStringList()> m_opsProvider;
+};
+
+// ---- IPanelsService（A8b-M2 裁定 52441633 §三）：壳读回包面板声明/标题动作。
+// 纯接口第一基类（无 QObject），registerSingleton/getService 的 static_cast 恒安全。
+class PanelsServiceAdapter : public wb::IPanelsService
+{
+public:
+    explicit PanelsServiceAdapter(ctx::AppContext &appCtx) : m_appCtx(appCtx) {}
+
+    const registry::PanelSpec *panelSpec(const QString &panelType) const override
+    {
+        return m_appCtx.toolbox().panels.find(panelType);
+    }
+    QList<registry::PanelSpec> panels() const override
+    {
+        return m_appCtx.toolbox().panels.values();
+    }
+    QList<registry::ViewTitleActionSpec> titleActions(const QString &viewId) const override
+    {
+        return m_appCtx.toolbox().titleActionsFor(viewId);
+    }
+
+private:
+    ctx::AppContext &m_appCtx;
+};
+
+// ---- IFormatHints（同裁定）：壳弹"按格式打开"文件对话框的显示名/过滤串。
+class FormatHintsAdapter : public wb::IFormatHints
+{
+public:
+    explicit FormatHintsAdapter(ctx::AppContext &appCtx) : m_appCtx(appCtx) {}
+
+    QString fileFilter(const QString &formatId) const override
+    {
+        auto *driver = m_appCtx.toolbox().driverForFormat(formatId);
+        if (!driver)
+            return QString();
+        const QStringList suf = driver->suffixes();
+        if (suf.isEmpty())
+            return QString();
+        QStringList patterns;
+        for (const QString &s : suf)
+            patterns << QStringLiteral("*.") + s;
+        return driver->displayName() + QStringLiteral(" (") + patterns.join(QLatin1Char(' '))
+               + QLatin1Char(')');
+    }
+    QString displayName(const QString &formatId) const override
+    {
+        auto *driver = m_appCtx.toolbox().driverForFormat(formatId);
+        return driver ? driver->displayName() : QString();
+    }
+
+private:
+    ctx::AppContext &m_appCtx;
+};
+
+// ---- IThemeService（同裁定）：扩展 token 全集 = 包 token + 模块 token（兜底），
+// 按 id 去重（先到者优先）、按 id 升序——语义与壳原合并逻辑一致。
+class ThemeServiceAdapter : public wb::IThemeService
+{
+public:
+    ThemeServiceAdapter(ctx::AppContext &appCtx, host::RuntimeHost &hostRef)
+        : m_appCtx(appCtx), m_hostRef(hostRef)
+    {
+    }
+
+    QList<registry::ThemeTokenSpec> tokens() const override
+    {
+        QList<registry::ThemeTokenSpec> out = m_appCtx.toolbox().themeTokensAll();
+        const QList<registry::ThemeTokenSpec> moduleTokens =
+            m_hostRef.uiSlots().moduleThemeTokens();
+        for (const registry::ThemeTokenSpec &t : moduleTokens)
+        {
+            bool dup = false;
+            for (const registry::ThemeTokenSpec &e : out)
+                if (e.id == t.id)
+                { dup = true; break; }
+            if (!dup)
+                out.append(t);
+        }
+        std::stable_sort(out.begin(), out.end(),
+                         [](const registry::ThemeTokenSpec &a, const registry::ThemeTokenSpec &b) {
+                             return a.id < b.id;
+                         });
+        return out;
+    }
+
+private:
+    ctx::AppContext &m_appCtx;
+    host::RuntimeHost &m_hostRef;
+};
+
+// ---- ISlotsService（裁定 52442006 Step 1/2）：壳对槽位表读写的唯一通道，
+// 每个方法一行转发 UiSlotHub，不加语义。纯接口第一基类，static_cast 恒安全。
+class SlotsServiceAdapter final : public wb::ISlotsService
+{
+public:
+    explicit SlotsServiceAdapter(registry::UiSlotHub &slotSvc) : m_slots(slotSvc) {}
+
+    void declareSlot(const QString &area, const QString &label, const QString &owner,
+                     registry::SlotKind kind = registry::SlotKind::RibbonGroup,
+                     const QString &parentSlotId = QString(), int order = 0,
+                     const QString &when = QString()) override
+    {
+        m_slots.declareSlot(area, label, owner, kind, parentSlotId, order, when);
+    }
+    void registerActivity(registry::ActivitySpec activity) override
+    {
+        m_slots.registerActivity(std::move(activity));
+    }
+    void bindLocal(const QString &area, const registry::UiAction &action,
+                   const QString &provider) override
+    {
+        m_slots.bindLocal(area, action, provider);
+    }
+    void bindActionProvider(const QString &area, const QString &provider,
+                            std::function<QList<registry::UiAction>()> fn) override
+    {
+        m_slots.bindActionProvider(area, provider, std::move(fn));
+    }
+    void registerModuleThemeToken(const registry::ThemeTokenSpec &token) override
+    {
+        m_slots.registerModuleThemeToken(token);
+    }
+    QList<registry::ThemeTokenSpec> moduleThemeTokens() const override
+    {
+        return m_slots.moduleThemeTokens();
+    }
+    QList<registry::ActivitySpec> activities() const override { return m_slots.activities(); }
+    const registry::ActivitySpec *activity(const QString &id) const override
+    {
+        return m_slots.activity(id);
+    }
+    QList<registry::UiSlot> slotsOfKind(registry::SlotKind kind) const override
+    {
+        return m_slots.slotsOfKind(kind);
+    }
+    QList<registry::UiSlot> childrenOf(const QString &parentSlotId) const override
+    {
+        return m_slots.childrenOf(parentSlotId);
+    }
+    QList<registry::BoundUiAction> actionsIn(const QString &area) const override
+    {
+        return m_slots.actionsIn(area);
+    }
+    QList<registry::UiSlot> allSlots() const override { return m_slots.allSlots(); }
+
+private:
+    registry::UiSlotHub &m_slots;
+};
+
+// ---- IViewsService（裁定 52442006 Step 5）：壳读视图声明/打开视图的唯一通道。
+class ViewsServiceAdapter final : public wb::IViewsService
+{
+public:
+    ViewsServiceAdapter(registry::ViewRegistry &views) : m_views(views) {}
+
+    QList<registry::ContributedViewContainer> containersIn(const QString &area) const override
+    {
+        QList<registry::ContributedViewContainer> out;
+        for (const registry::ContributedViewContainer &c : m_views.allContainers())
+        {
+            if (c.area != area)
+                continue;
+            out.append(c);
+        }
+        std::stable_sort(out.begin(), out.end(),
+                         [](const registry::ContributedViewContainer &a,
+                            const registry::ContributedViewContainer &b) {
+                             return a.order != b.order ? a.order < b.order : a.id < b.id;
+                         });
+        return out;
+    }
+    QList<registry::ContributedView> viewsInContainer(const QString &containerId) const override
+    {
+        return m_views.viewsIn(containerId);
+    }
+    registry::ContributedView viewForId(const QString &viewId) const override
+    {
+        for (const registry::ContributedView &v : m_views.allViews())
+            if (v.id == viewId)
+                return v;
+        return registry::ContributedView{};
+    }
+    QWidget *openView(const QString &viewId, ctx::AppContext &appCtx,
+                      intent::IIntentExecutor &executor, QWidget *parent) override
+    {
+        return m_views.create(viewId, appCtx, executor, parent);
+    }
+
+private:
+    registry::ViewRegistry &m_views;
 };
 
 } // namespace nextpilot::plotscope::assembly

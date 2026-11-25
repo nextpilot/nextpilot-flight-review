@@ -1,4 +1,5 @@
 #include "RuntimeHost.h"
+#include "IContributionsInstaller.h"
 #include "ErrorCodes.h"
 #include "RegistryNode.h"
 #include "RegistryTree.h"
@@ -142,9 +143,28 @@ QHash<QString, QString> RuntimeHost::activate(const QStringList &disabledIds, IU
             module->initialize(*m_services);
         m_initializing.clear();
         node.active = true;
+
+        // A8b-M2 裁定 52441074：收集声明式 contributes（initialize 后数据已就绪）。
+        // 不依赖 ui——headless 也能收集（纯数据）；owner 用模块 id（§4）。
+        auto contrib = module->contributes();
+        if (!contrib.isEmpty())
+        {
+            contrib.owner = id;
+            m_contributions.append(std::move(contrib));
+        }
+
         if (ui)
             module->onAttach(*ui); // headless 时 ui 为空，不建 UI
     }
+
+    // A8b-M2 裁定 52442006 Step 3：灌回不再经壳（原 ui->installContributions），
+    // 改调装配层 ContributionsInstaller（写 ISlotsService/StatusHub，壳只渲染）。
+    // 语义与原 if(ui) 一致：headless（ui 空）不灌 UI 声明；bare 壳未接 installer
+    // （nullptr）→ 也不灌，与"零模块"装配一致。
+    if (ui && m_contribInstaller)
+        for (const auto &c : m_contributions)
+            m_contribInstaller->install(c);
+
     return errors;
 }
 

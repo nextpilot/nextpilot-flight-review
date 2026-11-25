@@ -468,8 +468,29 @@ bool ToolboxHub::mountContribution(const ContributesDoc &doc)
     for (const auto &item : doc.commandPalette)
         m_contribPalette.append(PaletteEntry{item, doc.owner});
 
+    // M2：其余键同样按 owner 归属存表，unmount 时整批撤。
+    for (const auto &item : doc.viewContainers)
+        m_contribViewContainers.append(OwnedViewContainer{item, doc.owner});
+    for (const auto &item : doc.views)
+        m_contribViews.append(OwnedView{item, doc.owner});
+    for (const auto &item : doc.menuItems)
+        m_contribMenuItems.append(OwnedMenuItem{item, doc.owner});
+    for (const auto &item : doc.colors)
+        m_contribColors.append(OwnedColor{item, doc.owner});
+    for (const auto &item : doc.statuses)
+        m_contribStatuses.append(OwnedStatus{item, doc.owner});
+
     Q_EMIT objectAdded(doc.owner);
     return true;
+}
+
+QList<ToolboxHub::OwnedMenuItem> ToolboxHub::menuItemsIn(const QString &place) const
+{
+    QList<OwnedMenuItem> out;
+    for (const auto &it : m_contribMenuItems)
+        if (it.item.place == place)
+            out.append(it);
+    return out;
 }
 
 bool ToolboxHub::unmountContribution(const QString &owner)
@@ -480,6 +501,17 @@ bool ToolboxHub::unmountContribution(const QString &owner)
     for (int i = m_contribPalette.size() - 1; i >= 0; --i)
         if (m_contribPalette.at(i).owner == owner)
             m_contribPalette.removeAt(i);
+    // M2 其余键整批撤（倒序删，避开索引失效）。
+    auto removeOwned = [&owner](auto &list) {
+        for (int i = list.size() - 1; i >= 0; --i)
+            if (list.at(i).owner == owner)
+                list.removeAt(i);
+    };
+    removeOwned(m_contribViewContainers);
+    removeOwned(m_contribViews);
+    removeOwned(m_contribMenuItems);
+    removeOwned(m_contribColors);
+    removeOwned(m_contribStatuses);
 
     const QStringList ids = m_contribByOwner.value(owner);
     for (const QString &id : ids)

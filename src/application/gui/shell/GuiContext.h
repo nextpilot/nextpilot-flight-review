@@ -2,7 +2,9 @@
 
 #include "AppContext.h"
 #include "IWorkbenchContribution.h"
-#include "UiSlotHub.h"
+#include "IPanelsService.h"
+#include "ISlotsService.h"
+#include "UiSlotTypes.h"
 
 #include <QHash>
 #include <QObject>
@@ -27,25 +29,17 @@ class GuiContext final : public QObject, public nextpilot::plotscope::host::IUiC
 {
     Q_OBJECT
 public:
-    GuiContext(QMainWindow *window, nextpilot::plotscope::registry::UiSlotHub &slotReg, ShellBinder *binder,
+    GuiContext(QMainWindow *window, nextpilot::plotscope::workbench::ISlotsService *slotSvc,
+               ShellBinder *binder,
                nextpilot::plotscope::context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor *executor = nullptr,
+               const nextpilot::plotscope::workbench::IPanelsService *panelsService = nullptr,
                QObject *parent = nullptr);
 
-    // nextpilot::plotscope::host::IUiContext
-    void declareRibbonPage(const QString &id, const QString &label, int order) override;
-    void declareRibbonGroup(const QString &id, const QString &label,
-                            const QString &pageId, int order = 0) override;
-    void declareActivity(const nextpilot::plotscope::registry::ActivitySpec &activity) override;
-    void declareThemeToken(const nextpilot::plotscope::registry::ThemeTokenSpec &token) override;
-    void declareStatus(const nextpilot::plotscope::registry::StatusSpec &status) override;
+    // nextpilot::plotscope::host::IUiContext（只留工作台服务；灌回已搬装配层，
+    // 裁定 52442006 Step 3——IContributionsInstaller）
     void updateStatus(const QString &id, const QString &text) override;
     void flashStatus(const QString &text) override;
     void setActivityBadge(const QString &activityId, int count) override;
-    void addAction(const nextpilot::plotscope::registry::UiAction &action) override;
-    void bindActionProvider(
-        const QString &area, const QString &provider,
-        std::function<QList<nextpilot::plotscope::registry::UiAction>()> providerFn) override;
-    void refreshActions() override;
 
     // 请求 app 外壳提供一个部件，放到指定逻辑区域（通用面板与扩展包领域面板同一入口）。
     QWidget *requestPanel(nextpilot::plotscope::registry::Region region,
@@ -61,15 +55,19 @@ public:
     // 文件选取（GUI 交互能力）。
     QString pickFilePath(const QString &title, const QString &filter) override;
 
-    // 插槽登记表（MainWindow 用它声明骨架插槽）。
-    nextpilot::plotscope::registry::UiSlotHub &slotHub() { return m_slots; }
-
-    // 模块在 onAttach 声明的语义色 token（验收 8）：MainWindow 装配后与包 token
-    // 合并灌进 ThemeManager。按 id 去重，先声明者优先。
-    const QList<nextpilot::plotscope::registry::ThemeTokenSpec> &moduleThemeTokens() const
+    // A8b-M2：装配层在 host.activate 后把各模块的声明式 contributes 灌进来。
+    // 模块在 onAttach 声明的语义色 token（验收 8）：装配层灌回写进槽位表
+    // （ISlotsService）；MainWindow 装配后与包 token 合并灌进 ThemeManager。
+    // 按 id 去重，先声明者优先。
+    QList<nextpilot::plotscope::registry::ThemeTokenSpec> moduleThemeTokens() const
     {
-        return m_moduleTokens;
+        return m_slots ? m_slots->moduleThemeTokens()
+                       : QList<nextpilot::plotscope::registry::ThemeTokenSpec>{};
     }
+
+    // 槽位表服务（裁定 52442006 Step 4）：MainWindow/test 经它读写插槽，
+    // 不再出现扩展槽位表类型。未装配（bare 壳）时为 nullptr。
+    nextpilot::plotscope::workbench::ISlotsService *slotsService() const { return m_slots; }
 
     // 模块声明的状态栏项与当前文本（验收 7）：MainWindow 装配后据此排布。
     QList<nextpilot::plotscope::registry::StatusSpec> statusSpecs() const
@@ -99,13 +97,14 @@ private:
     void dockCentral(QWidget *widget, const QString &titleOverride = QString());
 
     QMainWindow *m_window = nullptr;
-    nextpilot::plotscope::registry::UiSlotHub &m_slots;
+    nextpilot::plotscope::workbench::ISlotsService *m_slots = nullptr;
     ShellBinder *m_binder = nullptr;
     nextpilot::plotscope::context::AppContext &m_appCtx;
     nextpilot::plotscope::intent::IIntentExecutor *m_executor = nullptr;
 
-    // 模块贡献的语义色 token（验收 8）：onAttach 期间声明，装配后供主题汇总。
-    QList<nextpilot::plotscope::registry::ThemeTokenSpec> m_moduleTokens;
+    // 包声明读回（面板 spec / 领域面板清单）：裁定 52441633 §三，经 workbench
+    // 服务接口注入，GuiContext 不直连扩展注册表。借用指针，生命周期归装配层。
+    const nextpilot::plotscope::workbench::IPanelsService *m_panelsService = nullptr;
 
     // 状态栏：登记与文案都在 AppContext::status()（libs/context），
     // 本类只做"IUiContext → hub"的转发与信号中继；**不含节流**——

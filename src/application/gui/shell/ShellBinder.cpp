@@ -5,6 +5,7 @@
 
 #include "PanelFactoryHub.h"
 #include "PanelReferenceValidator.h"
+#include "IPanelsService.h"
 
 #include "Intent.h"
 
@@ -109,8 +110,8 @@ QWidget *childOfSplitter(QWidget *widget, QSplitter *splitter)
 }
 } // namespace
 
-ShellBinder::ShellBinder(QMainWindow *window, nextpilot::plotscope::registry::UiSlotHub &slotReg)
-    : m_window(window), m_slots(slotReg)
+ShellBinder::ShellBinder(QMainWindow *window, nextpilot::plotscope::workbench::ISlotsService *slotSvc)
+    : m_window(window), m_slots(slotSvc)
 {}
 
 ShellBinder::~ShellBinder()
@@ -228,7 +229,7 @@ void ShellBinder::rebuildActivityBar()
     const QStringList missing = missingPanelTypes();
     Q_UNUSED(missing);
 
-    QList<ActivitySpec> specs = m_slots.activities();
+    QList<ActivitySpec> specs = m_slots ? m_slots->activities() : QList<ActivitySpec>{};
     if (!m_activityOrder.isEmpty())
     {
         QList<ActivitySpec> ordered;
@@ -264,10 +265,10 @@ void ShellBinder::rebuildActivityBar()
 }
 
 void ShellBinder::setPanelReferenceContext(
-    const nextpilot::plotscope::registry::ToolboxHub *toolbox,
+    const nextpilot::plotscope::workbench::IPanelsService *panels,
     const QList<nextpilot::plotscope::registry::ProductPanelPlacement> &placements)
 {
-    m_toolbox = toolbox;
+    m_panelsService = panels;
     m_placements = placements;
 }
 
@@ -276,16 +277,19 @@ QStringList ShellBinder::missingPanelTypes() const
     using namespace nextpilot::plotscope::registry;
     QStringList missing;
 
-    // 已注入工具箱与产品布局时走 lib 级三源校验器；否则退化为只查 Activity panelTypes。
-    if (m_toolbox)
+    // 已注入包面板声明与产品布局时走 lib 级三源校验器；否则退化为只查 Activity panelTypes。
+    if (m_panelsService)
     {
-        const auto issues = validatePanelReferences(*m_toolbox, m_slots, m_placements);
+        const auto issues = validatePanelReferences(
+            m_panelsService->panels(),
+            m_slots ? m_slots->activities() : QList<nextpilot::plotscope::registry::ActivitySpec>{},
+            m_placements);
         for (const PanelReferenceIssue &issue : issues)
             missing << QStringLiteral("%1:%2").arg(issue.source, issue.type);
         return missing;
     }
 
-    for (const ActivitySpec &spec : m_slots.activities())
+    for (const ActivitySpec &spec : m_slots ? m_slots->activities() : QList<ActivitySpec>{})
         for (const QString &type : spec.panelTypes)
             if (!PanelFactoryHub::find(type))
                 missing << QStringLiteral("%1:%2").arg(spec.id, type);
@@ -296,7 +300,7 @@ QString ShellBinder::activityForPanel(const QString &pageKey) const
 {
     if (m_viewActivity.contains(pageKey))
         return m_viewActivity.value(pageKey);
-    for (const ActivitySpec &spec : m_slots.activities())
+    for (const ActivitySpec &spec : m_slots ? m_slots->activities() : QList<ActivitySpec>{})
         if (spec.panelTypes.contains(pageKey))
             return spec.id;
     return m_activeActivity;
@@ -347,7 +351,7 @@ void ShellBinder::syncActivityViews(const QString &activityId)
 
 void ShellBinder::activateActivity(const QString &activityId)
 {
-    const ActivitySpec *spec = m_slots.activity(activityId);
+    const ActivitySpec *spec = m_slots ? m_slots->activity(activityId) : nullptr;
     if (!spec)
         return;
     m_activeActivity = activityId;
@@ -401,10 +405,11 @@ void ShellBinder::pinDockToActivity(ads::CDockWidget *dock, const QString &activ
         spec.id = QStringLiteral("view.") + pageKey;
         spec.label = dock->windowTitle();
         spec.icon = QStringLiteral("panel");
-        spec.order = m_slots.activities().size();
+        spec.order = m_slots ? m_slots->activities().size() : 0;
         spec.panelTypes << pageKey;
         spec.provider = QStringLiteral("user");
-        m_slots.declareActivity(spec);
+        if (m_slots)
+            m_slots->registerActivity(spec);
         target = spec.id;
         created = true;
     }
@@ -551,7 +556,8 @@ QStringList ShellBinder::visibleRibbonPageLabels() const
 {
     QStringList out;
     for (const nextpilot::plotscope::registry::UiSlot &slot :
-         m_slots.slotsOfKind(nextpilot::plotscope::registry::SlotKind::RibbonPage))
+         (m_slots ? m_slots->slotsOfKind(nextpilot::plotscope::registry::SlotKind::RibbonPage)
+                  : QList<nextpilot::plotscope::registry::UiSlot>{}))
     {
         if (slot.when.isEmpty() || !m_whenEval || m_whenEval(slot.when))
             out << slot.label;
@@ -587,7 +593,9 @@ void ShellBinder::rebuildRibbon()
         // 空表达式=恒真；没有求值器时一律可见（headless/测试环境不崩）。
         return when.isEmpty() || !m_whenEval || m_whenEval(when);
     };
-    for (const nextpilot::plotscope::registry::UiSlot &pageSlot : m_slots.slotsOfKind(nextpilot::plotscope::registry::SlotKind::RibbonPage))
+    for (const nextpilot::plotscope::registry::UiSlot &pageSlot :
+         m_slots ? m_slots->slotsOfKind(nextpilot::plotscope::registry::SlotKind::RibbonPage)
+                 : QList<nextpilot::plotscope::registry::UiSlot>{})
     {
         if (!whenVisible(pageSlot.when))
             continue;
@@ -597,13 +605,17 @@ void ShellBinder::rebuildRibbon()
             continue;
         built << category;
 
-        for (const nextpilot::plotscope::registry::UiSlot &groupSlot : m_slots.childrenOf(pageSlot.slotId))
+        for (const nextpilot::plotscope::registry::UiSlot &groupSlot :
+             m_slots ? m_slots->childrenOf(pageSlot.slotId)
+                     : QList<nextpilot::plotscope::registry::UiSlot>{})
         {
             if (groupSlot.kind != nextpilot::plotscope::registry::SlotKind::RibbonGroup)
                 continue;
             if (!whenVisible(groupSlot.when))
                 continue;
-            const auto actions = m_slots.actionsIn(groupSlot.slotId);
+            const auto actions =
+                m_slots ? m_slots->actionsIn(groupSlot.slotId)
+                        : QList<nextpilot::plotscope::registry::BoundUiAction>{};
             // 空分组不渲染：兼容保留的旧 area（如 home 下的 plottype/sources）
             // 没有 action 时若仍建 panel，会在页上留下几个只有竖排标题的空壳，很难看。
             if (actions.isEmpty())
@@ -1442,7 +1454,7 @@ int ShellBinder::activityBadge(const QString &activityId) const
 
 bool ShellBinder::setActiveActivity(const QString &activityId)
 {
-    if (!m_slots.activity(activityId))
+    if (!m_slots || !m_slots->activity(activityId))
         return false;
     activateActivity(activityId);
     return true;
@@ -1458,7 +1470,7 @@ bool ShellBinder::pinViewToActivity(const QString &pageKey, const QString &activ
     ads::CDockWidget *dock = m_dockByKey.value(pageKey, nullptr);
     if (!dock)
         return false;
-    if (!activityId.isEmpty() && !m_slots.activity(activityId))
+    if (!activityId.isEmpty() && (!m_slots || !m_slots->activity(activityId)))
         return false;
     pinDockToActivity(dock, activityId);
     return true;
@@ -1566,7 +1578,8 @@ bool ShellBinder::setRibbonPage(const QString &area)
 {
     if (!m_ribbon)
         return false;
-    const QList<UiSlot> pages = m_slots.slotsOfKind(SlotKind::RibbonPage);
+    const QList<UiSlot> pages =
+        m_slots ? m_slots->slotsOfKind(SlotKind::RibbonPage) : QList<UiSlot>{};
     for (int i = 0; i < pages.size(); ++i)
     {
         if (pages.at(i).slotId != area)
@@ -1584,7 +1597,8 @@ QString ShellBinder::currentRibbonPageArea() const
 {
     if (!m_ribbon)
         return QString();
-    const QList<UiSlot> pages = m_slots.slotsOfKind(SlotKind::RibbonPage);
+    const QList<UiSlot> pages =
+        m_slots ? m_slots->slotsOfKind(SlotKind::RibbonPage) : QList<UiSlot>{};
     const int index = m_ribbon->currentIndex();
     return index >= 0 && index < pages.size() ? pages.at(index).slotId : QString();
 }
