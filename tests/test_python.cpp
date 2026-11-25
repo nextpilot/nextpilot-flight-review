@@ -10,6 +10,7 @@
 
 #include <QCoreApplication>
 #include <QElapsedTimer>
+#include <QStandardPaths>
 #include <QTemporaryDir>
 #include <QVariantMap>
 
@@ -67,8 +68,16 @@ int main(int argc, char **argv)
     if (!pyNumpy)
     {
         // 缺 numpy：桥进程在 import 阶段就退出，eval/exec/push/pull 全组无意义。
-        // 这里显式跳过而不是把断言染红——装上 numpy（apt install python3-numpy /
-        // pip install numpy）后同一套用例会真跑。
+        // 本地缺依赖可以跳过；CI 设了 PS_REQUIRE_PY_NUMPY 就必须红——否则「跳过后全绿」
+        // 会让 Python 路径永远没人覆盖。
+        if (qEnvironmentVariableIsSet("PS_REQUIRE_PY_NUMPY"))
+        {
+            fprintf(stderr, "[Fail] ps_python：PS_REQUIRE_PY_NUMPY=1 但 numpy 不可用"
+                            "（解释器=%s）\n",
+                    qPrintable(QStandardPaths::findExecutable(QStringLiteral("python3"))));
+            CHECK(!"numpy 缺失：CI 要求 Python 桥的 numpy 依赖必须可用");
+            return 1;
+        }
         fprintf(stdout, "[skip] ps_python：numpy 不可用，跳过 2.6.1 全组用例\n");
         return 0;
     }

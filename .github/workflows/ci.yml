@@ -59,6 +59,14 @@ jobs:
           version: ${{ env.PS_QT_VER }}
           modules: 'qtcharts'
 
+      - name: Python 桥依赖（numpy）
+        # 桥的数组旁路（memmap/tofile）硬依赖 numpy。runner 上 PATH 里的 python3 未必是
+        # apt 装 python3-numpy 的那个，所以这里对「实际会被桥调用的解释器」再装一次，
+        # 并打印 sys.executable 作为证据（否则出现「装了却没生效」的假绿）。
+        run: |
+          python3 -m pip install --user numpy
+          python3 -c "import sys, numpy; print('python:', sys.executable, 'numpy:', numpy.__version__)"
+
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1
         with:
@@ -81,6 +89,8 @@ jobs:
       - name: Run CTest (offscreen)
         env:
           QT_QPA_PLATFORM: offscreen
+          # CI 里不许「缺 numpy 就跳过」：依赖缺失必须是红的，否则 py 路径永远没被覆盖。
+          PS_REQUIRE_PY_NUMPY: '1' 
         run: ctest --test-dir build -j"$(nproc)" --output-on-failure
 
       - name: Print ctest failure summary (always, for diagnostics)

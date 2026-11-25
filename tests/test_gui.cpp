@@ -1124,8 +1124,14 @@ int main(int argc, char *argv[])
         const bool pyNumpy =
             str.value().payload.toMap().value(QStringLiteral("numpy")).toBool();
         if (!pyNumpy)
-            OK("Python 子进程桥：numpy 不可用，跳过 GUI .py 运行/写回用例"
-               "（诊断见 script.py.status 的 numpy_error）");
+        {
+            // CI 设了 PS_REQUIRE_PY_NUMPY：缺依赖必须红（跳过会让 GUI py 路径无人覆盖）。
+            if (qEnvironmentVariableIsSet("PS_REQUIRE_PY_NUMPY"))
+                CHECK(!"GUI Python 桥：PS_REQUIRE_PY_NUMPY=1 但 numpy 不可用");
+            else
+                OK("Python 子进程桥：numpy 不可用，跳过 GUI .py 运行/写回用例"
+                   "（诊断见 script.py.status 的 numpy_error）");
+        }
         else
         {
             auto *ui = window.context();
