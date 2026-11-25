@@ -106,6 +106,21 @@ jobs:
           [ "$GUI_RC" -eq 124 ] || { echo "::error::deb 内 GUI 未能启动（退出码 $GUI_RC）"; exit 1; }
           echo "deb GUI 冒烟通过（offscreen 启动后超时未退）"
 
+      - name: ELF glibc 基线审计（≤ 2.35）
+        run: |
+          set -euo pipefail
+          FLOOR=2.35
+          MAX="$(find dist/AppDir -type f \( -name '*.so*' -o -perm -u+x \) -print0 2>/dev/null \
+            | xargs -0 -r -n1 sh -c 'objdump -T "$0" 2>/dev/null | grep -oE "GLIBC_[0-9]+\.[0-9]+"' \
+            | sed 's/GLIBC_//' | sort -V | tail -1 || true)"
+          if [ -z "$MAX" ]; then echo "::error::未从 AppDir 提取到任何 GLIBC 需求"; exit 1; fi
+          echo "最高 glibc 需求：$MAX"
+          NEED="$(printf '%s\n%s\n' "$FLOOR" "$MAX" | sort -V | tail -1)"
+          if [ "$NEED" != "$FLOOR" ]; then
+            echo "::error::glibc 基线 $MAX 超过 $FLOOR，老发行版会被挡在门外"; exit 1
+          fi
+          echo "glibc 基线审计通过（≤ $FLOOR，与 ubuntu-22.04 构建机一致）"
+
       - uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
@@ -186,6 +201,21 @@ jobs:
           powershell -ExecutionPolicy Bypass -File tools/pack-windows.ps1 `
             -BuildDir build -QtDir "$env:QT_ROOT_DIR\msvc2019_64" -OutDir dist
 
+      - name: 冒烟（静默安装 → 跑 CLI → 卸载）
+        shell: pwsh
+        run: |
+          $setup = Get-ChildItem dist -Filter '*windows-*-setup.exe' | Select-Object -First 1
+          if (-not $setup) { throw "未找到安装器" }
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S' -Wait
+          $cli = "$env:ProgramFiles\PlotScope\bin\plotscope.exe"
+          if (-not (Test-Path $cli)) { throw "静默安装后找不到 $cli" }
+          & $cli --help | Out-Null
+          if ($LASTEXITCODE -ne 0) { throw "安装后的 CLI 冒烟失败（exit $LASTEXITCODE）" }
+          & "$env:ProgramFiles\PlotScope\uninstall.exe" /S
+          Start-Sleep -Seconds 5
+          if (Test-Path "$env:ProgramFiles\PlotScope") { throw "卸载后目录仍在" }
+          "Windows 安装/运行/卸载冒烟通过"
+
       - uses: actions/upload-artifact@v4
         with:
           name: windows-package
@@ -254,6 +284,16 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
         run: bash tools/pack-macos.sh build dist "$(pwd)/$QT_ROOT_DIR/macos"
+
+      - name: 冒烟（挂载 dmg 跑 CLI）
+        run: |
+          set -euo pipefail
+          MP="$(mktemp -d)/psdmg"
+          mkdir -p "$MP"
+          hdiutil attach dist/*.dmg -mountpoint "$MP" -nobrowse -quiet
+          trap 'hdiutil detach "$MP" -quiet || true' EXIT
+          "$MP/PlotScope.app/Contents/MacOS/plotscope" --help >/dev/null
+          echo "dmg 挂载后 CLI 冒烟通过"
 
       - uses: actions/upload-artifact@v4
         with:
