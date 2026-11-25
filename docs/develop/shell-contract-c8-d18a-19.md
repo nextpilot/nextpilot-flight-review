@@ -5,11 +5,14 @@
 
 对应契约条目：§11 链接关（D18）、§12 产品身份（§19/§20）、§9 D19 `item.*` 键语义。
 
+> 2026-11-25 收尾更新：D18a 的"界面层欠账"已清（`!111` `1c607371`）、19a 的关于页用途文案已归 `ProductSpec::aboutText`（`f4782619`）、
+> 验收 7 加载进度已接真实摄取字节（`7c2e0b85`）、语义色库层证据已补（`!115` `65dba73e`）。下文正文保留首版记录，欠账部分按"已清"标注。
+
 ---
 
 ## D18a：协议 UI 残留核实（`ps_gui` 里的协议域界面）
 
-**结论：链接层已干净，界面层仍有残留，记欠账。**
+**结论：链接层与界面层均已干净（界面层欠账由 `!111` `1c607371` 清偿）。**
 
 ### 已达标的部分（链接关）
 
@@ -52,6 +55,19 @@ grep -rn "ProtocolInspectorDialog\|ProtocolEditorDialog" src/application/gui →
 
 达标后这两条只剩 `ps_module_protocol_gui` 里的实现与自注册。
 
+### 界面层欠账已清（`!111` `1c607371`）
+
+协议两个对话框已从 `gui/shell` 迁到模块呈现层 `src/application/modules/protocol/gui/`
+（`ProtocolInspectorDialog.*`、`ProtocolEditorDialog.*`，target `ps_module_protocol_gui`，OBJECT 库）。
+壳不再 `new` 任何业务对话框，只经 `DialogLauncherHub` 按**动作 id** 触发；模块侧用
+`PS_REGISTER_DIALOG_LAUNCHER` 自注册（`ProtocolEditorDialog.cpp:3086` 起注册 4 个 id）。
+
+机械判据：
+
+```
+grep -rn "ProtocolInspectorDialog\|ProtocolEditorDialog" src/application/gui/shell → 0
+```
+
 ---
 
 ## 19a：产品身份文案（必须来自 `ProductSpec`）
@@ -62,6 +78,7 @@ grep -rn "ProtocolInspectorDialog\|ProtocolEditorDialog" src/application/gui →
 |---|---|---|
 | 窗口标题 | `m_spec.displayName` | `MainWindow.cpp:98` 前后 |
 | 关于对话框产品名/版本 | `m_spec.displayName` / `m_spec.version` | 关于入口 |
+| 关于页用途说明 | `m_spec.aboutText`，空则整段不显示 | `MainWindow.cpp:601`，字段在 `ProductSpec.h:47` |
 | 报告标题（导出） | `m_spec.reportTitle`，空则回落 `displayName` | `MainWindow.cpp:368/523` |
 | 应用名/设置路径 | `m_spec.id` | 组合根 `setApplicationName` |
 | 默认面板布局 | `m_spec.defaultPanels` | `MainWindow.cpp:457` |
@@ -84,7 +101,8 @@ grep -rn "ProtocolInspectorDialog\|ProtocolEditorDialog" src/application/gui →
 | Activity 标签 | 模块 `declareActivity` | "脚本" |
 | 空态/错误提示 | 模块或壳的通用诊断（不含业务名词） | "未装载任何数据源" |
 
-**规则**：`ProductSpec` 只承载**身份 + 装配**（id / displayName / version / reportTitle / defaultPanels / moduleIds）。
+**规则**：`ProductSpec` 只承载**身份 + 装配**（id / displayName / version / reportTitle / aboutText / defaultPanels / moduleIds）。
+`aboutText` 是"这个产品是干什么用的"身份描述，属 19a；`ps_shell_bare` 留空即不带出，实测成立。
 任何"某个面板叫什么、某个按钮叫什么"的字符串都不许进 `ProductSpec`——否则第二个产品想改文案就得改代码，
 而这正是 D18 去掉业务依赖后要避免的事。
 
@@ -105,3 +123,19 @@ grep -A3 "target_link_libraries(ps_gui PUBLIC" src/application/gui/CMakeLists.tx
 ```
 
 前两条目前**一条达标、一条未达标**（`Protocol*Dialog` 未搬），本文按实测记录，不粉饰。
+
+---
+
+## 补充：验收 7 加载进度（`7c2e0b85`）
+
+原先 `data.loading.progress` 只有「加载中…」→「空闲」两态，验收 7 要的是真实进度。现在：
+
+- `IngestPipeline::progressChanged(sourceId, done, total)`（`IngestPipeline.h:116`）由 `onProgress` 钩子在解析回调里转发（`IngestPipeline.cpp:330`）；
+- `DataModule` 订阅它（`DataModule.cpp:206`）：`total>0` 显示百分比，`total=0`（CSV 等流式 parser 不知总量）显示已读字节数；
+- 收尾仍由 `dataLoadFinished(bool ok)` 回「空闲 / 加载失败」，进度订阅不负责收尾。
+
+机械判据：
+
+```
+grep -rn "progressChanged" src/libs/context src/application/modules/data → 两处信号定义 + 一处订阅
+```
