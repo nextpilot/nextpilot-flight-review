@@ -19,6 +19,8 @@ namespace
 {
 // 进程级当前主题：供 delegate 绘制时取色（见头文件说明）。
 ThemeManager::Theme g_activeTheme = ThemeManager::Theme::Light;
+// 扩展 token 的进程级影子表（与实例表同步）：绘制期无实例取色用（同 g_activeTheme 的理由）。
+QHash<QString, QColor> g_extTokens;
 } // namespace
 
 namespace
@@ -221,16 +223,29 @@ QColor ThemeManager::themeColor(const QString &token)
     return color(g_activeTheme, token);
 }
 
+QColor ThemeManager::resolvedColor(const QString &token)
+{
+    // 内置表优先；未命中再查模块/包声明的扩展 token 兜底色。
+    // 画布绘制代码（AxesView）靠它取实色注入下层绘图库（验收 8 消费面）。
+    const QColor base = color(g_activeTheme, token);
+    if (base != QColor(QStringLiteral("#FF00FF")))
+        return base;
+    auto it = g_extTokens.constFind(token);
+    return it != g_extTokens.constEnd() ? it.value() : base;
+}
+
 void ThemeManager::setExtensionTokens(
     const QList<nextpilot::plotscope::registry::ThemeTokenSpec> &tokens)
 {
     m_extTokens.clear();
+    g_extTokens.clear();
     for (const auto &spec : tokens)
     {
         QColor c(spec.fallback);
         if (!c.isValid())
             continue; // 兜底色非法就不登记：宁可不出现，也不登记一个洋红
         m_extTokens.insert(spec.id, c);
+        g_extTokens.insert(spec.id, c); // 进程级影子表：绘制委托/画布无实例也能取到
     }
 }
 

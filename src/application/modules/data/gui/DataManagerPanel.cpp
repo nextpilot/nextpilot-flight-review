@@ -181,9 +181,15 @@ public:
             hover.setAlpha(14);
             p->fillRect(QRect(cardLeft, r.top(), cardRight - cardLeft, r.height()), hover);
         }
-        // 激活源左侧橙色竖条（老界面 #f2b134），贴最左
+        // 激活源左侧竖条走语义 token（验收 8）：未声明时回落历史橙 #f2b134，贴最左。
         if (active)
-            p->fillRect(QRect(cardLeft, r.top(), 3, r.height()), QColor(QStringLiteral("#f2b134")));
+        {
+            const QColor activeInk = ThemeManager::resolvedColor(QStringLiteral("data.source"));
+            p->fillRect(QRect(cardLeft, r.top(), 3, r.height()),
+                        activeInk.isValid() && activeInk != QColor(QStringLiteral("#FF00FF"))
+                            ? activeInk
+                            : QColor(QStringLiteral("#f2b134")));
+        }
         // 底部分隔线
         p->setPen(pal.color(QPalette::Mid));
         p->drawLine(cardLeft, r.bottom(), cardRight, r.bottom());

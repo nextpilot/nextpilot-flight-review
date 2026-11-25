@@ -18,5 +18,7 @@ add_library(ps_module_script_gui OBJECT
     BatchPanel.h
 )
 target_include_directories(ps_module_script_gui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ps_module_script_gui PUBLIC ps_context Qt6::Widgets Qt6::Gui Qt6::Core)
+# ps_gui_theme：gutter 断点圆点按语义 token 取色（验收 8），主题库归 L3 共享层。
+# 依赖方向仍是 呈现层 -> 共享 UI 基础设施，不依赖 ps_gui。
+target_link_libraries(ps_module_script_gui PUBLIC ps_context ps_gui_theme Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ps_module_script_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

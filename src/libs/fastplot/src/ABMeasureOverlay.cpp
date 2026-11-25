@@ -1,5 +1,4 @@
 #include "fastplot/ABMeasureOverlay.h"
-#include "fastplot/SemanticColors.h"
 
 #include <algorithm>
 
@@ -26,9 +25,15 @@ void ABMeasureOverlay::paint(QPainter &painter, const OverlayContext &ctx)
         return;
     const QRectF &plot = ctx.plotRect;
     const Viewport &vp = *ctx.vp;
-    // A 线取自语义色 plot.abMeasure（上层按主题 token 推送），兜底沿用历史橙。
-    const QColor accent = semanticColor(QStringLiteral("plot.abMeasure"),
-                                        QColor(QStringLiteral("#f2b134")));
+    // A 游标主色走语义 token（验收 8）：未注入时回落历史实色 #f2b134，
+    // 透明装饰色由主色派生，注入后一起跟随，未注入时 RGB 与历史值一致、外观不变。
+    const QColor accent =
+        ctx.semanticColor(QStringLiteral("plot.abMeasure"), QColor(QStringLiteral("#f2b134")));
+    auto tint = [](const QColor &c, int alpha) {
+        QColor r = c;
+        r.setAlpha(alpha);
+        return r;
+    };
     const QColor bColor(QStringLiteral("#5bc0f0"));
     painter.save();
     painter.setClipRect(plot);
@@ -59,7 +64,7 @@ void ABMeasureOverlay::paint(QPainter &painter, const OverlayContext &ctx)
     const double xb = vp.toPixel(m_b, vp.yLower()).x();
     // 区间带（可能 A 在 B 右侧）。
     painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(0xf2, 0xb1, 0x34, 24));
+    painter.setBrush(tint(accent, 24));
     painter.drawRect(QRectF(QPointF(qMin(xa, xb), plot.top()),
                             QPointF(qMax(xa, xb), plot.bottom())));
 
@@ -85,7 +90,7 @@ void ABMeasureOverlay::paint(QPainter &painter, const OverlayContext &ctx)
     if (badge.left() < plot.left() + 4) badge.moveLeft(plot.left() + 4);
     if (badge.right() > plot.right() - 4) badge.moveRight(plot.right() - 4);
     painter.setPen(Qt::NoPen);
-    painter.setBrush(QColor(0xf2, 0xb1, 0x34, 235));
+    painter.setBrush(tint(accent, 235));
     painter.drawRoundedRect(badge, 3, 3);
     painter.setPen(QColor(0x10, 0x16, 0x1c));
     painter.drawText(badge, Qt::AlignCenter, m_header);
@@ -93,7 +98,7 @@ void ABMeasureOverlay::paint(QPainter &painter, const OverlayContext &ctx)
     // 直角三角形：首条可见曲线的 Δy 一眼可见（y 值由上层换算成像素 y 传入）。
     if (m_triangle && m_ay >= plot.top() && m_ay <= plot.bottom())
     {
-        painter.setPen(QPen(QColor(0xf2, 0xb1, 0x34, 150), 1, Qt::DashLine));
+        painter.setPen(QPen(tint(accent, 150), 1, Qt::DashLine));
         painter.drawLine(QPointF(xa, m_ay), QPointF(xb, m_ay));
         painter.drawLine(QPointF(xb, m_ay), QPointF(xb, m_by));
         painter.drawLine(QPointF(xa, m_ay), QPointF(xb, m_by));

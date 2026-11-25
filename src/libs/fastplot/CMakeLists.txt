@@ -14,7 +14,6 @@ add_library(fastplot STATIC
     src/Axes.cpp
     src/Legend.cpp
     src/CursorReadoutOverlay.cpp
-    src/SemanticColors.cpp
     src/ABMeasureOverlay.cpp
     src/BookmarkOverlay.cpp
     src/MarkerOverlay.cpp

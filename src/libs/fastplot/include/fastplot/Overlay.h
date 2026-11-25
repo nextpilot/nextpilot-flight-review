@@ -8,6 +8,7 @@
 #include <QVector>
 
 #include "fastplot/Viewport.h"
+#include "fastplot/SemanticColors.h"
 
 namespace nextpilot::plotscope::fastplot
 {
@@ -48,6 +49,13 @@ struct OverlayContext
     QFont font;                    // Axes 当前字体
     QColor labelColor;             // 左轴文字色（读数文本）
     QColor axisInk;                // 下轴 ink（行名/橡皮筋边框）
+    // 语义色接缝（验收 8）：上层注入的 id->实色 映射，只读借用（生命周期归 Axes）。
+    // 各绘制点按 id 取色，取不到用自身历史兜底色；nullptr 表示未注入。
+    const SemanticColors *semanticColors = nullptr;
+    QColor semanticColor(const QString &id, const QColor &fallback) const
+    {
+        return semanticColors ? semanticColors->color(id, fallback) : fallback;
+    }
     // 兄弟叠加层避让信息（十字游标读数框用）：
     QRectF legendBlockRect;        // 图例整块矩形（空 = 图例不可见）
     bool abActive = false;         // A/B 激活时读数框顶部下移避让

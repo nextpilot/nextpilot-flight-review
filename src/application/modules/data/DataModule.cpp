@@ -131,7 +131,8 @@ void DataModule::onAttach(IUiContext &ui)
     {
         ThemeTokenSpec t;
         t.id = QStringLiteral("data.source");
-        t.fallback = QStringLiteral("#4EC9B0");
+        // fallback 与 SourceRowDelegate 激活竖条的历史色一致：接管 token 不改变外观。
+        t.fallback = QStringLiteral("#f2b134");
         t.description = QStringLiteral("数据源标识颜色");
         ui.declareThemeToken(t);
     }

@@ -9,6 +9,8 @@
 #include <fastplot/Panner.h>
 #include <fastplot/Picker.h>
 #include <fastplot/Axes.h>
+#include <fastplot/SemanticColors.h>
+#include "ThemeManager.h"
 #include <fastplot/Zoomer.h>
 #include <fastplot/SemanticColors.h>
 
@@ -41,6 +43,9 @@ namespace nextpilot::plotscope::gui
 
 namespace
 {
+// ThemeManager 对未登记 token 回哨兵色（洋红）：据此区分"主题真给了色"与"没这个 token"。
+const QColor kUnknownTokenColor(QStringLiteral("#FF00FF"));
+
 // 曲线色来自主题 token（数据语义色），不硬编码——深色主题下自动换成适配色。
 // 轴/网格/标题/背景色走 palette（见 applyPalette），同样随主题。
 const nextpilot::plotscope::fastplot::AxisSide kSides[4] = {nextpilot::plotscope::fastplot::AxisSide::Left, nextpilot::plotscope::fastplot::AxisSide::Right,
@@ -921,13 +926,33 @@ void AxesView::applyPalette()
         auto &axis = m_plot->axis(side);
         axis.setInk(pal.color(QPalette::Mid));
         axis.setLabelColor(pal.color(QPalette::WindowText));
-        // 网格色走语义色 plot.grid：上层未推送时跟随平台调色板（保持明暗主题自适应）。
-        axis.setGridInk(nextpilot::plotscope::fastplot::semanticColor(
-            QStringLiteral("plot.grid"), pal.color(QPalette::Light)));
+        // 网格色走语义 token plot.grid：主题未登记时跟随平台调色板
+        // （保持明暗主题自适应；单值写死会在另一套主题下串色）。
+        const QColor gridToken = gui::ThemeManager::resolvedColor(QStringLiteral("plot.grid"));
+        axis.setGridInk(gridToken.isValid() && gridToken != kUnknownTokenColor
+                            ? gridToken
+                            : pal.color(QPalette::Light));
     }
+    // 语义色接缝（验收 8）：把模块 token 的当前实色推给绘图库，overlay 绘制时按 id 取。
+    // 只推已声明的 token；未声明的不 set，库保留自身历史兜底色，外观不变。
+    pushSemanticColors();
     // 曲线色在 pushToPlot 时按当时主题 palette 取（见 pushToPlot），
     // 主题切换后的下一次重取数会用新色；这里不重建曲线，避免丢失 LOD。
     m_plot->replot();
+}
+
+void AxesView::pushSemanticColors()
+{
+    using namespace nextpilot::plotscope;
+    fastplot::SemanticColors colors;
+    // 游标色 / A-B 测量色：模块声明后才推；未声明时 fastplot overlay 用自身历史兜底色。
+    for (const char *id : {"plot.cursor", "plot.abMeasure"})
+    {
+        const QColor c = gui::ThemeManager::resolvedColor(QString::fromLatin1(id));
+        if (c.isValid() && c != kUnknownTokenColor)
+            colors.set(QString::fromLatin1(id), c);
+    }
+    m_plot->setSemanticColors(colors);
 }
 
 // --- 拖拽画图：只认通道 MIME，解码后发信号，取数交给 ChannelView ---

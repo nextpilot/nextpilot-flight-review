@@ -1150,16 +1150,10 @@ void MainWindow::refreshThemeTokens()
     }
     m_theme->setExtensionTokens(allTokens);
 
-    // 把绘制路径真正要读的两个语义色推给 fastplot（验收 8 的"消费"一半）：
-    // 库层不认识 token 表，故经 SemanticColors 接缝下发实色。plot.grid 不在此列——
-    // 它必须跟随明暗主题，由 AxesView 以平台调色板作兜底就地取（见那处注释）。
-    for (const char *id : {"plot.cursor", "plot.abMeasure"})
-    {
-        const QString key = QString::fromLatin1(id);
-        const QColor c = m_theme->color(key);
-        if (c.isValid())
-            nextpilot::plotscope::fastplot::setSemanticColor(key, c);
-    }
+    // 语义色的消费由**画布自己**完成（验收 8）：AxesView::applyPalette 里
+    // 从 ThemeManager 取已声明 token 的实色，注入本画布的 Axes；
+    // 主题切换会改 palette → PaletteChange → applyPalette，自动重推。
+    // 壳不持有跨画布的全局色表（原先那份进程级表已撤），避免多窗口/多产品串色。
 }
 
 void MainWindow::refreshActivityBadges()

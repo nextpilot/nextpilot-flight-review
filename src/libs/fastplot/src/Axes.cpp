@@ -1186,6 +1186,7 @@ void Axes::paintOverlay(QPainter &painter)
     ctx.font = font();
     ctx.labelColor = m_axes[sideIndex(AxisSide::Left)].labelColor();
     ctx.axisInk = m_axes[sideIndex(AxisSide::Bottom)].ink();
+    ctx.semanticColors = &m_semanticColors;
     ctx.legendBlockRect = m_legend.blockRect();
     ctx.abActive = m_abMeasure.isEnabled();
 

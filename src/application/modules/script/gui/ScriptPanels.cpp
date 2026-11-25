@@ -4,6 +4,7 @@
 #include "IIntentExecutor.h"
 #include "InteractionHub.h"
 #include "PanelFactoryHub.h"
+#include "ThemeManager.h"
 #include "Result.h"
 #include "ErrorCodes.h"
 
@@ -351,7 +352,12 @@ void ScriptCodeEditor::paintGutter(QPaintEvent *ev)
             // 断点圆点（红）
             if (m_breakpoints.contains(line))
             {
-                p.setBrush(QColor(0xdc, 0x26, 0x26));
+                // 断点圆点走语义 token（验收 8）：未声明时回落历史红 #dc2626。
+                const QColor bp =
+                    gui::ThemeManager::resolvedColor(QStringLiteral("script.breakpoint"));
+                p.setBrush(bp.isValid() && bp != QColor(QStringLiteral("#FF00FF"))
+                               ? bp
+                               : QColor(0xdc, 0x26, 0x26));
                 p.setPen(Qt::NoPen);
                 p.drawEllipse(3, top + 2, 8, 8);
                 p.setPen(QColor(0x6b, 0x72, 0x80));

@@ -304,6 +304,8 @@ private:
 
     void pushToPlot();
     void applyPalette();
+    // 语义色接缝（验收 8）：把模块 token 的当前实色推给 fastplot。
+    void pushSemanticColors();
     // 为新曲线分配主题色（按当前已有曲线条数轮换）。
     QColor nextSeriesColor() const;
     // 读数：从曲线有界窗口取 t 时刻最近样本，重写叠加层。

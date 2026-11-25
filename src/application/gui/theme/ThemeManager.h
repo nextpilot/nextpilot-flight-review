@@ -78,6 +78,9 @@ public:
     // 且颜色自动跟随主题切换，无需额外信号。
     static Theme activeTheme();
     static QColor themeColor(const QString &token);
+    // 解析后的语义色：内置表优先，未命中查模块/包声明的扩展 token 兜底色。
+    // 供上层绘制代码（如 AxesView）把 token 实色推给下层绘图库（验收 8 消费面）。
+    static QColor resolvedColor(const QString &token);
 
     // --- QSS 生成 ---
     // 全局样式（QApplication::setStyleSheet）。QSS 模板中的颜色全部来自 token。

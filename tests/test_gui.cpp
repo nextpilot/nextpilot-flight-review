@@ -3743,36 +3743,50 @@ int main(int argc, char *argv[])
 
     // --- 语义色消费面（验收 8）+ ViewState / Interaction 专项（验收 10）---
     //
-    // 上一条（!101）只把 ThemeTokenSpec 声明进主题表，绘制路径仍读硬编码色，
-    // 判据是"token 有声明"而不是"像素吃到 token"。这一段把判据落在**消费端**：
-    // fastplot 经 SemanticColors 接缝拿到实色，叠加层/网格从那里取；ViewState 与
-    // Interaction 各补 ≥3 组行为用例（同在原 gui offscreen runner `ps_gui` 里）。
+    // 判据不是"token 有声明"，而是"画布拿到了实色"。接缝用值对象注入（每画布一份，
+    // 不走进程级全局表）：AxesView::applyPalette 从 ThemeManager 取已声明 token 的
+    // 实色，注入本画布的 Axes；overlay 绘制时经 OverlayContext::semanticColor 读，
+    // 未注入则回落各自的历史兜底色（接管 token 不改变外观）。
     {
         namespace fp = nextpilot::plotscope::fastplot;
+        CHECK(canvas != nullptr);
+        const fp::Axes *ax = canvas->plotForTest();
+        CHECK(ax != nullptr);
 
-        // (1) 语义色：装配后 plot.cursor / plot.abMeasure 已被主题推送下来，
-        //     值等于模块声明的兜底（#f2b134，刻意对齐历史实色，接管不改变外观）。
-        const QColor expCursor(QStringLiteral("#f2b134"));
-        CHECK(fp::hasSemanticColor(QStringLiteral("plot.cursor")));
-        CHECK(fp::semanticColor(QStringLiteral("plot.cursor"), QColor()) == expCursor);
-        CHECK(fp::hasSemanticColor(QStringLiteral("plot.abMeasure")));
-        CHECK(fp::semanticColor(QStringLiteral("plot.abMeasure"), QColor()) == expCursor);
-        // 未推送的 id 必须走调用点兜底（不能返回无效色/洋红）。
-        CHECK(!fp::hasSemanticColor(QStringLiteral("plot.not_a_token")));
-        CHECK(fp::semanticColor(QStringLiteral("plot.not_a_token"), QColor("#123456"))
-              == QColor("#123456"));
-        // 网格色必须仍跟随平台调色板：未推送 → 兜底生效（不写死明暗单值）。
-        CHECK(!fp::hasSemanticColor(QStringLiteral("plot.grid")));
-        // 换肤后必须重推（否则绘制路径停在旧主题实色上）：切到深色再验一遍。
+        // 前置：前面的"包主题令牌"用例直接 setExtensionTokens(packTokens) 覆盖过扩展表，
+        // 模块 token 会被挤掉。切一次主题触发 themeChanged → 壳 refreshThemeTokens()
+        // 重新合并（模块 token 在内），再切回来，状态才对得上真实装配。
         CHECK(window.themeManager() != nullptr);
         const auto beforeTheme = window.themeManager()->current();
-        window.themeManager()->setTheme(beforeTheme == ThemeManager::Theme::Dark
-                                            ? ThemeManager::Theme::Light
-                                            : ThemeManager::Theme::Dark);
-        CHECK(fp::hasSemanticColor(QStringLiteral("plot.cursor")));
-        CHECK(fp::semanticColor(QStringLiteral("plot.cursor"), QColor()) == expCursor);
-        window.themeManager()->setTheme(beforeTheme); // 还原，别污染后续用例
-        OK("语义色消费面：plot.cursor / plot.abMeasure 已推送进 fastplot，网格色留平台兜底");
+        const auto otherTheme = beforeTheme == ThemeManager::Theme::Dark ? ThemeManager::Theme::Light
+                                                                       : ThemeManager::Theme::Dark;
+        window.themeManager()->setTheme(otherTheme);
+        window.themeManager()->setTheme(beforeTheme);
+
+        // (1) 画布已拿到 plot.cursor / plot.abMeasure 实色，且与模块兜底一致（#f2b134）。
+        const QColor expCursor(QStringLiteral("#f2b134"));
+        CHECK(ax->semanticColors().contains(QStringLiteral("plot.cursor")));
+        CHECK(ax->semanticColors().color(QStringLiteral("plot.cursor"), QColor()) == expCursor);
+        CHECK(ax->semanticColors().contains(QStringLiteral("plot.abMeasure")));
+        CHECK(ax->semanticColors().color(QStringLiteral("plot.abMeasure"), QColor()) == expCursor);
+        // 未注入的 id 必须走调用点兜底（不能返回无效色/洋红）。
+        CHECK(ax->semanticColors().color(QStringLiteral("plot.not_a_token"),
+                                         QColor(QStringLiteral("#123456")))
+              == QColor(QStringLiteral("#123456")));
+
+        // (2) 网格色跟随主题 token，但必须保留平台调色板兜底（不写死单值串另一个主题）。
+        const QColor gridToken = ThemeManager::resolvedColor(QStringLiteral("plot.grid"));
+        CHECK(gridToken.isValid() && gridToken != QColor(QStringLiteral("#FF00FF")));
+        CHECK(ax->axis(fp::AxisSide::Left).gridInk() == gridToken);
+
+        // (3) 换肤后要重推（否则绘制路径停在旧主题实色上）：切主题 → PaletteChange →
+        //     applyPalette → pushSemanticColors；验完还原，别污染后续用例。
+        window.themeManager()->setTheme(otherTheme);
+        CHECK(canvas->plotForTest()->semanticColors().contains(QStringLiteral("plot.cursor")));
+        CHECK(canvas->plotForTest()->semanticColors().color(QStringLiteral("plot.cursor"), QColor())
+              == expCursor);
+        window.themeManager()->setTheme(beforeTheme);
+        OK("语义色消费面：画布按 token 注入实色（每画布一份），网格色留平台兜底");
 
         // (2) ViewState 专项 1/3：范围撤销历史（record/压栈、撤销到底返回 false）。
         {

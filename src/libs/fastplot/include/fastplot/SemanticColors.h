@@ -1,36 +1,35 @@
 #pragma once
 
-// 语义色接缝：fastplot 不知道自己被谁用，也不认识主题 token 表。
-//
-// 画布上"游标 / A-B 测量 / 网格"这类颜色的语义由上层（plot 模块 + 主题）决定，
-// 但 fastplot 只依赖 Qt Widgets（见本库 CMakeLists 首段约束），不能反向 include
-// gui/theme。所以这里留一个**进程级只读表 + 写入口**：
-//
-//   * 上层（MainWindow::refreshThemeTokens）在主题生效/切换后调用
-//     setSemanticColor(id, color)，把 ThemeTokenSpec 解析出的实色推下来；
-//   * 库内绘制点调用 semanticColor(id, fallback)，取不到就用绘制点自己的兜底色。
-//
-// 这样"token 声明了却没人读"不可能再发生：读的一方是绘制路径本身，判据是像素。
-//
-// 线程模型：fastplot 只在 GUI 线程绘制（Qt Widgets 规定），故用普通 QHash，
-// 不加锁；测试可在同线程调 clearSemanticColors() 复位。
-
 #include <QColor>
+#include <QHash>
 #include <QString>
 
 namespace nextpilot::plotscope::fastplot
 {
 
-// 写入一条语义色（id 形如 "plot.cursor"）。颜色非法则忽略，不覆盖已有值。
-void setSemanticColor(const QString &id, const QColor &color);
+// 语义色接缝（验收 8）：库只认 id -> 实色 的纯数据映射，不认识主题 token 表。
+// 上层从 ThemeManager 把模块声明的语义 token 解析成实色后推下来；绘制点按 id 取色，
+// 取不到就用调用点的历史兜底色——于是"未注入 token"与"接管前"像素完全一致，
+// 接管 token 不会静默改变外观。
+//
+// 为什么放 libs：这是对下层绘图库的被动注入（上层推、库只读），库不依赖 gui/registry，
+// 符合分层；隐藏运行时状态仍归上层实例（成员对象，非命名空间全局）。
+class SemanticColors
+{
+public:
+    void set(const QString &id, const QColor &color) { m_colors.insert(id, color); }
+    void clear() { m_colors.clear(); }
+    bool contains(const QString &id) const { return m_colors.contains(id); }
+    int count() const { return m_colors.size(); }
 
-// 取语义色；未推送时返回 fallback（调用点自带的兜底色）。
-QColor semanticColor(const QString &id, const QColor &fallback);
+    // 命中返回注入实色；未命中返回传入的历史兜底色（保证外观不变）。
+    QColor color(const QString &id, const QColor &fallback) const
+    {
+        return m_colors.value(id, fallback);
+    }
 
-// 是否已被上层显式推送（诊断/测试用：区分"用了兜底"与"主题真给了色"）。
-bool hasSemanticColor(const QString &id);
-
-// 清空整表（测试用）。
-void clearSemanticColors();
+private:
+    QHash<QString, QColor> m_colors;
+};
 
 } // namespace nextpilot::plotscope::fastplot

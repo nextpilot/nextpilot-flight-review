@@ -547,7 +547,8 @@ void ScriptModule::onAttach(IUiContext &ui)
     {
         ThemeTokenSpec t;
         t.id = QStringLiteral("script.breakpoint");
-        t.fallback = QStringLiteral("#F14C4C");
+        // fallback 与 gutter 断点的历史色一致：接管 token 不改变外观。
+        t.fallback = QStringLiteral("#dc2626");
         t.description = QStringLiteral("脚本断点颜色");
         ui.declareThemeToken(t);
     }

@@ -10,6 +10,7 @@
 #include "fastplot/Line.h"
 #include "fastplot/MarkerOverlay.h"
 #include "fastplot/Overlay.h"
+#include "fastplot/SemanticColors.h"
 #include "fastplot/StateBandOverlay.h"
 #include "fastplot/Viewport.h"
 
@@ -50,6 +51,11 @@ public:
 
     void setBackground(const QColor &color);
     QColor background() const { return m_background; }
+
+    // 语义色接缝（验收 8）：上层把模块 token 解析成实色后按 id 注入。
+    // 读取由各 overlay 经 OverlayContext::semanticColor(id, 历史兜底色) 完成。
+    void setSemanticColors(const SemanticColors &colors) { m_semanticColors = colors; }
+    const SemanticColors &semanticColors() const { return m_semanticColors; }
 
     // 画布标题（左上角）。非空时顶部会额外预留一行字高。
     void setTitle(const QString &title);
@@ -282,6 +288,7 @@ private:
     Viewport m_vp;
     Axis m_axes[4];        // 索引 = AxisSide
     QColor m_background{0x10, 0x16, 0x1c};
+    SemanticColors m_semanticColors;  // 语义色接缝：上层注入的 id->实色（验收 8）
     // 第二 y 轴的数据范围与开关（双轴不需要任何特判：只是另一套映射）。
     double m_y2Lo = 0.0;
     double m_y2Hi = 1.0;
