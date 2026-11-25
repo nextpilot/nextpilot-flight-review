@@ -1,0 +1,73 @@
+name: lint
+
+# Script and workflow lint gate.
+#
+# Catches the class of breakage that compiles fine and passes code review, but only
+# fails when the packaging pipeline actually runs: a wrong linuxdeploy flag order,
+# a doubled Qt kit path, an unknown runner label. bash -n does not catch these,
+# and neither does the compiler.
+#
+# Kept separate from ci.yml on purpose: this finishes in seconds while the build gate
+# takes ~90 minutes, so a lint failure reports immediately instead of sitting behind
+# a build queue.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Pinned so the gate is reproducible; bump deliberately, not silently.
+  ACTIONLINT_VERSION: 1.7.12
+
+jobs:
+  shell:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: bash -n (all scripts)
+        run: |
+          set -euo pipefail
+          mapfile -t files < <(git ls-files '*.sh')
+          if [ "${#files[@]}" -eq 0 ]; then echo "::error::no shell script tracked"; exit 1; fi
+          for f in "${files[@]}"; do bash -n "$f"; done
+          echo "bash -n passed: ${#files[@]} scripts"
+
+      - name: shellcheck (error severity)
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+          shellcheck --version
+          mapfile -t files < <(git ls-files '*.sh')
+          # error only: historic scripts carry style warnings that would turn the gate
+          # red wholesale. Warnings stay visible locally; ratchet to them separately.
+          shellcheck -S error -x "${files[@]}"
+          echo "shellcheck passed: ${#files[@]} scripts"
+
+  workflows:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: actionlint
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/al.tgz \
+            "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          tar xzf /tmp/al.tgz -C /tmp actionlint
+          /tmp/actionlint -version
+          # Also checks the shell snippets embedded in `run:` blocks via shellcheck.
+          /tmp/actionlint -color .github/workflows/*.yml

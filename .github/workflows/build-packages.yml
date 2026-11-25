@@ -140,6 +140,7 @@ jobs:
         run: |
           set -euo pipefail
           FLOOR=2.35
+          # shellcheck disable=SC2016  # $0 is expanded by the inner sh, not by this shell
           MAX="$(find dist/AppDir -type f \( -name '*.so*' -o -perm -u+x \) -print0 2>/dev/null \
             | xargs -0 -r -n1 sh -c 'objdump -T "$0" 2>/dev/null | grep -oE "GLIBC_[0-9]+\.[0-9]+"' \
             | sed 's/GLIBC_//' | sort -V | tail -1 || true)"
@@ -276,7 +277,7 @@ jobs:
           if-no-files-found: error
 
   macos:
-    runs-on: macos-13        # Intel; the macos-14-arm64 label is unavailable in this repo and gets cancelled
+    runs-on: macos-14        # Apple Silicon; macos-13 (Intel) is no longer a GitHub-hosted runner label
     timeout-minutes: 150
     steps:
       - name: Checkout repository
