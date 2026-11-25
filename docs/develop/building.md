@@ -120,6 +120,18 @@ Debug / Release 两种配置都要过。测试用 `assert` 驱动，多配置生
 | GUI | `build/src/application/assembly/plotscope-gui` |
 | 测试 | `build/tests/ps_test_*` |
 
+## 出发布包
+
+推 `v*` tag 或手动触发 `.github/workflows/release.yml`，三平台各自出包并上传 artifact；完整矩阵、体积与签名说明见 [packaging.md](packaging.md)。本地出包需先构建 `plotscope-gui plotscope` 两个目标：
+
+```bash
+tools/pack-appimage.sh build dist                    # Linux AppImage（首选）
+tools/pack-deb.sh      build dist                    # Linux deb 安装包
+tools/pack-linux.sh    build dist                    # Linux 便携 tar.gz（兜底）
+powershell -File tools\pack-windows.ps1 -BuildDir build -OutDir dist   # Windows
+tools/pack-macos.sh    build dist                    # macOS（需在 Mac 上）
+```
+
 ## 运行
 
 ```bash

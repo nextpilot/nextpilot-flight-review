@@ -7,6 +7,7 @@ PlotScope 每个包都含**两个可执行文件**：`plotscope-gui`（GUI 主�
 | 平台 | 脚本 | 产物 | 形态 |
 |---|---|---|---|
 | Linux x86_64 | `tools/pack-appimage.sh` | `PlotScope-<ver>-linux-x86_64.AppImage` | 单文件，chmod +x 双击即用，Qt 闭包在包内 |
+| Linux amd64 | `tools/pack-deb.sh` | `PlotScope-<ver>-linux-amd64.deb` | apt 安装包，注册桌面条目与 `plotscope*` 命令 |
 | Linux x86_64 | `tools/pack-linux.sh` | `plotscope-<ver>-linux-x86_64.tar.gz` | 便携目录，无 FUSE 环境/服务器用 |
 | Windows x86_64 | `tools/pack-windows.ps1` | `PlotScope-<ver>-windows-x86_64-setup.exe` + `-portable.zip` | 安装器（开始菜单/卸载/版本信息）+ 便携 zip |
 | macOS arm64 / x86_64 | `tools/pack-macos.sh` | `PlotScope-<ver>-macOS-<arch>.dmg` | `.app` 拖拽安装 |
@@ -15,6 +16,7 @@ PlotScope 每个包都含**两个可执行文件**：`plotscope-gui`（GUI 主�
 
 ```bash
 tools/pack-appimage.sh build dist                      # Linux，第三参可指定 Qt 前缀
+tools/pack-deb.sh      build dist                      # Linux deb 安装包
 tools/pack-linux.sh    build dist                      # Linux 便携 tar.gz（兜底）
 powershell -File tools\pack-windows.ps1 -BuildDir build -QtDir C:\Qt\6.2.4\msvc2019_64 -OutDir dist
 tools/pack-macos.sh    build dist                      # 只在 macOS 上跑
@@ -46,6 +48,25 @@ chmod +x PlotScope-*-linux-x86_64.AppImage
 无 FUSE 的容器里加 `APPIMAGE_EXTRACT_AND_RUN=1`。
 
 `tar.gz` 仍保留，用于两类场景：目标机没有 FUSE、或只要 CLI 和 `.so` 做集成。它把系统库外置（glibc/X11 由目标机提供），因此包小但要求目标机有图形栈。
+
+### Linux：deb 安装包
+
+`tools/pack-deb.sh` 复用 `pack-linux.sh` 的自包含 stage，重排成 FHS 布局后用 `dpkg-deb` 打包：
+
+- 真实二进制与 Qt/ADS 库装在 `/usr/lib/plotscope/`（RPATH=`$ORIGIN/lib`，天然契合）；
+- `/usr/bin/plotscope-gui` 与 `/usr/bin/plotscope` 为转发 wrapper；
+- Qt xcb 所需图形栈写进 `Depends`，由 apt 解析；
+- 注册 `.desktop` 桌面项与内联 SVG 图标。
+
+用户侧：
+
+```bash
+sudo apt install ./PlotScope-*-linux-amd64.deb
+plotscope-gui                 # GUI
+plotscope --help              # CLI
+```
+
+实测 deb 约 12 MB（xz 压缩），解包后 `usr/lib/plotscope/plotscope` 在清空环境下 `--help` 正常。
 
 ## Windows：安装器 + 便携包
 

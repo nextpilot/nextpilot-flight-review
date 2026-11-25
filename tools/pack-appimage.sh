@@ -97,8 +97,11 @@ log "linuxdeploy 收集依赖（Qt 插件 + GUI/CLI 两个可执行文件）"
   --executable "$CLI_BIN" \
   --desktop-file "$ROOT/packaging/linux/plotscope.desktop" \
   --icon-file "$ROOT/packaging/linux/plotscope.png" \
-  --plugin qt \
-  --output appimage 2>&1 | sed 's/^/[linuxdeploy] /' || die "linuxdeploy 失败"
+  --plugin qt 2>&1 | sed 's/^/[linuxdeploy] /' || die "linuxdeploy 失败"
+
+# 这里不能用 `--output appimage`：linuxdeploy 会在补 offscreen 插件、覆写 AppRun
+# 之前就把 AppImage 打出来，产物只带 xcb 且 AppRun 还是它自己的软链版本，
+# 无头冒烟必挂。先只做 AppDir，最后一步用 appimagetool 统一打包。
 
 # 无头环境（CI/服务器）用 offscreen 插件跑冒烟；linuxdeploy 只按依赖挑到了 xcb。
 if [ -f "$QT_DIR/plugins/platforms/libqoffscreen.so" ]; then
@@ -123,23 +126,10 @@ exec "$HERE/usr/bin/plotscope-gui" "$@"
 APPRUN
 chmod +x "$APPDIR/AppRun"
 
-# linuxdeploy --output appimage 会把 AppImage 落在当前目录；统一收到 dist 并按版本命名。
-shopt -s nullglob
-for f in "$ROOT"/*.AppImage "$PWD"/*.AppImage; do
-  case "$f" in
-    *linuxdeploy*|*appimagetool*) continue ;;
-  esac
-  dest="$OUT_DIR/PlotScope-${VERSION}-linux-${ARCH}.AppImage"
-  mv -f "$f" "$dest" && log "产物：$dest（$(du -h "$dest" | cut -f1)）"
-done
-shopt -u nullglob
-
-# 没有产出就直接显式构建一次（部分 linuxdeploy 版本不自动出 AppImage）。
+# 打包必须发生在「补 offscreen 插件 + 覆写 AppRun」之后，顺序错了就是坏包。
 DEST="$OUT_DIR/PlotScope-${VERSION}-linux-${ARCH}.AppImage"
-if [ ! -f "$DEST" ]; then
-  log "linuxdeploy 未产出 AppImage，改用 appimagetool 直接打包"
-  "$AIT" --no-appstream "$APPDIR" "$DEST" 2>&1 | sed 's/^/[appimagetool] /' || die "appimagetool 失败"
-fi
+log "appimagetool 打包：$DEST"
+"$AIT" --no-appstream "$APPDIR" "$DEST" 2>&1 | sed 's/^/[appimagetool] /' || die "appimagetool 失败"
 [ -f "$DEST" ] || die "未生成 $DEST"
 chmod +x "$DEST"
 log "完成：$DEST（$(du -h "$DEST" | cut -f1)）"

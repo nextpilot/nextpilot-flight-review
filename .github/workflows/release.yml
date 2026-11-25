@@ -76,15 +76,46 @@ jobs:
       - name: 出 AppImage
         run: bash tools/pack-appimage.sh build dist "$QT_ROOT_DIR/gcc_64"
 
+      - name: 出 deb 安装包
+        run: bash tools/pack-deb.sh build dist
+
       - name: 冒烟（清空环境直接跑）
         run: |
           chmod +x dist/*.AppImage
-          env -i HOME="$HOME" PATH=/usr/bin:/bin dist/PlotScope-*.AppImage --cli --help
+          # runner 上没有 FUSE，必须走解压模式，否则直接报 fusermount 缺失
+          env -i HOME="$HOME" PATH=/usr/bin:/bin APPIMAGE_EXTRACT_AND_RUN=1 \
+            dist/PlotScope-*.AppImage --cli --help
+          # AppImage 的 GUI 也要起窗（offscreen），10 秒未退出（124）= 成功
+          set +e
+          env -i HOME="$HOME" PATH=/usr/bin:/bin APPIMAGE_EXTRACT_AND_RUN=1 \
+            QT_QPA_PLATFORM=offscreen timeout 10 dist/PlotScope-*.AppImage
+          AI_RC=$?
+          set -e
+          [ "$AI_RC" -eq 124 ] || { echo "::error::AppImage GUI 未能启动（退出码 $AI_RC）"; exit 1; }
+          echo "AppImage CLI + GUI 冒烟通过"
+          # deb：解包后直接跑真实二进制（FHS 布局，RPATH=$ORIGIN/lib）
+          mkdir -p /tmp/deb-root && dpkg-deb -x dist/*.deb /tmp/deb-root
+          env -i HOME="$HOME" PATH=/usr/bin:/bin /tmp/deb-root/usr/lib/plotscope/plotscope --help
+          # deb 的 GUI 也必须能起：offscreen 起窗，10 秒未退出（124）= 启动成功。
+          # 这条才是 deb 的核心价值 —— CLI 不碰平台插件，跑通不代表 GUI 能跑。
+          set +e
+          env -i HOME="$HOME" PATH=/usr/bin:/bin QT_QPA_PLATFORM=offscreen \
+            timeout 10 /tmp/deb-root/usr/lib/plotscope/plotscope-gui
+          GUI_RC=$?
+          set -e
+          [ "$GUI_RC" -eq 124 ] || { echo "::error::deb 内 GUI 未能启动（退出码 $GUI_RC）"; exit 1; }
+          echo "deb GUI 冒烟通过（offscreen 启动后超时未退）"
 
       - uses: actions/upload-artifact@v4
         with:
           name: linux-appimage
           path: dist/*.AppImage
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-deb
+          path: dist/*.deb
           if-no-files-found: error
 
   windows:
@@ -242,7 +273,7 @@ jobs:
       - name: 汇总产物
         run: |
           mkdir -p out
-          find artifacts -type f \( -name '*.AppImage' -o -name '*.dmg' -o -name '*.exe' -o -name '*.zip' \) -exec cp {} out/ \;
+          find artifacts -type f \( -name '*.AppImage' -o -name '*.deb' -o -name '*.dmg' -o -name '*.exe' -o -name '*.zip' \) -exec cp {} out/ \;
           ls -lh out
 
       - name: 挂到 Release

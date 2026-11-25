@@ -37,3 +37,6 @@ fastplot_*.png
 
 # AppImage 打包工具缓存（linuxdeploy/appimagetool，约 47 MB）
 .tools/
+
+# Linux 打包中间产物（AppDir / AppImage 由 pack-*.sh 现场生成）
+/dist/
