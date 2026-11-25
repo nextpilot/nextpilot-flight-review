@@ -42,6 +42,9 @@ struct ProductSpec
     QString version;
     // 报告默认标题（空 = 回落 displayName）。
     QString reportTitle;
+    // 关于页的用途说明（19b：身份文案归产品，壳零硬编码业务描述）。
+    // 空 = 关于页只显示名称与版本，不显示用途段。
+    QString aboutText;
     // 默认 Region 布局：壳按此清单依次请求面板；空清单 = 全空态占位。
     QList<ProductPanelPlacement> defaultPanels;
     // 模块清单（mod.* id）：装配层据此装载模块；壳不遍历、不解析。

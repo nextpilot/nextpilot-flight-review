@@ -153,6 +153,17 @@ int main(int argc, char *argv[])
 
     App application;
     MainWindow window(application.context(), nextpilot::plotscope::registry::plotScopeProductSpec());
+
+    // 产品身份文案（19a/19b）：身份/用途说明来自 ProductSpec，壳零硬编码业务描述。
+    {
+        const auto spec = nextpilot::plotscope::registry::plotScopeProductSpec();
+        CHECK(window.windowTitle() == spec.displayName);
+        CHECK(!spec.aboutText.isEmpty());
+        CHECK(spec.aboutText.contains(QStringLiteral("数据 / 绘图 / 分析")));
+        CHECK(!spec.reportTitle.isEmpty());
+        OK("产品身份文案：窗口标题/关于页用途/报告标题均来自 ProductSpec");
+    }
+
     // derivedSeriesReady 的观察计数：lambda 以 &application 为接收者会活到 application 析构，
     // 故必须用 application 之前声明、之后的持久变量，不能捕获块内栈变量（悬空引用→堆损坏）。
     int g_derivedCount = 0, g_filterCount = 0, g_scriptFilterCount = 0;

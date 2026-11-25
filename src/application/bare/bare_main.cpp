@@ -35,6 +35,7 @@ nextpilot::plotscope::registry::ProductSpec bareProductSpec()
     spec.id = QStringLiteral("bare");
     spec.displayName = QStringLiteral("Bare Shell");
     spec.version = QStringLiteral("0.1.0");
+    // aboutText 留空：裸壳不带 PlotScope 的用途说明（19b——业务文案不随产品身份外溢）。
     // defaultPanels 留空：不请求任何业务面板；moduleIds 留空：不装载任何模块。
     return spec;
 }

@@ -594,14 +594,14 @@ void MainWindow::build(RuntimeHost &host)
         // 关于：版本与用途说明（help.about）。
         if (actionId == QStringLiteral("help.about"))
         {
+            // 身份文案走 ProductSpec（19a/19b）：壳只拼装，不写死产品名或业务用途描述。
             const QString aboutName = m_spec.displayName;
             const QString aboutVersion = m_spec.version.isEmpty()
                 ? QString() : QStringLiteral(" v%1").arg(m_spec.version);
+            const QString purpose = m_spec.aboutText.isEmpty()
+                ? QString() : QStringLiteral(" — ") + m_spec.aboutText;
             QMessageBox::about(this, tr("关于 %1").arg(aboutName),
-                QStringLiteral("%1%2 — 数据 / 绘图 / 分析软件\n"
-                               "架构底座：Dataset / Intent / Contribution / Module / Pack\n"
-                               "绘图库：fastplot（Figure / Axes / Line / Artist）")
-                    .arg(aboutName, aboutVersion));
+                               aboutName + aboutVersion + purpose);
             return;
         }
         // 保存/导入布局：窗口状态写入/读出 Workspace 作用域 settings（layout.save/import）。

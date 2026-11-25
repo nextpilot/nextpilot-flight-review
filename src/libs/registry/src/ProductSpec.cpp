@@ -10,6 +10,9 @@ ProductSpec plotScopeProductSpec()
     spec.displayName = QStringLiteral("PlotScope");
     spec.version = QStringLiteral("0.1.0");
     spec.reportTitle = QStringLiteral("PlotScope 报告");
+    spec.aboutText = QStringLiteral("数据 / 绘图 / 分析软件");
+    spec.aboutText += QStringLiteral("\n架构底座：Dataset / Intent / Contribution / Module / Pack");
+    spec.aboutText += QStringLiteral("\n绘图库：fastplot（Figure / Axes / Line / Artist）");
     spec.defaultPanels = {
         {Region::SecondarySidebar, QStringLiteral("property-panel"), QString(), false},
         {Region::Panel, QStringLiteral("output-console"), QString(), false},
