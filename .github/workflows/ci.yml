@@ -189,10 +189,10 @@ jobs:
         # All targets, not just the two shipped executables: the point is maximum
         # compile surface, so a broken header in fastplot or the Rust bridge is caught.
         #
-        # On failure the tail of the build log is written to the step summary: the
-        # Actions log itself needs an authenticated download, and a bare
-        # "exit code 1" annotation is not enough to tell a Qt/SDK incompatibility
-        # from a genuine compiler error in our own code.
+        # On failure the tail of the build log goes to the step summary, plus one
+        # `::error::` annotation per distinct compiler error — annotations are
+        # reliably rendered on the public run page, the summary body is not always
+        # exposed in the public HTML.
         run: |
           cmake --build build --parallel 4 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\build.log"
           if ($LASTEXITCODE -ne 0) {
@@ -200,6 +200,10 @@ jobs:
             '```' | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
             Get-Content "$env:RUNNER_TEMP\build.log" -Tail 150 | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
             '```' | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
+            Get-Content "$env:RUNNER_TEMP\build.log" |
+              Select-String -Pattern 'error:|fatal error:|FAILED:' |
+              Select-Object -First 8 |
+              ForEach-Object { "::error::$($_.Line)" }
             exit 1
           }
 
@@ -257,8 +261,11 @@ jobs:
       - name: Build all targets (compile-only gate)
         # A bare "exit code 1" annotation cannot distinguish a Qt 6.2.4 / new-Xcode
         # incompatibility from a real error in our own code, and the Actions log
-        # needs an authenticated download. So dump the tail of the build log into
-        # the step summary, which is readable from the public run page.
+        # needs an authenticated download. Two channels are used on failure:
+        #   1. the step summary (tail of the log), and
+        #   2. one `::error::` annotation per distinct compiler error — annotations
+        #      are reliably rendered on the public run page, the step summary body
+        #      is not always exposed in the public HTML.
         run: |
           set -o pipefail
           LOG="$RUNNER_TEMP/build.log"
@@ -269,5 +276,8 @@ jobs:
               tail -150 "$LOG"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
+            grep -E "error:|fatal error:|FAILED:" "$LOG" | head -8 | while IFS= read -r line; do
+              echo "::error::${line}"
+            done
             exit 1
           fi
