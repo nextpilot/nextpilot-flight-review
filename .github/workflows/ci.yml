@@ -108,3 +108,125 @@ jobs:
           name: ctest-logs
           path: build/Testing/Temporary/
           if-no-files-found: ignore
+
+  # Cross-platform compile gates.
+  #
+  # Why: the job above only compiles with GCC on Linux. MSVC and AppleClang have their
+  # own diagnostics that no amount of local Linux building reproduces — commit 29bf3526
+  # ("QLatin1String 错误码去 constexpr, 修 Windows CI C2131") was exactly that class of
+  # error, previously found by pushing a packaging branch or by building on a real
+  # Windows box. These jobs close that hole at PR time.
+  #
+  # Scope is deliberately narrow: configure + compile everything, nothing else. No tests
+  # (the suite depends on the Python bridge / numpy / offscreen, not yet verified
+  # cross-platform), no packaging, no smoke tests — packaging stays in build-packages.yml.
+
+  windows-compile:
+    runs-on: windows-2022
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Verify version (versions.env is the single source of truth)
+        shell: bash
+        run: |
+          set -euo pipefail
+          source versions.env
+          echo "PS_QT_VER=${PS_QT_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install Rust toolchain (MSVC target)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install Qt (MSVC)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.PS_QT_VER }}
+          arch: 'win64_msvc2019_64'
+          modules: 'qtcharts'
+
+      - name: Set up MSVC build environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Set up sccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          # Separate key from the packaging job: this cache only ever holds compile
+          # output, so a packaging run cannot evict it.
+          key: windows-compile
+          variant: sccache
+
+      - name: Configure CMake
+        shell: pwsh
+        run: |
+          # QT_ROOT_DIR already contains msvc2019_64 (install-qt-action v4); do not append another level.
+          cmake -S . -B build -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" `
+            -DPS_BUILD_TESTS=OFF `
+            -DCMAKE_C_COMPILER_LAUNCHER=sccache `
+            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
+
+      - name: Build all targets (compile-only gate)
+        shell: pwsh
+        # All targets, not just the two shipped executables: the point is maximum
+        # compile surface, so a broken header in fastplot or the Rust bridge is caught.
+        run: cmake --build build --parallel 4
+
+  macos-compile:
+    # macos-13 (Intel) is no longer a GitHub-hosted label; macos-14 is standard arm64.
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Verify version (versions.env is the single source of truth)
+        shell: bash
+        run: |
+          set -euo pipefail
+          source versions.env
+          echo "PS_QT_VER=${PS_QT_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install build tools (ninja, Xcode)
+        run: |
+          command -v ninja || HOMEBREW_NO_AUTO_UPDATE=1 brew install ninja
+          xcodebuild -version
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.PS_QT_VER }}
+          host: mac
+          modules: 'qtcharts'
+
+      - name: Set up ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: macos-compile
+
+      - name: Configure CMake
+        run: |
+          # QT_ROOT_DIR is already an absolute path containing clang_64; do not prepend $(pwd)/.
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
+            -DPS_BUILD_TESTS=OFF \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build all targets (compile-only gate)
+        run: cmake --build build --parallel "$(sysctl -n hw.ncpu)"
