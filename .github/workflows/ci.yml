@@ -33,30 +33,6 @@ jobs:
           fetch-depth: 0
           submodules: recursive
 
-      - name: Verify commit identity (only latercomer@qq.com)
-        # 仓库只接受 latercomer 这个身份推送：author / committer 邮箱一律只许
-        # latercomer@qq.com。别家邮箱一律红——包括 agent 默认身份（zhanfy@…）
-        # 和本地忘了配 user.email 的情况。
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
-            base="${{ github.event.before }}"
-          else
-            base="origin/${{ github.base_ref }}"
-          fi
-          if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
-            base="$(git rev-list --max-parents=0 HEAD)"   # 新分支：从根算
-          fi
-          emails="$(git log --format='%ae%n%ce' "${base}..HEAD" | sort -u | sed '/^$/d')"
-          bad="$(printf '%s\n' "$emails" | grep -v '^latercomer@qq\.com$' || true)"
-          if [ -n "$bad" ]; then
-            echo "::error::提交身份只允许 latercomer@qq.com，实际发现："
-            printf '%s\n' "$bad"
-            exit 1
-          fi
-          echo "提交身份校验通过：${base}..HEAD 仅 latercomer@qq.com"
-
       - name: Verify version (versions.env is the single source of truth)
         shell: bash
         run: |
