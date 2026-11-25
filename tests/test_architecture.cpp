@@ -13,7 +13,10 @@
 #include "ServiceLocator.h"
 #include "BuiltinModuleHub.h"
 #include "ToolboxHub.h"
-#include "IModule.h"
+#include "IWorkbenchContribution.h"
+#include "ICommands.h"
+#include "InstantiationService.h"
+#include "CommandAdapter.h"
 #include "Contribution.h"
 #include "DecodedFrame.h"
 #include "IMessageParser.h"
@@ -82,7 +85,7 @@ public:
 };
 
 // 假模块：声明一个能力，提供一个意图处理器。
-class ProbeModule final : public nextpilot::plotscope::host::IModule
+class ProbeModule final : public nextpilot::plotscope::host::IWorkbenchContribution
 {
     Q_OBJECT
 public:
@@ -94,13 +97,18 @@ public:
                                     {QStringLiteral("probe.capability")},
                                     {}};
     }
-    static nextpilot::plotscope::host::IModule *create() { return new ProbeModule(); }
+    static nextpilot::plotscope::host::IWorkbenchContribution *create() { return new ProbeModule(); }
 
     nextpilot::plotscope::host::ModuleInfo info() const override { return moduleInfo(); }
 
-    void initialize(nextpilot::plotscope::host::RuntimeHost &host) override
+    void initialize(nextpilot::plotscope::instantiation::InstantiationService &services) override
     {
-        host.registerIntentHandler(new ProbeHandler);
+        auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(
+            QStringLiteral("vscode.commands"));
+        if (cmds)
+            cmds->registerCommand(QStringLiteral("probe.ping"),
+                nextpilot::plotscope::workbench::asCommandHandler(new ProbeHandler,
+                                                                  QStringLiteral("probe.ping")));
     }
 };
 

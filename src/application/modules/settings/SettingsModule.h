@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IModule.h"
+#include "IWorkbenchContribution.h"
 
 // 设置模块：**统一设置管理的机制提供者**。
 //
@@ -14,16 +14,16 @@
 //   App        用户偏好，跨工作区
 //   Workspace  会话状态，重启可恢复（窗口几何、dock 排列、最近源）
 //   Document   具体工作区，可分享（plot 布局、曲线样式）
-class SettingsModule final : public nextpilot::plotscope::host::IModule
+class SettingsModule final : public nextpilot::plotscope::host::IWorkbenchContribution
 {
     Q_OBJECT
 public:
     // 静态元数据：供编译期自注册（PS_REGISTER_MODULE）使用，无需实例化。
     static nextpilot::plotscope::host::ModuleInfo moduleInfo();
-    static nextpilot::plotscope::host::IModule *create();
+    static nextpilot::plotscope::host::IWorkbenchContribution *create();
 
     nextpilot::plotscope::host::ModuleInfo info() const override;
-    void initialize(nextpilot::plotscope::host::RuntimeHost &host) override;
+    void initialize(nextpilot::plotscope::instantiation::InstantiationService &services) override;
 
 private:
     class Handler;

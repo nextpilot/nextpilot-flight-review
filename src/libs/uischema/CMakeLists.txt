@@ -15,13 +15,14 @@ add_library(ps_uischema STATIC
     include/Transform.h
     include/FilterOps.h
     include/MarkerOps.h
+    include/IScriptCapabilities.h
     include/PropertySchema.h
     include/ThemeTokens.h
 )
 target_include_directories(ps_uischema PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 # ThemeTokens 的 QColor 属 QtGui 值类型（口径同 ps_command 的 QKeySequence），
 # 不是 Widgets，headless 亦可链；本目标 PUBLIC 链里不得出现 Qt6::Widgets。
-target_link_libraries(ps_uischema PUBLIC Qt6::Core Qt6::Gui ps_foundation ps_registry)
+target_link_libraries(ps_uischema PUBLIC Qt6::Core Qt6::Gui ps_foundation ps_registry ps_intent)
 set_target_properties(ps_uischema PROPERTIES CXX_STANDARD 17 AUTOMOC ON)
 
 # 渲染层：唯一的 FieldType→QWidget 映射，只 GUI 链接。

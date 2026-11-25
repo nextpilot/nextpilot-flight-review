@@ -5,17 +5,22 @@
 #include "DataSource.h"
 #include "Dataset.h"
 #include "Contribution.h"
-#include "IModule.h"
+#include "IWorkbenchContribution.h"
+#include "InstantiationService.h"
+#include "IWorkspace.h"
+#include "IWindow.h"
+#include "ICommands.h"
+#include "CommandAdapter.h"
 #include "Intent.h"
 #include "RuntimeHost.h"
 #include "Result.h"
 #include "ErrorCodes.h"
-#include "SettingsStore.h"
 
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 
+using nextpilot::plotscope::instantiation::InstantiationService;
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
 using namespace nextpilot::plotscope::intent;
@@ -57,6 +62,32 @@ QJsonObject stringListToJson(const QStringList &list)
     return QJsonObject{{QStringLiteral("apps"), arr}};
 }
 
+// 配置扁平映射：SettingsStore::setJson(Workspace, key, obj) 的扁平 key 为
+// "ws/"+key（scopePrefix(Workspace)="ws"），值存 JSON 紧凑文本；读时反向解析。
+// 这样 handler 只经 IWorkspace 的扁平 get/setConfiguration，不出现 SettingsStore 类型。
+QString wsConfigKey(const QString &key) { return QStringLiteral("ws/") + key; }
+
+QJsonObject readWsJson(const nextpilot::plotscope::workbench::IWorkspace &ws, const QString &key)
+{
+    const QVariant v = ws.getConfiguration(wsConfigKey(key));
+    if (v.typeId() == QMetaType::QString)
+    {
+        const QJsonDocument doc = QJsonDocument::fromJson(v.toString().toUtf8());
+        if (doc.isObject())
+            return doc.object();
+    }
+    if (v.canConvert<QJsonObject>())
+        return v.toJsonObject();
+    return {};
+}
+
+void writeWsJson(nextpilot::plotscope::workbench::IWorkspace &ws, const QString &key,
+                 const QJsonObject &obj)
+{
+    const QString text = QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+    ws.setConfiguration(wsConfigKey(key), QVariant(text));
+}
+
 } // namespace
 
 // analysis.run / analysis.favorite 的处理器：分析模块只提供调度机制。
@@ -70,8 +101,9 @@ class AnalysisModule::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
 public:
-    explicit Handler(AppContext &app, QObject *parent)
-        : QObject(parent), m_app(app) {}
+    explicit Handler(nextpilot::plotscope::workbench::IWorkspace &ws,
+                     nextpilot::plotscope::workbench::IWindow &window, QObject *parent)
+        : QObject(parent), m_ws(ws), m_window(window) {}
 
     void attachUi(IUiContext *ui) { m_ui = ui; }
 
@@ -142,10 +174,10 @@ private:
             favs.removeAll(app);
         else
             favs << app;
-        m_app.settings().setJson(SettingsScope::Workspace, kFavoritesKey, stringListToJson(favs));
+        writeWsJson(m_ws, kFavoritesKey, stringListToJson(favs));
         if (m_ui)
             m_ui->refreshActions();
-        m_app.settings().flush();
+        m_ws.flushConfiguration();
 
         IntentResult r;
         r.payload = QVariantMap{
@@ -157,14 +189,12 @@ private:
 
     QStringList recents() const
     {
-        return jsonToStringList(m_app.settings().json(SettingsScope::Workspace, kRecentsKey),
-                                QStringLiteral("apps"));
+        return jsonToStringList(readWsJson(m_ws, kRecentsKey), QStringLiteral("apps"));
     }
 
     QStringList favorites() const
     {
-        return jsonToStringList(m_app.settings().json(SettingsScope::Workspace, kFavoritesKey),
-                                QStringLiteral("apps"));
+        return jsonToStringList(readWsJson(m_ws, kFavoritesKey), QStringLiteral("apps"));
     }
 
     // MRU 记录：先删旧位再插到头部，截断到上限。
@@ -175,8 +205,8 @@ private:
         rec.prepend(app);
         while (rec.size() > kMaxRecents)
             rec.removeLast();
-        m_app.settings().setJson(SettingsScope::Workspace, kRecentsKey, stringListToJson(rec));
-        m_app.settings().flush();
+        writeWsJson(m_ws, kRecentsKey, stringListToJson(rec));
+        m_ws.flushConfiguration();
         if (m_ui)
             m_ui->refreshActions();
     }
@@ -212,15 +242,15 @@ private:
 
     Result<IntentResult> runDefault()
     {
-        const int sid = m_app.activeSourceId();
-        const DataSourceInfo *src = m_app.sources().get(sid);
+        const int sid = m_window.activeSource();
+        const DataSourceInfo *src = m_ws.sources().get(sid);
         if (!src)
             return fail(err::NoSource, QStringLiteral("没有活动数据源，无法生成默认曲线"));
 
         int channels = 0;
         for (int dsId : src->datasetIds)
         {
-            const Dataset *ds = m_app.data().get(dsId);
+            const Dataset *ds = m_ws.dataset().get(dsId);
             if (!ds)
                 continue;
             for (int t = 0; t < ds->tableCount(); ++t)
@@ -232,7 +262,7 @@ private:
                 {
                     if (col.type == ValueType::Text)
                         continue;
-                    m_app.setActiveChannel(dsId, tbl->name, col.name);
+                    m_window.setActiveChannel(dsId, tbl->name, col.name);
                     ++channels;
                 }
             }
@@ -248,7 +278,8 @@ private:
         return r;
     }
 
-    AppContext &m_app;
+    nextpilot::plotscope::workbench::IWorkspace &m_ws;
+    nextpilot::plotscope::workbench::IWindow &m_window;
 };
 
 ModuleInfo AnalysisModule::moduleInfo()
@@ -262,7 +293,7 @@ ModuleInfo AnalysisModule::moduleInfo()
     };
 }
 
-IModule *AnalysisModule::create()
+IWorkbenchContribution *AnalysisModule::create()
 {
     return new AnalysisModule();
 }
@@ -272,10 +303,22 @@ ModuleInfo AnalysisModule::info() const
     return moduleInfo();
 }
 
-void AnalysisModule::initialize(RuntimeHost &host)
+void AnalysisModule::initialize(InstantiationService &services)
 {
-    m_handler = new Handler(host.app(), this);
-    host.registerIntentHandler(m_handler);
+    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(
+        QStringLiteral("vscode.workspace"));
+    auto *window = services.getService<nextpilot::plotscope::workbench::IWindow>(
+        QStringLiteral("vscode.window"));
+    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(
+        QStringLiteral("vscode.commands"));
+    if (!ws || !window || !cmds)
+        return;
+    m_handler = new Handler(*ws, *window, this);
+    auto reg = [cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+        cmds->registerCommand(id, nextpilot::plotscope::workbench::asCommandHandler(h, id));
+    };
+    reg(QStringLiteral("analysis.run"), m_handler);
+    reg(QStringLiteral("analysis.favorite"), m_handler);
 }
 
 void AnalysisModule::onAttach(IUiContext &ui)

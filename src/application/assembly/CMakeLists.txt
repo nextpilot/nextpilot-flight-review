@@ -3,6 +3,21 @@
 # 因此本文件是仓库里唯一允许出现 ps_module_* / ps_toolbox_* / ps_parser_* 的 gui 侧文件。
 # （壳目录 src/application/gui 的 grep 必须为 0，见契约 §11 链接关 / 验收 6。）
 
+# ps_assembly（A1b IKXUTD §1.4）：workbench 服务装配 glue。
+# 持有 InstantiationService、把具体 Hub 包成 workbench 接口、注册 3 条 VSCode 服务。
+# 只被组合根（ps_app）链接；模块只见 workbench 契约，不见具体 Hub。
+add_library(ps_assembly STATIC
+    include/WorkbenchAdapters.h
+    include/WorkbenchServices.h
+    src/WorkbenchAdapters.cpp
+    src/WorkbenchServices.cpp
+)
+target_include_directories(ps_assembly PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(ps_assembly PUBLIC
+    ps_workbench ps_instantiation ps_host ps_context ps_intent ps_dataset ps_recording
+    ps_registry ps_foundation Qt6::Core)
+set_target_properties(ps_assembly PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+
 # 反证开关（A4a）：PS_DISABLE_MODULE 接受分号分隔的 target 名列表，装配时剔除。
 # 用途：CI 逐个剔除任一 ps_module_* 后完整产品仍能 build/run——证明模块间无横向依赖、
 # 壳不依赖模块。日常构建不设此变量，全模块装配。

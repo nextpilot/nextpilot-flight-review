@@ -3,6 +3,11 @@
 #include "BuiltinModuleHub.h"
 #include "ErrorCodes.h"
 #include "IIntentExecutor.h"
+#include "InstantiationService.h"
+#include "IWorkspace.h"
+#include "IWindow.h"
+#include "ICommands.h"
+#include "CommandAdapter.h"
 #include "Intent.h"
 #include "PersistentStateHub.h"
 #include "SettingsStore.h"
@@ -19,6 +24,7 @@
 #include <QJsonObject>
 #include <QStandardPaths>
 
+using nextpilot::plotscope::instantiation::InstantiationService;
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::intent;
 using namespace nextpilot::plotscope::context;
@@ -26,6 +32,36 @@ using namespace nextpilot::plotscope::host;
 
 namespace
 {
+
+// 配置扁平映射：WorkspaceDataConfig 存在 SettingsStore 的 Workspace 作用域，
+// 扁平 key = "ws/"+kSettingsKey（scopePrefix(Workspace)="ws"），值存 JSON 紧凑文本。
+// 经 IWorkspace 的扁平 get/setConfiguration 读写，handler 不出现 SettingsStore 类型。
+QString wsSettingsKey()
+{
+    return QStringLiteral("ws/") + QString::fromLatin1(WorkspaceDataConfig::kSettingsKey);
+}
+
+WorkspaceDataConfig loadWorkspaceData(const nextpilot::plotscope::workbench::IWorkspace &ws)
+{
+    const QVariant v = ws.getConfiguration(wsSettingsKey());
+    if (v.typeId() == QMetaType::QString)
+    {
+        const QJsonDocument doc = QJsonDocument::fromJson(v.toString().toUtf8());
+        if (doc.isObject())
+            return WorkspaceDataConfig::fromJson(doc.object());
+    }
+    if (v.canConvert<QJsonObject>())
+        return WorkspaceDataConfig::fromJson(v.toJsonObject());
+    return WorkspaceDataConfig{};
+}
+
+bool saveWorkspaceData(nextpilot::plotscope::workbench::IWorkspace &ws,
+                       const WorkspaceDataConfig &cfg, QString *err)
+{
+    const QString text = QString::fromUtf8(QJsonDocument(cfg.toJson()).toJson(QJsonDocument::Compact));
+    ws.setConfiguration(wsSettingsKey(), QVariant(text));
+    return ws.flushConfiguration(err);
+}
 
 // 预设目录：<AppData>/workspaces。放 AppData 而不是仓库目录，
 // 因为预设属于用户产物，卸载/换版本不该被覆盖。
@@ -114,8 +150,10 @@ class WorkspaceModule::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
 public:
-    explicit Handler(RuntimeHost &host, QObject *parent)
-        : QObject(parent), m_host(host) {}
+    explicit Handler(nextpilot::plotscope::workbench::IWorkspace &ws,
+                     nextpilot::plotscope::workbench::IWindow &window,
+                     nextpilot::plotscope::workbench::ICommands &cmds, QObject *parent)
+        : QObject(parent), m_ws(ws), m_window(window), m_cmds(cmds) {}
 
     bool canHandle(const Intent &intent) const override
     {
@@ -149,11 +187,11 @@ private:
         preset.savedAt = QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
 
         // 源清单取 settings 里的原文——保存不重新解释解析配置。
-        const WorkspaceDataConfig cfg = WorkspaceDataConfig::load(m_host.app().settings());
+        const WorkspaceDataConfig cfg = loadWorkspaceData(m_ws);
         preset.sources = cfg.toJson().value(QStringLiteral("sources")).toArray();
 
         // 画布布局取 document 段里 plot.document 的产出（R3 登记的条目）。
-        const QJsonObject doc = m_host.app().states().collect().value(QStringLiteral("document")).toObject();
+        const QJsonObject doc = m_window.state().collect().value(QStringLiteral("document")).toObject();
         preset.plots = doc.value(QStringLiteral("plot.document")).toObject();
 
         if (generic)
@@ -228,23 +266,23 @@ private:
         sourcesDoc.insert(QStringLiteral("sources"), preset.sources);
         WorkspaceDataConfig cfg = WorkspaceDataConfig::fromJson(sourcesDoc);
         QString saveError;
-        if (!cfg.save(m_host.app().settings(), &saveError))
+        if (!saveWorkspaceData(m_ws, cfg, &saveError))
             return fail(err::Io, saveError);
 
         // generic 档只登记条目不自动导入：在没有对应解析器的机器上强制导入会失败。
         if (preset.sourceBinding == QStringLiteral("bound"))
         {
-            const Result<IntentResult> restored =
-                m_host.execute(Intent{QStringLiteral("data.workspace.restore"), {}});
+            const Result<QVariant> restored =
+                m_cmds.executeCommand(QStringLiteral("data.workspace.restore"), QVariantMap{});
             if (!restored)
-                return restored;
+                return Result<IntentResult>(restored.error());
         }
 
         if (!preset.plots.isEmpty())
         {
             QJsonObject document;
             document.insert(QStringLiteral("plot.document"), preset.plots);
-            m_host.app().states().restore(QJsonObject{{QStringLiteral("document"), document}});
+            m_window.state().restore(QJsonObject{{QStringLiteral("document"), document}});
         }
 
         IntentResult r;
@@ -255,7 +293,9 @@ private:
         return r;
     }
 
-    RuntimeHost &m_host;
+    nextpilot::plotscope::workbench::IWorkspace &m_ws;
+    nextpilot::plotscope::workbench::IWindow &m_window;
+    nextpilot::plotscope::workbench::ICommands &m_cmds;
 };
 
 ModuleInfo WorkspaceModule::moduleInfo()
@@ -267,7 +307,7 @@ ModuleInfo WorkspaceModule::moduleInfo()
                       {}};
 }
 
-IModule *WorkspaceModule::create()
+IWorkbenchContribution *WorkspaceModule::create()
 {
     return new WorkspaceModule();
 }
@@ -277,10 +317,24 @@ ModuleInfo WorkspaceModule::info() const
     return moduleInfo();
 }
 
-void WorkspaceModule::initialize(RuntimeHost &host)
+void WorkspaceModule::initialize(InstantiationService &services)
 {
-    m_handler = new Handler(host, this);
-    host.registerIntentHandler(m_handler);
+    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(
+        QStringLiteral("vscode.workspace"));
+    auto *window = services.getService<nextpilot::plotscope::workbench::IWindow>(
+        QStringLiteral("vscode.window"));
+    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(
+        QStringLiteral("vscode.commands"));
+    if (!ws || !window || !cmds)
+        return;
+    m_handler = new Handler(*ws, *window, *cmds, this);
+    auto reg = [cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+        cmds->registerCommand(id, nextpilot::plotscope::workbench::asCommandHandler(h, id));
+    };
+    reg(QStringLiteral("workspace.preset.save"), m_handler);
+    reg(QStringLiteral("workspace.preset.open"), m_handler);
+    reg(QStringLiteral("workspace.preset.openPath"), m_handler);
+    reg(QStringLiteral("workspace.preset.list"), m_handler);
 }
 
 #include "WorkspaceModule.moc"

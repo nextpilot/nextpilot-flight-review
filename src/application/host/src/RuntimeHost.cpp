@@ -128,7 +128,7 @@ QHash<QString, QString> RuntimeHost::activate(const QStringList &disabledIds, IU
             errors.insert(id, QStringLiteral("工厂为空"));
             continue;
         }
-        IModule *module = node.reg.factory();
+        IWorkbenchContribution *module = node.reg.factory();
         if (!module)
         {
             errors.insert(id, QStringLiteral("工厂返回空"));
@@ -137,7 +137,9 @@ QHash<QString, QString> RuntimeHost::activate(const QStringList &disabledIds, IU
         module->setParent(this); // 所有权归宿主，delete 时整棵子树回收
         node.instance = module;
         m_initializing = id;
-        module->initialize(*this);
+        // A1b §1.4.4：模块只收服务容器，不再收宿主本体。
+        if (m_services)
+            module->initialize(*m_services);
         m_initializing.clear();
         node.active = true;
         if (ui)

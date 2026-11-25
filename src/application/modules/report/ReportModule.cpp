@@ -2,6 +2,9 @@
 
 #include "BuiltinModuleHub.h"
 #include "Contribution.h"
+#include "InstantiationService.h"
+
+using nextpilot::plotscope::instantiation::InstantiationService;
 
 ModuleInfo ReportModule::moduleInfo()
 {
@@ -19,12 +22,12 @@ ModuleInfo ReportModule::info() const
     return moduleInfo();
 }
 
-IModule *ReportModule::create()
+IWorkbenchContribution *ReportModule::create()
 {
     return new ReportModule();
 }
 
-void ReportModule::initialize(RuntimeHost &)
+void ReportModule::initialize(InstantiationService &)
 {
     // 报告模块无需运行时装配：入口声明在 onAttach，导出管线在外壳层。
 }

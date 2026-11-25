@@ -917,8 +917,23 @@ int main(int argc, char *argv[])
     load.params[QStringLiteral("path")] = fixture;
     const auto loaded = application.host().execute(load);
     CHECK(loaded);
-    // 真实摄取走完：生命周期信号把进度项复位为"空闲"；开始态 "加载中…" 也确实推过。
-    CHECK(progressEvents.contains(QStringLiteral("加载中…")));
+    // 真实摄取走完：IIngest 三事件通道（start → …progress… → finish）顺序回归。
+    // 监工评论 52436915：onDidStartLoad / onDidFinishLoad 各至少触发一次，且 start 早于 finish；
+    // 只测终态等于没测——这里显式断言 start 先于 finish，中间可夹进度文案。
+    const int startIdx = progressEvents.indexOf(QStringLiteral("加载中…"));
+    CHECK(startIdx >= 0); // onDidStartLoad 至少一次
+    int finishIdx = -1;
+    for (int i = 0; i < progressEvents.size(); ++i)
+    {
+        if (progressEvents.at(i) == QStringLiteral("空闲") ||
+            progressEvents.at(i) == QStringLiteral("加载失败"))
+        {
+            finishIdx = i; // 首次终态即可证明 onDidFinishLoad 至少一次
+            break;
+        }
+    }
+    CHECK(finishIdx >= 0);
+    CHECK(startIdx < finishIdx); // 顺序：start → …progress… → finish
     CHECK(window.context()->statusText(QStringLiteral("data.loading.progress")) ==
           QStringLiteral("空闲"));
     const int loadedDsId =

@@ -13,6 +13,7 @@ add_library(ps_dataset STATIC
     include/DataSource.h
     include/SourceHub.h
     include/ChannelMime.h
+    include/IngestChannel.h
 )
 
 target_include_directories(ps_dataset PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)

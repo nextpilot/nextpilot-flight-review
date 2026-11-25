@@ -10,9 +10,9 @@
 namespace nextpilot::plotscope::host
 {
 
-class IModule;
+class IWorkbenchContribution;
 
-using ModuleFactory = std::function<IModule *()>;
+using ModuleFactory = std::function<IWorkbenchContribution *()>;
 
 // 内置模块的**编译期自注册**。
 //
@@ -84,13 +84,13 @@ private:
 //
 // 其中 DataModule 需提供静态接口（无需实例化即可拿到元数据与工厂）：
 //   static ModuleInfo moduleInfo();
-//   static IModule *create();
+//   static IWorkbenchContribution *create();
 #define PS_REGISTER_MODULE(Cls)                                                          \
     namespace {                                                                           \
     const bool g_ps_module_reg_ =                                                        \
         ::nextpilot::plotscope::host::BuiltinModuleHub::registerModule(                  \
             Cls::moduleInfo(),                                                            \
-            []() -> ::nextpilot::plotscope::host::IModule * { return Cls::create(); });   \
+            []() -> ::nextpilot::plotscope::host::IWorkbenchContribution * { return Cls::create(); });   \
     }
 
 } // namespace nextpilot::plotscope::host

@@ -1,14 +1,12 @@
 #pragma once
 
-// 模块契约（居 libs/module）：IModule / ModuleInfo / IUiContext。
-// 纯接口面——运行时（装载、生命周期）在 host/RuntimeHost，
-// 与 IIntentExecutor 居 libs/intent 同一先例：契约在 libs，进程层只做实例化与运行。
-//
-// 模块初始化只拿 RuntimeHost&：它既是执行器（IIntentExecutor），又持有 AppContext
-// （app()/data()/settings()/recorder()/registerIntentHandler() 全在它上面）。
-// 不再有一张"档案室钥匙 + 管家热线"的介绍信——递给模块的就是管家本人。
+// 工作台贡献契约（居 libs/workbench）：IWorkbenchContribution / IUiContext。
+// 纯接口面——运行时（装载、生命周期）在 host/RuntimeHost。
+// A1b（IKXUTD）：由旧模块接口改名而来，initialize 只收服务容器
+// InstantiationService&；模块不再拿 RuntimeHost / AppContext，按 VSCode 名字取服务。
+// ModuleInfo 仍居原模块契约库（物理目录改名归 A3b，本项只改 include 路径与类名）。
 
-#include "AppContext.h"
+#include "InstantiationService.h"
 #include "DatasetHub.h"
 #include "Domain.h"
 #include "IIntentExecutor.h"
@@ -24,8 +22,6 @@ class QWidget;
 
 namespace nextpilot::plotscope::host
 {
-
-class RuntimeHost;
 
 // UI 上下文：headless 时宿主不构造它，模块 onAttach 就不会被调用。
 //
@@ -120,19 +116,19 @@ public:
     virtual QString pickFilePath(const QString &title, const QString &filter) = 0;
 };
 
-// 统一模块接口。模块与扩展包都实现它，宿主一视同仁地装载。
-class IModule : public QObject
+// 统一工作台贡献接口。基础功能模块实现它，宿主一视同仁地装载。
+class IWorkbenchContribution : public QObject
 {
-    Q_OBJECT
+    // 纯抽象接口：不声明 Q_OBJECT，moc 由各具体模块子类负责（同 IUiContext）。
 public:
-    explicit IModule(QObject *parent = nullptr) : QObject(parent) {}
-    ~IModule() override = default;
+    explicit IWorkbenchContribution(QObject *parent = nullptr) : QObject(parent) {}
+    ~IWorkbenchContribution() override = default;
 
     virtual nextpilot::plotscope::host::ModuleInfo info() const = 0;
 
-    // 阶段一：声明能力、订阅事件、注册意图处理器。不碰 UI。
-    // host 既是执行器，又持有 AppContext（app()/data()/settings()/recorder()/...）。
-    virtual void initialize(RuntimeHost &host) = 0;
+    // 阶段一：声明能力、订阅事件、注册命令。不碰 UI。
+    // 只收服务容器：模块按 VSCode 名字从 services 取能力，不接触宿主/AppContext。
+    virtual void initialize(nextpilot::plotscope::instantiation::InstantiationService &services) = 0;
 
     // 阶段二：创建 UI 并 parent 给自己，然后请求宿主放置。
     // headless 时宿主不调用；默认空实现。

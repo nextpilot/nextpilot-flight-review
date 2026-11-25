@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IModule.h"
+#include "IWorkbenchContribution.h"
 #include "IIntentExecutor.h"
 #include "JobRecorder.h"
 #include "ModuleInfo.h"
@@ -19,10 +19,15 @@
 #include <QString>
 #include <QStringList>
 
+namespace nextpilot::plotscope::instantiation
+{
+class InstantiationService; // 只前向声明：host 不 include 装配层服务容器头
+}
+
 namespace nextpilot::plotscope::host
 {
 
-using ModuleFactory = std::function<IModule *()>;
+using ModuleFactory = std::function<IWorkbenchContribution *()>;
 
 struct ModuleRegistration
 {
@@ -39,6 +44,13 @@ public:
     // 它不再自己拥有 repo/settings/toolbox——那些归 AppContext，避免状态分散两处。
     explicit RuntimeHost(nextpilot::plotscope::context::AppContext &appCtx, QObject *parent = nullptr);
     ~RuntimeHost() override;
+
+    // A1b §1.4.4：装配层在构造好服务容器后注入；activate 用它初始化模块。
+    // 只存引用不拥有；只前向声明，host 不 include 装配层头。
+    void setServices(nextpilot::plotscope::instantiation::InstantiationService &services)
+    {
+        m_services = &services;
+    }
 
     // 注册一个模块的工厂（编译期或动态发现都走这里）。
     void registerModule(ModuleInfo info, ModuleFactory factory);
@@ -135,7 +147,7 @@ private:
     struct Node
     {
         ModuleRegistration reg;
-        IModule *instance = nullptr;
+        IWorkbenchContribution *instance = nullptr;
         bool active = false;
         QList<nextpilot::plotscope::intent::IIntentHandler *> handlers; // 该模块注册的意图处理器，卸载时移除
     };
@@ -153,6 +165,7 @@ private:
                                 QHash<QString, QString> &errors) const;
 
     nextpilot::plotscope::context::AppContext &m_appCtx;             // 进程级运行态：唯一持有者
+    nextpilot::plotscope::instantiation::InstantiationService *m_services = nullptr; // 装配层注入的服务容器
     nextpilot::plotscope::registry::UiSlotHub m_uiSlotHub;   // UI 插槽：模块声明、工具箱填充（构造即上树）
     DataLoadHandler m_dataLoadHandler;           // 系统级 data.load 入口，不归属可卸载模块
     DataCommandsHandler m_dataCommandsHandler;   // 系统级 data.reload/export/recent/clearCache，与 load 归口

@@ -30,13 +30,13 @@ target_include_directories(ps_app PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/mcp
     ${CMAKE_CURRENT_SOURCE_DIR}/diag)
 target_link_libraries(ps_app PUBLIC
-    ps_host ps_context ps_intent ps_recording Qt6::Core)
+    ps_assembly ps_host ps_context ps_intent ps_recording Qt6::Core)
 set_target_properties(ps_app PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
 
 # 最小 app 断言（契约 §11 链接关 / 验收 20）：ps_app 的**传递闭包**里不许出现业务模块。
 # 一旦被 PUBLIC 链住，"换个产品只换 modules 集合"就不成立了。
-include(${CMAKE_SOURCE_DIR}/cmake/ShellLinkGuard.cmake)
-ps_guard_closure_has_no_business(ps_app)
+# 本断言在 src/CMakeLists 末尾统一调用：ps_app 现在 PUBLIC 链 ps_assembly，
+# 而 ps_assembly 定义在 application/assembly（晚于本目录），须等全部 target 定义完再查闭包。
 
 # --- cli：一次性批处理入口（只依赖 Core，不链接 Qt Widgets） ---
 # 保证无显示环境下也能跑（CI、服务器、批处理）。

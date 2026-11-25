@@ -4,6 +4,11 @@
 
 #include "BuiltinModuleHub.h"
 #include "ChannelTransformConfig.h"
+#include "InstantiationService.h"
+#include "IWorkspace.h"
+#include "ICommands.h"
+#include "IScriptCapabilities.h"
+#include "CommandAdapter.h"
 #include "DatasetHub.h"
 #include "Dataset.h"
 #include "Intent.h"
@@ -15,6 +20,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 
+using nextpilot::plotscope::instantiation::InstantiationService;
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
 using namespace nextpilot::plotscope::intent;
@@ -34,6 +40,30 @@ namespace
 {
 // 变换路径的 C++ min/max 分桶抽稀：与 Rust lodMinMax 同语义（每桶取最小/最大，
 // x 用桶首样本时间）。桶数恒 <= px。
+// 配置扁平读写：IWorkspace 只给扁平键值（get/setConfiguration），scope→前缀由调用点给出
+// （SettingsStore.cpp scopePrefix：App=app / Workspace=ws / Document=doc）。
+QJsonObject readFlatJson(const nextpilot::plotscope::workbench::IWorkspace &ws,
+                         const QString &key)
+{
+    const QVariant v = ws.getConfiguration(key);
+    if (v.typeId() == QMetaType::QString)
+    {
+        const QJsonDocument doc = QJsonDocument::fromJson(v.toString().toUtf8());
+        if (doc.isObject())
+            return doc.object();
+    }
+    if (v.canConvert<QJsonObject>())
+        return v.toJsonObject();
+    return {};
+}
+
+void writeFlatJson(nextpilot::plotscope::workbench::IWorkspace &ws, const QString &key,
+                   const QJsonObject &obj)
+{
+    const QString text = QString::fromUtf8(QJsonDocument(obj).toJson(QJsonDocument::Compact));
+    ws.setConfiguration(key, QVariant(text));
+}
+
 QVector<LodTriple> minmaxBuckets(const QVector<double> &t, const QVector<double> &v, int n, int px)
 {
     QVector<LodTriple> out;
@@ -71,9 +101,14 @@ class PlotModule::Handler final : public QObject, public IIntentHandler
 {
     Q_OBJECT
 public:
-    explicit Handler(nextpilot::plotscope::context::AppContext &appCtx, QObject *parent)
-        : QObject(parent), m_appCtx(appCtx), m_repo(appCtx.data()), m_settings(appCtx.settings()),
-          m_sources(appCtx.sources()), m_interactions(appCtx.interactions()) {}
+    explicit Handler(nextpilot::plotscope::dataset::IDatasetAccess &repo,
+                     nextpilot::plotscope::dataset::ISourceAccess &sources,
+                     nextpilot::plotscope::workbench::IWorkspace &ws,
+                     nextpilot::plotscope::context::DerivedSeriesHub &derived,
+                     nextpilot::plotscope::uischema::IScriptCapabilities &scriptCaps,
+                     QObject *parent)
+        : QObject(parent), m_repo(repo), m_ws(ws), m_sources(sources),
+          m_derived(derived), m_scriptCaps(scriptCaps) {}
 
     bool canHandle(const Intent &intent) const override
     {
@@ -119,7 +154,7 @@ private:
         {
             // 派生名穿透（独立派生字段）：column 命中派生注册表 → 缓存结果
             // 走 C++ min/max 抽稀返回（画布可直接画派生序列）。
-            const auto *entry = m_appCtx.derivedHub().get(column);
+            const auto *entry = m_derived.get(column);
             if (entry && entry->datasetId == id)
                 return derivedChannelPayload(id, table, column, ds, entry->t, entry->v,
                                              qBound(16, intent.params.value(QStringLiteral("px"), 1024).toInt(), 8192),
@@ -179,7 +214,9 @@ private:
             {
                 if (const DataSourceInfo *info = m_sources.get(srcId))
                 {
-                    const ChannelTransformConfig cfg = ChannelTransformConfig::load(m_settings);
+                    const ChannelTransformConfig cfg = ChannelTransformConfig::fromJson(
+                        readFlatJson(m_ws, QStringLiteral("ws/") +
+                                               QString::fromLatin1(ChannelTransformConfig::kSettingsKey)));
                     if (const ChannelTransformSpec *spec =
                             cfg.find(info->origin, table, column))
                         transformReq = spec->transform;
@@ -189,7 +226,7 @@ private:
 
         if (!transformReq.isEmpty() && transformReq.contains(QStringLiteral("descriptorId")))
         {
-            if (!m_interactions.hasTransformEvaluator())
+            if (!m_scriptCaps.hasTransformEvaluator())
                 return fail(err::NoEval,
                             QStringLiteral("变换求值器未注册（script 模块未装载）"));
 
@@ -217,7 +254,7 @@ private:
             // 统一变换（算子/表达式/Lua）。能力位 CapDerived——通道级变换与
             // 数据源衍生共用"channel 变换"能力，编辑器 UI 按同一位过滤。
             Result<QVector<double>> ev{QVector<double>()};
-            m_interactions.evalTransform(transformReq, CapDerived, wt, wv, ev);
+            m_scriptCaps.evalTransform(transformReq, CapDerived, wt, wv, ev);
             if (!ev)
                 return fail(ev.error().code, ev.error().message);
 
@@ -456,13 +493,11 @@ private:
     // 于是可存盘、可分享、可跨会话恢复；恢复时按 id 匹配，匹配不上的安全跳过。
     Result<IntentResult> saveLayout(const Intent &intent)
     {
-        SettingsStore &store = m_settings;
         const QString name = intent.params.value(QStringLiteral("name"),
                                                 QStringLiteral("default")).toString();
         const QJsonObject obj = intent.params.value(QStringLiteral("layout")).toJsonObject();
         const PlotDocumentSpec spec = PlotDocumentSpec::fromJson(obj);
-        store.setJson(SettingsScope::Document, QStringLiteral("plot/%1").arg(name),
-                      spec.toJson());
+        writeFlatJson(m_ws, QStringLiteral("doc/plot/%1").arg(name), spec.toJson());
         IntentResult r;
         r.payload = true;
         return r;
@@ -473,8 +508,7 @@ private:
     {
         const QString name = intent.params.value(QStringLiteral("name"),
                                                 QStringLiteral("default")).toString();
-        const QJsonObject obj = m_settings.json(SettingsScope::Document,
-                                                 QStringLiteral("plot/%1").arg(name));
+        const QJsonObject obj = readFlatJson(m_ws, QStringLiteral("doc/plot/%1").arg(name));
         if (obj.isEmpty())
             return fail(err::NoEnt, QStringLiteral("plot 布局不存在: %1").arg(name));
         IntentResult r;
@@ -550,11 +584,11 @@ private:
     }
 
 private:
-    DatasetHub &m_repo;
-    SettingsStore &m_settings;
-    SourceHub &m_sources;
-    nextpilot::plotscope::context::InteractionHub &m_interactions;
-    nextpilot::plotscope::context::AppContext &m_appCtx;
+    nextpilot::plotscope::dataset::IDatasetAccess &m_repo;
+    nextpilot::plotscope::workbench::IWorkspace &m_ws;
+    nextpilot::plotscope::dataset::ISourceAccess &m_sources;
+    nextpilot::plotscope::context::DerivedSeriesHub &m_derived;
+    nextpilot::plotscope::uischema::IScriptCapabilities &m_scriptCaps;
 
     // 派生序列取数（独立派生字段）：缓存 t/v → C++ min/max 抽稀 → payload。
     Result<IntentResult> derivedChannelPayload(int id, const QString &table, const QString &column,
@@ -628,7 +662,7 @@ ModuleInfo PlotModule::moduleInfo()
     };
 }
 
-IModule *PlotModule::create()
+IWorkbenchContribution *PlotModule::create()
 {
     return new PlotModule();
 }
@@ -638,10 +672,28 @@ ModuleInfo PlotModule::info() const
     return moduleInfo();
 }
 
-void PlotModule::initialize(RuntimeHost &host)
+void PlotModule::initialize(InstantiationService &services)
 {
-    m_handler = new Handler(host.app(), this);
-    host.registerIntentHandler(m_handler);
+    namespace inst = nextpilot::plotscope::instantiation;
+    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(
+        QStringLiteral("vscode.workspace"));
+    auto *caps = services.getService<nextpilot::plotscope::uischema::IScriptCapabilities>(
+        QStringLiteral("script.capabilities"));
+    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(
+        QStringLiteral("vscode.commands"));
+    if (!ws || !caps || !cmds)
+        return;
+    m_handler = new Handler(ws->dataset(), ws->sources(), *ws, ws->derived(),
+                            *caps, this);
+    // 编排调用走命令；asCommandHandler 把 IIntentHandler 适配成 ICommands::Handler。
+    auto reg = [cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+        cmds->registerCommand(id, nextpilot::plotscope::workbench::asCommandHandler(h, id));
+    };
+    reg(QStringLiteral("plot.render"), m_handler);
+    reg(QStringLiteral("plot.channel"), m_handler);
+    reg(QStringLiteral("plot.instrument"), m_handler);
+    reg(QStringLiteral("plot.layout.save"), m_handler);
+    reg(QStringLiteral("plot.layout.load"), m_handler);
 }
 
 void PlotModule::onAttach(IUiContext &ui)

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "AppContext.h"
-#include "IModule.h"
+#include "IWorkbenchContribution.h"
 #include "UiSlotHub.h"
 
 #include <QHash>

@@ -7,21 +7,21 @@
 //
 // 写法对齐既有模块（ScriptModule/ProtocolModule）：全局作用域 + using 别名。
 
-#include "IModule.h"
+#include "IWorkbenchContribution.h"
 
 #include <QObject>
 
 using namespace nextpilot::plotscope::host;
 using namespace nextpilot::plotscope::registry;
 
-class ReportModule final : public nextpilot::plotscope::host::IModule
+class ReportModule final : public nextpilot::plotscope::host::IWorkbenchContribution
 {
     Q_OBJECT
 public:
     static nextpilot::plotscope::host::ModuleInfo moduleInfo();
-    static nextpilot::plotscope::host::IModule *create();
+    static nextpilot::plotscope::host::IWorkbenchContribution *create();
 
     nextpilot::plotscope::host::ModuleInfo info() const override;
-    void initialize(nextpilot::plotscope::host::RuntimeHost &host) override;
+    void initialize(nextpilot::plotscope::instantiation::InstantiationService &services) override;
     void onAttach(nextpilot::plotscope::host::IUiContext &ui) override;
 };

@@ -3,9 +3,13 @@
 #include "ProtocolIntentHandler.h"
 #include "BuiltinModuleHub.h"
 #include "Contribution.h"
-#include "IModule.h"
+#include "IWorkbenchContribution.h"
+#include "InstantiationService.h"
+#include "ICommands.h"
+#include "CommandAdapter.h"
 #include "RuntimeHost.h"
 
+using nextpilot::plotscope::instantiation::InstantiationService;
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
 using namespace nextpilot::plotscope::intent;
@@ -29,7 +33,7 @@ ModuleInfo ProtocolModule::moduleInfo()
     };
 }
 
-IModule *ProtocolModule::create()
+IWorkbenchContribution *ProtocolModule::create()
 {
     return new ProtocolModule();
 }
@@ -39,13 +43,21 @@ ModuleInfo ProtocolModule::info() const
     return moduleInfo();
 }
 
-void ProtocolModule::initialize(RuntimeHost &host)
+void ProtocolModule::initialize(InstantiationService &services)
 {
     // 纯逻辑在协议库（ps_protocol）+ SPI v2 CustomProtocolParser；
     // 模块负责把"模板校验/单帧试算/模板库"这三件界面之外也成立的事做成意图，
     // 让脚本与 CLI 不必复制一份校验逻辑，也不必经过任何对话框。
+    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(
+        QStringLiteral("vscode.commands"));
+    if (!cmds)
+        return;
     m_handler = new ProtocolIntentHandler(this);
-    host.registerIntentHandler(m_handler);
+    auto reg = [cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+        cmds->registerCommand(id, nextpilot::plotscope::workbench::asCommandHandler(h, id));
+    };
+    for (const QString &op : ProtocolIntentHandler::supportedOps())
+        reg(op, m_handler);
 }
 
 void ProtocolModule::onAttach(IUiContext &ui)

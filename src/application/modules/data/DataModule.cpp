@@ -6,15 +6,21 @@
 #include "ErrorCodes.h"
 #include "Events.h"
 #include "Contribution.h"
-#include "IModule.h"
+#include "IWorkbenchContribution.h"
+#include "InstantiationService.h"
+#include "IWorkspace.h"
+#include "ICommands.h"
+#include "IScriptCapabilities.h"
 #include "RuntimeHost.h"
 #include "Result.h"
 
 #include <QList>
+#include <QPointer>
 #include <QVariantMap>
 
 #include <cstdio>
 
+using nextpilot::plotscope::instantiation::InstantiationService;
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::dataset;
 using namespace nextpilot::plotscope::intent;
@@ -36,7 +42,7 @@ ModuleInfo DataModule::moduleInfo()
     };
 }
 
-IModule *DataModule::create()
+IWorkbenchContribution *DataModule::create()
 {
     return new DataModule();
 }
@@ -46,25 +52,51 @@ ModuleInfo DataModule::info() const
     return moduleInfo();
 }
 
-void DataModule::initialize(RuntimeHost &host)
+void DataModule::initialize(InstantiationService &services)
 {
-    m_host = &host;
-    // 只订阅仓库事件；不碰 UI、不认识格式。用 this 作 context object，
-    // 模块析构时连接自动断开——不需要手动解绑。
-    // PLOTSCOPE_QUIET_STDOUT：MCP stdio 桥等协议场景下 stdout 是协议通道，
-    // 提示打印必须让路（stderr 随便打，stdout 一个字节都不能混入）。
+    auto *ws = services.getService<nextpilot::plotscope::workbench::IWorkspace>(
+        QStringLiteral("vscode.workspace"));
+    auto *cmds = services.getService<nextpilot::plotscope::workbench::ICommands>(
+        QStringLiteral("vscode.commands"));
+    auto *caps = services.getService<nextpilot::plotscope::uischema::IScriptCapabilities>(
+        QStringLiteral("script.capabilities"));
+    if (!ws || !cmds || !caps)
+        return;
+    // onAttach 的"来源"画廊需要格式驱动元数据；initialize 阶段按名取用并缓存，
+    // 避免 onAttach 回头拿宿主（m_host 在 A1b 已不再赋值）。
+    m_driverMetas = ws->sourceDriverMetas();
+    // 只订阅仓库事件；不碰 UI、不认识格式。§1.5：DatasetHub 信号 → IDatasetAccess Event。
+    // PLOTSCOPE_QUIET_STDOUT：MCP stdio 桥等协议场景下 stdout 是协议通道。
     const bool quiet = !qEnvironmentVariableIsEmpty("PLOTSCOPE_QUIET_STDOUT");
-    connect(&host.app().data(), &DatasetHub::datasetAdded, this, [quiet](DatasetId id) {
+    ws->dataset().onDidAddDocument([quiet](const QString &id) {
         if (quiet)
-            fprintf(stderr, "[data] dataset added: #%d\n", id);
+            fprintf(stderr, "[data] dataset added: #%s\n", qPrintable(id));
         else
-            fprintf(stdout, "[data] dataset added: #%d\n", id);
+            fprintf(stdout, "[data] dataset added: #%s\n", qPrintable(id));
     });
-    connect(&host.app().data(), &DatasetHub::datasetRemoved, this, [quiet](DatasetId id) {
+    ws->dataset().onDidRemoveDocument([quiet](const QString &id) {
         if (quiet)
-            fprintf(stderr, "[data] dataset removed: #%d\n", id);
+            fprintf(stderr, "[data] dataset removed: #%s\n", qPrintable(id));
         else
-            fprintf(stdout, "[data] dataset removed: #%d\n", id);
+            fprintf(stdout, "[data] dataset removed: #%s\n", qPrintable(id));
+    });
+    // 加载生命周期 + 进度 → 状态栏（验收 7）：走 IIngest 事件，模块不认识宿主/AppContext。
+    // 事件源头是摄取管道（评论 52436915 裁定挂 IIngest，不抬到 workspace 全局）。
+    // QPointer 守护：模块析构后回调自动跳过（adapter 的 connect 归装配层生命周期）。
+    QPointer<DataModule> self(this);
+    ws->ingest().onDidStartLoad([self]() {
+        if (self && self->m_ui)
+            self->m_ui->updateStatus(QStringLiteral("data.loading.progress"),
+                                     QStringLiteral("加载中…"));
+    });
+    ws->ingest().onDidFinishLoad([self](bool ok) {
+        if (self && self->m_ui)
+            self->m_ui->updateStatus(QStringLiteral("data.loading.progress"),
+                                     ok ? QStringLiteral("空闲") : QStringLiteral("加载失败"));
+    });
+    ws->ingest().onDidReportProgress([self](int, const QString &text) {
+        if (self && self->m_ui)
+            self->m_ui->updateStatus(QStringLiteral("data.loading.progress"), text);
     });
     // 数据表格查看器：树右键"查看数据表格" → data.table.open
     // → 按需创建中央页签面板（不与画布争位）→ 转发 data.table.show 绑定数据。
@@ -72,39 +104,40 @@ void DataModule::initialize(RuntimeHost &host)
     // 模块只发字符串 id，不依赖 Qt Widgets，headless 构建保持纯净。
     // 注册在 initialize（host 可用）；m_ui 在 onAttach 才有——
     // 动作是运行时触发的，届时 GUI 已 attach。
-    AppContext &appCtx = host.app();
-
-    // A0b 清场：活动通道取数接缝注册（Q1 违规领域接缝）已按施工令删除，
-    // A1b 将以泛化能力接缝重接。
-    appCtx.interactions().registerViewAction(
-        QStringLiteral("data.table.open"),
-        [this, &appCtx](const QVariantMap &params) -> Result<QVariant> {
+    // 视图动作：A1b 保持 view action 注册（IScriptCapabilities 既有接口，§1.2.1 注释：
+    // GUI 侧仍经 dispatchViewAction 消费，A2b 才迁 command）。此前误迁成 registerCommand
+    // 导致 GUI 层 DataManagerPanel / 测试按 dispatchViewAction 取不到（998 回归）。
+    // 模块只经 caps 注册，不碰 AppContext/interactionHub。
+    caps->registerViewAction(QStringLiteral("data.table.open"),
+        [this, caps](const QVariantMap &params) -> Result<QVariant> {
             if (!m_ui)
                 return fail(err::Unsupported, QStringLiteral("数据表格需要 GUI 环境"));
             if (!m_ui->requestPanel(nextpilot::plotscope::registry::Region::Editor,
                                     QStringLiteral("data.table")))
                 return fail(err::Unsupported, QStringLiteral("数据表格面板不可用"));
             Result<QVariant> out{QVariant()};
-            appCtx.interactions().dispatchViewAction(
-                QStringLiteral("data.table.show"), params, out);
+            caps->dispatchViewAction(QStringLiteral("data.table.show"), params, out);
             return out;
         });
 }
 
-QList<UiAction> DataModule::sourceGalleryActions(const QList<parser::IMessageParser *> &drivers)
+namespace
+{
+// 唯一实现：接受 {id, displayName} 元数据对，两个公开重载都转发到这里。
+QList<UiAction> buildSourceGalleryActions(const QVector<QPair<QString, QString>> &metas)
 {
     QList<UiAction> actions;
     int fmtOrder = 100;
     int common = 0;
-    for (parser::IMessageParser *driver : drivers)
+    for (const auto &meta : metas)
     {
-        if (!driver)
-            continue;
+        const QString &id = meta.first;
+        const QString &displayName = meta.second;
         UiAction fmt;
-        fmt.id = QStringLiteral("data.source.") + driver->id();
-        fmt.label = driver->displayName();
+        fmt.id = QStringLiteral("data.source.") + id;
+        fmt.label = displayName;
         fmt.slotId = QStringLiteral("ribbon.group.data.sources");
-        fmt.visual = driver->id();
+        fmt.visual = id;
         fmt.galleryGroup = QStringLiteral("文件格式");
         fmt.icon = QStringLiteral("file_open");
         fmt.intentOp = QStringLiteral("data.load");
@@ -115,10 +148,10 @@ QList<UiAction> DataModule::sourceGalleryActions(const QList<parser::IMessagePar
         if (common < 4)
         {
             UiAction fav;
-            fav.id = QStringLiteral("data.source.common.") + driver->id();
-            fav.label = driver->displayName();
+            fav.id = QStringLiteral("data.source.common.") + id;
+            fav.label = displayName;
             fav.slotId = fmt.slotId;
-            fav.visual = driver->id();
+            fav.visual = id;
             fav.galleryGroup = QStringLiteral("常用");
             fav.icon = QStringLiteral("file_open");
             fav.intentOp = QStringLiteral("data.load");
@@ -127,6 +160,22 @@ QList<UiAction> DataModule::sourceGalleryActions(const QList<parser::IMessagePar
         }
     }
     return actions;
+}
+} // namespace
+
+QList<UiAction> DataModule::sourceGalleryActions(const QList<parser::IMessageParser *> &drivers)
+{
+    QVector<QPair<QString, QString>> metas;
+    metas.reserve(drivers.size());
+    for (const parser::IMessageParser *d : drivers)
+        if (d)
+            metas.append({d->id(), d->displayName()});
+    return buildSourceGalleryActions(metas);
+}
+
+QList<UiAction> DataModule::sourceGalleryActions(const QVector<QPair<QString, QString>> &metas)
+{
+    return buildSourceGalleryActions(metas);
 }
 
 void DataModule::onAttach(IUiContext &ui)
@@ -236,9 +285,8 @@ void DataModule::onAttach(IUiContext &ui)
 
     // 来源画廊：条目由已装载的格式驱动元数据派生（sourceGalleryActions），
     // 壳不保留格式常量表；装/卸解析器，图块随之增减。
-    const QList<parser::IMessageParser *> drivers =
-        m_host ? m_host->app().toolbox().drivers() : QList<parser::IMessageParser *>{};
-    for (const UiAction &a : sourceGalleryActions(drivers))
+    // 驱动元数据在 initialize 阶段经 IWorkspace 按名取用并缓存（不再回头拿宿主）。
+    for (const UiAction &a : sourceGalleryActions(m_driverMetas))
         ui.addAction(a);
 
     ActivitySpec dataActivity;

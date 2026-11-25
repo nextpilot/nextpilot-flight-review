@@ -115,6 +115,10 @@ add_subdirectory("${PS_THIRDPARTY_DIR}/lua-5.4" "${CMAKE_CURRENT_BINARY_DIR}/3rd
 
 add_subdirectory(libs/foundation)
 
+# 实例化服务（VSCode platform/instantiation 对位）：按 id 注册/取用服务实例。
+# 纯 Qt Core，headless 可用；不依赖任何机制库，故紧随 foundation 定义。
+add_subdirectory(libs/instantiation)
+
 # Arrow 导入导出通道（nanoarrow，纯转换库；不依赖 Qt/kernel/上层）。
 add_subdirectory(libs/arrow)
 
@@ -150,6 +154,11 @@ add_subdirectory(libs/module)
 
 # B7 core 已消亡：类型全部迁入 libs/*，消费者直接链对应库。
 add_subdirectory(libs/recording)
+
+# 工作台契约（VSCode 对位）：access 接口 + vscode.* 服务接口 + IWorkbenchContribution。
+# 依赖 dataset/intent/recording/instantiation，故在这些地基库之后定义。
+add_subdirectory(libs/workbench)
+
 add_subdirectory(application/host)
 
 # === 协议逻辑库（顺序段协议解码内核）===
@@ -201,3 +210,8 @@ add_subdirectory(application/assembly)
 add_subdirectory(application/bare)
 # 装配层工具 / 基准产物（可链模块与工具箱）。
 add_subdirectory(application/tools)
+
+# 最小 app 闭包守卫（契约 §11 / 验收 20）：必须在 ps_assembly 等全部 target 定义后调用，
+# 才能递归覆盖 ps_app → ps_assembly 这条新链，确保业务模块没从装配层渗进最小 app。
+include(${CMAKE_SOURCE_DIR}/cmake/ShellLinkGuard.cmake)
+ps_guard_closure_has_no_business(ps_app)

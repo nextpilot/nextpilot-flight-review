@@ -19,7 +19,7 @@ using nextpilot::plotscope::foundation::fail;
 // op → 执行函数的注册表。意图分发的唯一机制：
 //   canHandle = contains(op)；execute = 查表调用；op 字符串只写一遍。
 //
-// 纪律：所有 IIntentHandler / IModule::Handler 的 op 分发一律用它——
+// 纪律：所有 IIntentHandler / ICommands::Handler 的 op 分发一律用它——
 // 禁止手写 canHandle 长链 + execute if-else（曾出现同一批 op 写两遍、
 // 两处人工保持同步的形态，收敛于本表）。
 class OpDispatch

@@ -3,6 +3,7 @@
 #include "AppContext.h"
 #include "JobRecorder.h"
 #include "RuntimeHost.h"
+#include "WorkbenchServices.h"
 
 #include <QObject>
 
@@ -44,6 +45,7 @@ private:
     nextpilot::plotscope::context::AppContext m_ctx;
     nextpilot::plotscope::host::RuntimeHost m_host;
     nextpilot::plotscope::intent::JobRecorder m_recorder;
+    nextpilot::plotscope::assembly::WorkbenchServices m_services;
 };
 
 } // namespace nextpilot::plotscope::app

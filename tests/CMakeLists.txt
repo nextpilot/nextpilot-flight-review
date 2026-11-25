@@ -426,3 +426,15 @@ add_executable(ps_test_status_hub test_status_hub.cpp)
 target_link_libraries(ps_test_status_hub PRIVATE ps_context Qt6::Core Qt6::Test)
 set_target_properties(ps_test_status_hub PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_status_hub COMMAND ps_test_status_hub)
+
+# ps_instantiation 独立验收（IKXUTD A1b §1.1）：注册/类型安全取用/同 id 拒绝/倒序撤。
+add_executable(ps_test_instantiation test_instantiation.cpp)
+target_link_libraries(ps_test_instantiation PRIVATE ps_instantiation Qt6::Core)
+set_target_properties(ps_test_instantiation PROPERTIES AUTOMOC OFF CXX_STANDARD 17)
+add_test(NAME ps_instantiation COMMAND ps_test_instantiation)
+
+# ps_workbench 契约验收（IKXUTD A1b §1.3）：接口可编译 + NullWindow 全 no-op + Subscription。
+add_executable(ps_test_workbench_contracts test_workbench_contracts.cpp)
+target_link_libraries(ps_test_workbench_contracts PRIVATE ps_workbench Qt6::Core)
+set_target_properties(ps_test_workbench_contracts PROPERTIES AUTOMOC OFF CXX_STANDARD 17)
+add_test(NAME ps_workbench_contracts COMMAND ps_test_workbench_contracts)

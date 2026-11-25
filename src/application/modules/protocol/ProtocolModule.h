@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IModule.h"
+#include "IWorkbenchContribution.h"
 
 // 协议模块：把协议库 的纯逻辑能力（新建/打开/校验 .psproto +
 // SPI v2 自定义协议解析）以 UI 入口的形式贡献到"协议"Ribbon 页。
@@ -13,15 +13,15 @@ namespace nextpilot::plotscope::host
 class ProtocolIntentHandler;
 }
 
-class ProtocolModule final : public nextpilot::plotscope::host::IModule
+class ProtocolModule final : public nextpilot::plotscope::host::IWorkbenchContribution
 {
     Q_OBJECT
 public:
     static nextpilot::plotscope::host::ModuleInfo moduleInfo();
-    static nextpilot::plotscope::host::IModule *create();
+    static nextpilot::plotscope::host::IWorkbenchContribution *create();
 
     nextpilot::plotscope::host::ModuleInfo info() const override;
-    void initialize(nextpilot::plotscope::host::RuntimeHost &host) override;
+    void initialize(nextpilot::plotscope::instantiation::InstantiationService &services) override;
     void onAttach(nextpilot::plotscope::host::IUiContext &ui) override;
 
 private:

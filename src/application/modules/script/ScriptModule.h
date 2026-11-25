@@ -1,6 +1,6 @@
 #pragma once
 
-#include "IModule.h"
+#include "IWorkbenchContribution.h"
 #include "LuaScriptLibrary.h"
 #include "FilterCatalogue.h"
 #include "ScriptFacade.h"
@@ -12,21 +12,32 @@ namespace nextpilot::plotscope::script
 {
 class BatchHandler;
 class PythonHandler;
-}
+} // namespace nextpilot::plotscope::script
+
+namespace nextpilot::plotscope::uischema
+{
+class IScriptCapabilities;
+} // namespace nextpilot::plotscope::uischema
+
+namespace nextpilot::plotscope::workbench
+{
+class IWorkspace;
+class ICommands;
+} // namespace nextpilot::plotscope::workbench
 
 // 脚本模块：注册 "script.run" 意图处理器。
 // 它不认识任何业务格式或绘图细节——只把门面 ps 注入 Lua，脚本的 ps.* 调用
 // 由门面翻译成普通意图，走与 GUI/CLI 完全相同的执行器。
-class ScriptModule final : public nextpilot::plotscope::host::IModule
+class ScriptModule final : public nextpilot::plotscope::host::IWorkbenchContribution
 {
     Q_OBJECT
 public:
     // 静态元数据：供编译期自注册（PS_REGISTER_MODULE）使用，无需实例化。
     static nextpilot::plotscope::host::ModuleInfo moduleInfo();
-    static nextpilot::plotscope::host::IModule *create();
+    static nextpilot::plotscope::host::IWorkbenchContribution *create();
 
     nextpilot::plotscope::host::ModuleInfo info() const override;
-    void initialize(nextpilot::plotscope::host::RuntimeHost &host) override;
+    void initialize(nextpilot::plotscope::instantiation::InstantiationService &services) override;
     void onAttach(nextpilot::plotscope::host::IUiContext &ui) override;
     ~ScriptModule() override;
 
@@ -44,7 +55,9 @@ private:
     //   script.workbench.run  {source, name}   运行编辑器当前文档（引擎每次新建，与 script.run 同路径）
     //   script.workbench.repl {code}           控制台 REPL 求值（持久 VM，进程期共享全局状态）
     void registerWorkbenchActions(
-        nextpilot::plotscope::host::RuntimeHost &host,
+        nextpilot::plotscope::uischema::IScriptCapabilities &caps,
+        nextpilot::plotscope::workbench::IWorkspace &ws,
+        nextpilot::plotscope::workbench::ICommands &cmds,
         nextpilot::plotscope::context::ScriptFacade::ViewActionDispatcher dispatcher);
     std::unique_ptr<nextpilot::plotscope::context::ScriptFacade> m_replFacade;
     std::unique_ptr<nextpilot::plotscope::script::LuaEngine> m_replEngine;

@@ -4,11 +4,11 @@
 
 ## 本目录是什么
 
-**模块（Module）——app 的基底功能，没有业务知识**：data / plot / script / protocol / analysis / settings / report。每个实现 `libs/module` 的 IModule，在各自 TU 静态自注册（PS_REGISTER_MODULE），随 app 编译、宿主按依赖拓扑装载。**编译期固定：只能编译时增删，无运行时卸载概念**（术语定标见 `../LAYERS.md` 词表）；业务知识归扩展（工具箱/插件，见 `../../toolbox/`）。
+**模块（Module）——app 的基底功能，没有业务知识**：data / plot / script / protocol / analysis / settings / report。每个实现 `libs/workbench` 的 IWorkbenchContribution，在各自 TU 静态自注册（PS_REGISTER_MODULE），随 app 编译、宿主按依赖拓扑装载。**编译期固定：只能编译时增删，无运行时卸载概念**（术语定标见 `../LAYERS.md` 词表）；业务知识归扩展（工具箱/插件，见 `../../toolbox/`）。
 
 ## 允许放
 
-- 实现 IModule 的模块代码（initialize 声明能力/意图处理器、onAttach 建面板）
+- 实现 IWorkbenchContribution 的模块代码（initialize 声明能力/意图处理器、onAttach 建面板）
 - 本模块的意图处理器、面板工厂、专属视图逻辑（UI 经 IUiContext 请求，不直接建窗）
 - 本模块目录内的子结构（子目录私有，不外泄）
 
