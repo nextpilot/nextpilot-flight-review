@@ -29,7 +29,9 @@ using nextpilot::plotscope::intent::IntentResult;
 //                      -> {value, out, new, dataset, rows}
 //                      dataset 有效时把首表全部数值列经 shm 注入 ds，
 //                      脚本 ds['x']=... 的写回列落到临时 .bin（new 字段）
-//   script.py.status   {}                            -> {available, interpreter, running, pid}
+//   script.py.status   {}                            -> {available, interpreter, numpy, running, pid}
+//                       numpy=false 时带 numpy_error：桥的大数组旁路（memmap/tofile）
+//                       硬依赖 numpy，缺它时 eval/exec 全组不可用，UI 可据此关功能
 //   script.py.push     {dataset, column, name?}      -> {rows, name}（单列推给 Python 全局）
 //   script.py.pull     {name, want_values?, timeout_ms?}
 //                      -> {rows, mean?, values?}（want_values 仅小数组用）
@@ -73,6 +75,11 @@ private:
     PythonBridge m_bridge;
     QVariantMap m_lastNew;    // 末次 exec 的写回列元数据 {列名:{path,rows}}
     dataset::DatasetId m_lastDataset = -1; // 写回列的母数据集（writeback 缺省用它）
+
+    // numpy 可用性探测缓存（script.py.status 用；桥的数组旁路硬依赖 numpy）。
+    bool m_numpyChecked = false;
+    bool m_numpyAvailable = false;
+    QString m_numpyError;
 };
 
 } // namespace nextpilot::plotscope::script

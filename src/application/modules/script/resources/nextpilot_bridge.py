@@ -25,7 +25,13 @@ import io
 import json
 import sys
 
-import numpy as np
+try:
+    import numpy as np
+except ImportError:  # 桥的大数组旁路（memmap / tofile）硬依赖 numpy
+    sys.stderr.write(
+        "[bridge] 缺少 numpy：PlotScope 的 Python 桥需要它（ds 列注入 / 写回走 "
+        "np.memmap 与 tofile）。安装方式：apt install python3-numpy 或 pip install numpy\n")
+    raise
 
 
 class Ds:

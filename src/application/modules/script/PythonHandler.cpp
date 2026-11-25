@@ -8,6 +8,7 @@
 #include <QElapsedTimer>
 #include <QFile>
 #include <QStandardPaths>
+#include <QProcess>
 #include <QUuid>
 
 #include <limits>
@@ -140,6 +141,25 @@ Result<IntentResult> PythonHandler::execute(const Intent &intent)
         const bool available = !QStandardPaths::findExecutable(m_bridge.interpreter()).isEmpty();
         st.insert(QStringLiteral("available"), available);
         st.insert(QStringLiteral("interpreter"), m_bridge.interpreter());
+        // numpy 是否可用（桥的大数组旁路硬依赖它）：一次探测 + 缓存。
+        // 没有 numpy 时 eval/exec 全部会失败，UI 与测试要能提前知道原因，而不是
+        // 只看到一句「Python 桥子进程退出」。
+        if (available && !m_numpyChecked)
+        {
+            QProcess probe;
+            probe.start(m_bridge.interpreter(),
+                        {QStringLiteral("-c"), QStringLiteral("import numpy")});
+            m_numpyChecked = true;
+            m_numpyAvailable = probe.waitForFinished(10000)
+                               && probe.exitStatus() == QProcess::NormalExit
+                               && probe.exitCode() == 0;
+            m_numpyError = m_numpyAvailable
+                ? QString()
+                : QString::fromUtf8(probe.readAllStandardError()).trimmed().right(200);
+        }
+        st.insert(QStringLiteral("numpy"), m_numpyAvailable);
+        if (!m_numpyAvailable && !m_numpyError.isEmpty())
+            st.insert(QStringLiteral("numpy_error"), m_numpyError);
         st.insert(QStringLiteral("running"), m_bridge.running());
         st.insert(QStringLiteral("error_tail"), m_bridge.lastStderr().trimmed().right(300));
         return Result<IntentResult>(IntentResult{st});

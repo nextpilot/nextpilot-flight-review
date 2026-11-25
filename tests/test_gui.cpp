@@ -1117,53 +1117,58 @@ int main(int argc, char *argv[])
     // 回归点：编辑器 .py 运行走 script.workbench.run 同一入口（按名字后缀路由
     // Python 引擎）；ds 注入/写回 v2 与 headless 完全同一条执行器路径。
     {
-        auto *ui = window.context();
-        CHECK(ui != nullptr);
-
-        // status：解释器可用（环境无 python3 时给出明确失败信息）
         Intent st;
         st.op = QStringLiteral("script.py.status");
         const Result<IntentResult> str = application.host().execute(st);
         CHECK(str && str.value().payload.toMap().value(QStringLiteral("available")).toBool());
+        const bool pyNumpy =
+            str.value().payload.toMap().value(QStringLiteral("numpy")).toBool();
+        if (!pyNumpy)
+            OK("Python 子进程桥：numpy 不可用，跳过 GUI .py 运行/写回用例"
+               "（诊断见 script.py.status 的 numpy_error）");
+        else
+        {
+            auto *ui = window.context();
+            CHECK(ui != nullptr);
+            // .py 运行路由：script.workbench.run（编辑器 F5 同一 view action）
+            QVariantMap rp;
+            rp.insert(QStringLiteral("source"),
+                      QByteArrayLiteral("print('py-gui-ok')\n7 * 6\n"));
+            rp.insert(QStringLiteral("name"), QStringLiteral("pytest_demo.py"));
+            Result<QVariant> rout{QVariant()};
+            CHECK(application.context().interactions().dispatchViewAction(
+                QStringLiteral("script.workbench.run"), rp, rout));
+            CHECK(rout.ok());
 
-        // .py 运行路由：script.workbench.run（编辑器 F5 同一 view action）
-        QVariantMap rp;
-        rp.insert(QStringLiteral("source"),
-                  QByteArrayLiteral("print('py-gui-ok')\n7 * 6\n"));
-        rp.insert(QStringLiteral("name"), QStringLiteral("pytest_demo.py"));
-        Result<QVariant> rout{QVariant()};
-        CHECK(application.context().interactions().dispatchViewAction(
-            QStringLiteral("script.workbench.run"), rp, rout));
-        CHECK(rout.ok());
-
-        // ds 注入 + 写回 v2（数据面与 headless 同路径）
-        const Dataset *before = application.data().get(loadedDsId);
-        CHECK(before && before->tableCount() >= 1);
-        const QString colName = before->table(0)->columns.first().name;
-        const int countBefore = application.data().count();
-        QVariantMap ep;
-        ep.insert(QStringLiteral("dataset"), loadedDsId);
-        ep.insert(QStringLiteral("source"), QStringLiteral(
-                       "v = ds['%1']\nds['py_derived'] = v * 2\nfloat(v[0])").arg(colName));
-        Intent ei;
-        ei.op = QStringLiteral("script.py.exec");
-        ei.params = ep;
-        const Result<IntentResult> er = application.host().execute(ei);
-        CHECK(er && er.value().payload.toMap()
-                        .value(QStringLiteral("new"))
-                        .toMap()
-                        .contains(QStringLiteral("py_derived")));
-        Intent wi;
-        wi.op = QStringLiteral("script.py.writeback");
-        const Result<IntentResult> wr = application.host().execute(wi);
-        CHECK(wr);
-        const int v2Id =
-            wr.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
-        CHECK(v2Id >= 0 && v2Id != loadedDsId);
-        CHECK(application.data().count() == countBefore + 1);
-        const Dataset *v2 = application.data().get(v2Id);
-        CHECK(v2 && v2->table(0)->column(QStringLiteral("py_derived")) != nullptr);
-        OK("Python 桥：.py 运行路由 + ds 注入 + 写回 v2 数据集（GUI 同路径）");
+            // ds 注入 + 写回 v2（数据面与 headless 同路径）
+            const Dataset *before = application.data().get(loadedDsId);
+            CHECK(before && before->tableCount() >= 1);
+            const QString colName = before->table(0)->columns.first().name;
+            const int countBefore = application.data().count();
+            QVariantMap ep;
+            ep.insert(QStringLiteral("dataset"), loadedDsId);
+            ep.insert(QStringLiteral("source"), QStringLiteral(
+                           "v = ds['%1']\nds['py_derived'] = v * 2\nfloat(v[0])").arg(colName));
+            Intent ei;
+            ei.op = QStringLiteral("script.py.exec");
+            ei.params = ep;
+            const Result<IntentResult> er = application.host().execute(ei);
+            CHECK(er && er.value().payload.toMap()
+                            .value(QStringLiteral("new"))
+                            .toMap()
+                            .contains(QStringLiteral("py_derived")));
+            Intent wi;
+            wi.op = QStringLiteral("script.py.writeback");
+            const Result<IntentResult> wr = application.host().execute(wi);
+            CHECK(wr);
+            const int v2Id =
+                wr.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
+            CHECK(v2Id >= 0 && v2Id != loadedDsId);
+            CHECK(application.data().count() == countBefore + 1);
+            const Dataset *v2 = application.data().get(v2Id);
+            CHECK(v2 && v2->table(0)->column(QStringLiteral("py_derived")) != nullptr);
+            OK("Python 桥：.py 运行路由 + ds 注入 + 写回 v2 数据集（GUI 同路径）");
+        }
     }
 
     // --- 5d) data.derive：Rust 实时派生 → 结果给 UI，原数据集零改动 ---

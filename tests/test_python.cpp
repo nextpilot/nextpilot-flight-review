@@ -49,14 +49,28 @@ int main(int argc, char **argv)
     for (auto it = errors.constBegin(); it != errors.constEnd(); ++it)
         fprintf(stderr, "[skip] %s: %s\n", qPrintable(it.key()), qPrintable(it.value()));
 
-    // ---- 0) status：解释器可用（沙箱有 python3；找不到则后续全部失败，给出明确诊断）----
+    // ---- 0) status：解释器 + numpy 可用（桥的数组旁路硬依赖 numpy）----
+    bool pyNumpy = false;
     {
         const Result<IntentResult> r = runOp(application, QStringLiteral("script.py.status"), {});
         CHECK(r);
         const QVariantMap st = r.value().payload.toMap();
         CHECK(st.value(QStringLiteral("available")).toBool());
-        fprintf(stderr, "[py] interpreter=%s\n",
-                qPrintable(st.value(QStringLiteral("interpreter")).toString()));
+        pyNumpy = st.value(QStringLiteral("numpy")).toBool();
+        fprintf(stderr, "[py] interpreter=%s numpy=%d\n",
+                qPrintable(st.value(QStringLiteral("interpreter")).toString()),
+                int(pyNumpy));
+        if (!pyNumpy)
+            fprintf(stderr, "[py] numpy 诊断：%s\n",
+                    qPrintable(st.value(QStringLiteral("numpy_error")).toString()));
+    }
+    if (!pyNumpy)
+    {
+        // 缺 numpy：桥进程在 import 阶段就退出，eval/exec/push/pull 全组无意义。
+        // 这里显式跳过而不是把断言染红——装上 numpy（apt install python3-numpy /
+        // pip install numpy）后同一套用例会真跑。
+        fprintf(stdout, "[skip] ps_python：numpy 不可用，跳过 2.6.1 全组用例\n");
+        return 0;
     }
 
     // ---- 1) 2.6.1：eval 基本面（数值/字符串/结构体往返）----
