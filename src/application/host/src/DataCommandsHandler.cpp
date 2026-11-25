@@ -1512,9 +1512,21 @@ Result<IntentResult> DataCommandsHandler::connectSerial(const Intent &intent)
     const QString baudText = sep > 0 ? rest.mid(sep + 1) : QStringLiteral("115200");
     if (dev.isEmpty())
         return fail(err::Args, QStringLiteral("缺少串口设备路径（serial:///dev/ttyUSB0:115200）"));
-    static const QHash<int, int> kBaud{{9600, B9600}, {19200, B19200}, {38400, B38400},
-                                       {57600, B57600}, {115200, B115200}, {230400, B230400},
-                                       {460800, B460800}, {921600, B921600}};
+    // <termios.h> 的波特率常量随平台而变：Linux（glibc）有 B460800/B921600，
+    // BSD 系（macOS）最高只到 B230400。直接写标识符会让 macOS 整份文件编译失败
+    // （error: use of undeclared identifier 'B921600'），所以按「常量是否存在」入表，
+    // 缺项时由下面的 contains 分支落到"不支持的波特率"，逻辑不用另开分支。
+    static const QHash<int, int> kBaud = [] {
+        QHash<int, int> m{{9600, B9600},   {19200, B19200},   {38400, B38400},
+                          {57600, B57600}, {115200, B115200}, {230400, B230400}};
+#ifdef B460800
+        m.insert(460800, B460800);
+#endif
+#ifdef B921600
+        m.insert(921600, B921600);
+#endif
+        return m;
+    }();
     const int baud = baudText.toInt();
     if (!kBaud.contains(baud))
         return fail(err::Args, QStringLiteral("不支持的波特率: %1").arg(baudText));
