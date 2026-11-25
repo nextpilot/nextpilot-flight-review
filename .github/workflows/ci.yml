@@ -61,7 +61,7 @@ jobs:
             python3 python3-numpy
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.93.0
 
       - name: Install Qt 6.2.4
         uses: jurplel/install-qt-action@v4
@@ -149,7 +149,7 @@ jobs:
           echo "PS_QT_VER=${PS_QT_VERSION}" >> "$GITHUB_ENV"
 
       - name: Install Rust toolchain (MSVC target)
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.93.0
         with:
           targets: x86_64-pc-windows-msvc
 
@@ -209,7 +209,7 @@ jobs:
           echo "PS_QT_VER=${PS_QT_VERSION}" >> "$GITHUB_ENV"
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.93.0
 
       - name: Install build tools (ninja, Xcode)
         run: |

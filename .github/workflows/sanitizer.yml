@@ -60,7 +60,7 @@ jobs:
             python3 python3-numpy
 
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.93.0
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4
