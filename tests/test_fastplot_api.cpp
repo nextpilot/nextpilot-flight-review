@@ -15,6 +15,7 @@
 #include <fastplot/Line.h>
 #include <fastplot/PlotData.h>
 #include <fastplot/PlotWidget.h>
+#include <fastplot/SemanticColors.h>
 #include <fastplot/Spectrum.h>
 #include <fastplot/SpectrumPlot.h>
 
@@ -178,6 +179,29 @@ int main(int argc, char **argv)
         const QString path = QStringLiteral("fastplot_figure_subplot.png");
         CHECK(img.save(path));
         fprintf(stdout, "[ok] Figure/subplot 总览已写出 %s\n", qPrintable(path));
+    }
+
+    // 语义色接缝（验收 8）：库不认识 token 表，只按 id 取上层注入的实色。
+    // 值对象注入（采纳 !106 8da28583）：库层可独立验证，不需要 QWidget。
+    {
+        using nextpilot::plotscope::fastplot::SemanticColors;
+        const QColor fallback(QStringLiteral("#f2b134"));
+        const QColor injected(QStringLiteral("#00ff00"));
+        SemanticColors colors;
+        // 未注入：取到调用方兜底色（外观与接管前一致）。
+        CHECK(colors.color(QStringLiteral("plot.cursor"), fallback) == fallback);
+        CHECK(!colors.contains(QStringLiteral("plot.cursor")));
+        // 注入后：按 id 命中实色，其它 id 仍取各自兜底。
+        colors.set(QStringLiteral("plot.cursor"), injected);
+        CHECK(colors.contains(QStringLiteral("plot.cursor")));
+        CHECK(colors.color(QStringLiteral("plot.cursor"), fallback) == injected);
+        CHECK(colors.color(QStringLiteral("plot.abMeasure"), fallback) == fallback);
+        CHECK(colors.count() == 1);
+        // clear 后回落兜底（主题卸载/重建路径）。
+        colors.clear();
+        CHECK(colors.color(QStringLiteral("plot.cursor"), fallback) == fallback);
+        CHECK(colors.count() == 0);
+        fprintf(stdout, "[ok] 语义色接缝：按 id 注入/兜底/清除均正确\n");
     }
 
     fprintf(stdout, "[ok] fastplot 术语对齐 API 全部通过\n");

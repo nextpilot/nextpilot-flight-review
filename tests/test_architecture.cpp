@@ -318,11 +318,12 @@ int main(int argc, char **argv)
     CHECK(toolbox.driverForFormat(QStringLiteral("ulog"))->domain() == Domain::Autopilot);
     CHECK(toolbox.driverForFormat(QStringLiteral("custom-protocol"))->domain() == Domain::General);
     CHECK(toolbox.driversByDomain(Domain::General).size() >= 2); // CSV + 自定义协议
-    fprintf(stdout, "[arch] packs=%d drivers=%d parsers=%d domains=%zu auto=%zu ap=%zu gen=%zu\n",
+    fprintf(stdout, "[arch] packs=%d drivers=%d parsers=%d domains=%lld auto=%lld ap=%lld gen=%lld\n",
             (int)toolbox.packs.count(), (int)toolbox.drivers().size(), (int)toolbox.parsers().size(),
-            toolbox.domains().size(), toolbox.driversByDomain(Domain::Automotive).size(),
-            toolbox.driversByDomain(Domain::Autopilot).size(),
-            toolbox.driversByDomain(Domain::General).size());
+            (long long)toolbox.domains().size(),
+            (long long)toolbox.driversByDomain(Domain::Automotive).size(),
+            (long long)toolbox.driversByDomain(Domain::Autopilot).size(),
+            (long long)toolbox.driversByDomain(Domain::General).size());
     CHECK(toolbox.driversByDomain(Domain::Autopilot).size() == 2);
     // Automotive 不再是空领域：T6.1 的 MDF 扩展把 mdf4 挂在汽车域下。
     CHECK(toolbox.driversByDomain(Domain::Automotive).size() == 2);
