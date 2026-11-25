@@ -73,8 +73,16 @@ jobs:
           QT_QPA_PLATFORM: offscreen
         run: ctest --test-dir build -j"$(nproc)" --output-on-failure
 
-      - name: 失败时回传日志
-        if: failure()
+      - name: 失败清单（无论成败都打印，便于定位）
+        if: always()
+        run: |
+          echo "=== LastTestsFailed.log ==="
+          cat build/Testing/Temporary/LastTestsFailed.log || echo "(无失败清单)"
+          echo "=== LastTest.log（尾部 300 行）==="
+          tail -n 300 build/Testing/Temporary/LastTest.log || true
+
+      - name: 回传日志
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ctest-logs
