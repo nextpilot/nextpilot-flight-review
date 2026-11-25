@@ -1456,7 +1456,23 @@ int main(int argc, char *argv[])
         }
 
         CHECK(thrown == 0);
-        CHECK(worstMs < 5.0); // §9.7 第1条：单轮解析 ≤ 5ms
+        // Sanitizers instrument every memory access, so the 5 ms per-round budget says
+        // nothing there. Under ASan/UBSan only the timing assertion is skipped: the fuzz
+        // loop above keeps running, because it is the part that finds real out-of-bounds
+        // reads. Decided at compile time so no environment variable can switch it off.
+        const bool sanitized =
+#if defined(__SANITIZE_ADDRESS__)
+            true;
+#elif defined(__has_feature)
+#if __has_feature(address_sanitizer) || __has_feature(undefined_behavior_sanitizer)
+            true;
+#else
+            false;
+#endif
+#else
+            false;
+#endif
+        CHECK(sanitized || worstMs < 5.0); // §9.7 第1条：单轮解析 ≤ 5ms
         fprintf(stdout,
                 "[ok] Fuzz 冒烟：%d 轮随机模板+随机字节，零崩溃零异常（解出 %d 次/结构化拒绝 %d 次，"
                 "单轮最坏 %.2fms）\n",

@@ -1,0 +1,125 @@
+name: sanitizer
+
+# Weekly ASan + UBSan run.
+#
+# Why weekly and not per-PR: instrumented builds are several times slower (Debug +
+# full instrumentation + 41 ctest cases ≈ an hour on a 4-core runner). The regular
+# PR gate stays fast; this catches memory errors and undefined behaviour on a cadence.
+#
+# Why it matters here at all: the protocol decoder runs attacker-shaped input through
+# a fuzz loop, the Rust bridge hands raw buffers across FFI, and the dataset layer
+# memmaps files. Out-of-bounds reads in those paths do not surface as crashes in a
+# normal build — they surface as wrong numbers, months later.
+#
+# Leak detection is OFF on purpose: Qt allocates plenty of process-lifetime singletons
+# that LSan flags as leaks on every run. Turning it on would make the job permanently
+# red and therefore ignored. Out-of-bounds / use-after-free / UB are the targets.
+
+on:
+  schedule:
+    # Monday 03:00 UTC = 11:00 Asia/Shanghai. Weekend noise is lower.
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  SAN_FLAGS: -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined -g
+
+jobs:
+  asan-ubsan:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 240
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Verify version (versions.env is the single source of truth)
+        shell: bash
+        run: |
+          set -euo pipefail
+          source versions.env
+          echo "PS_QT_VER=${PS_QT_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build build-essential curl file \
+            libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
+            libxkbcommon-x11-0 libfontconfig1 libdbus-1-3 \
+            python3 python3-numpy
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.PS_QT_VER }}
+          modules: 'qtcharts'
+
+      - name: Python bridge dependency (numpy)
+        run: |
+          # Same reasoning as ci.yml: the interpreter the bridge actually calls must have
+          # numpy, otherwise the Python path silently degrades and the run is a false green.
+          python3 -m pip install --user numpy
+          python3 -c "import sys, numpy; print('python:', sys.executable, 'numpy:', numpy.__version__)"
+
+      - name: Set up ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          # Instrumented objects are not interchangeable with normal ones: own key.
+          key: linux-sanitizer
+
+      - name: Configure CMake (Debug + ASan/UBSan)
+        run: |
+          # QT_ROOT_DIR already contains gcc_64 (install-qt-action v4); do not append another level.
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
+            -DPS_BUILD_TESTS=ON \
+            -DCMAKE_C_FLAGS="$SAN_FLAGS" \
+            -DCMAKE_CXX_FLAGS="$SAN_FLAGS" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address,undefined" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build all targets (instrumented)
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Run CTest under ASan/UBSan
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PS_REQUIRE_PY_NUMPY: '1'
+          # detect_leaks=0: see the header note. Stack-use-after-return stays on.
+          ASAN_OPTIONS: detect_leaks=0:detect_stack_use_after_return=1:print_stats=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: ctest --test-dir build -j"$(nproc)" --output-on-failure
+
+      - name: Print ctest failure summary (always, for diagnostics)
+        if: always()
+        run: |
+          echo "=== LastTestsFailed.log ==="
+          cat build/Testing/Temporary/LastTestsFailed.log || echo "(no failure list)"
+          echo "=== LastTest.log (tail 300 lines) ==="
+          tail -n 300 build/Testing/Temporary/LastTest.log || true
+
+      - name: Upload sanitizer logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sanitizer-logs
+          path: build/Testing/Temporary/
+          if-no-files-found: ignore
+          retention-days: 14
