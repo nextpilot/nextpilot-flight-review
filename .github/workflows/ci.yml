@@ -24,8 +24,18 @@ concurrency:
 
 jobs:
   test:
+    name: test (${{ matrix.build_type }})
     runs-on: ubuntu-22.04
-    timeout-minutes: 90
+    # Debug has no optimisation: the same translation units cost several times more,
+    # so the budget is raised rather than letting a slow Debug matrix time out.
+    timeout-minutes: 120
+    strategy:
+      # One config going red must not hide the other: Debug keeps assert() live while
+      # Release compiles it out via NDEBUG, so logic that depends on assertions can only
+      # be caught in Debug builds. Both are required.
+      fail-fast: false
+      matrix:
+        build_type: [Release, Debug]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -70,14 +80,14 @@ jobs:
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1
         with:
-          key: linux-ci-test
+          key: linux-ci-test-${{ matrix.build_type }}
 
       - name: Configure CMake
         run: |
           # PS_BUILD_TESTS=ON is the point of this job: it pulls in the ctest suite
           # (test_architecture / test_gui) that enforces the acceptance gate.
           cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
             -DPS_BUILD_TESTS=ON \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
@@ -105,7 +115,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: ctest-logs
+          name: ctest-logs-${{ matrix.build_type }}
           path: build/Testing/Temporary/
           if-no-files-found: ignore
 
