@@ -1,0 +1,82 @@
+name: ci
+
+# 验收门禁（契约 §7 第 10/15 条）：每次推 main / PR 都跑一遍全量构建 + ctest。
+#
+# 为什么单独一条：release.yml 只做发布包（PS_BUILD_TESTS=OFF），
+# 而验收第 15 条要求「死插槽检查入 CI」——那两条检查（test_architecture 的
+# 表检查 + test_gui 的零消费者检查）都活在 ctest 里，没有这个 job 就等于
+# 只在本地手跑。本 job 只做 Linux + offscreen，够把 T1/T3/D13 这些结构性回归拦住。
+#
+# ⚠️ 与 release.yml 同样前提：这是 GitHub Actions 配置，Gitee 主仓不执行，
+#    需仓库镜像到 GitHub。
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: 读取版本（versions.env 唯一来源）
+        shell: bash
+        run: |
+          set -euo pipefail
+          source versions.env
+          echo "PS_QT_VER=${PS_QT_VERSION}" >> "$GITHUB_ENV"
+
+      - name: 安装构建依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build build-essential curl file \
+            libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
+            libxkbcommon-x11-0 libfontconfig1 libdbus-1-3
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: 安装 Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.PS_QT_VER }}
+          modules: 'qtcharts'
+
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: linux-ci-test
+
+      - name: 配置
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
+            -DPS_BUILD_TESTS=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: 构建
+        run: cmake --build build -j"$(nproc)"
+
+      - name: ctest（offscreen，验收 10/15 的判定面）
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: ctest --test-dir build -j"$(nproc)" --output-on-failure
+
+      - name: 失败时回传日志
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-logs
+          path: build/Testing/Temporary/
+          if-no-files-found: ignore
