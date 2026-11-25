@@ -74,6 +74,11 @@ $Version = ($Version -replace '[^0-9A-Za-z.\-]', '')
 Write-Host "[pack-windows] version=$Version  Qt=$QtDir  build=$BuildDir"
 
 New-Item -ItemType Directory -Force -Path $OutDir | Out-Null
+# Resolve to an absolute path immediately: NSIS resolves relative paths in 'File'
+# against the *script* directory (packaging\windows), not the working directory, so
+# a relative stage path makes "File /r <stage>\*.*" match nothing and aborts with
+# 'File: "dist\stage\*.*" -> no files found' (build-packages run 45677402146).
+$OutDir = (Resolve-Path $OutDir).Path
 $Stage = Join-Path $OutDir "stage"
 if (Test-Path $Stage) { Remove-Item -Recurse -Force $Stage }
 New-Item -ItemType Directory -Force -Path (Join-Path $Stage "bin") | Out-Null
