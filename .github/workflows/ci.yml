@@ -113,8 +113,11 @@ jobs:
             tail -n +"$(( marker + 1 ))" "$LOG" > "$TAIL_LOG"
             PATTERN='error:|error C[0-9]|fatal error|FAILED:|ld: |ar: |Undefined symbols|undefined reference'
             grep -nE "$PATTERN" "$TAIL_LOG" | head -8 | while IFS=: read -r ln _; do
-              from=$(( ln > 2 ? ln - 2 : 1 ))
-              ctx=$(sed -n "${from},$(( ln + 3 ))p" "$TAIL_LOG" | tr '\n' ' ' | cut -c1-400)
+              # 上下文 = 命中行 + 后 2 行，每行各自截 120 字符再拼接。
+              # 不能先拼接再整体截 400：ninja 的失败块是「FAILED:」+ 一整条几千字符的
+              # 链接命令行 + 真正的错误行，先拼接会被长命令行吃满，LNK1181 / ar: 这类
+              # 根因整行丢掉（ci #26 Windows 注解就是这样只剩命令行前缀）。
+              ctx=$(sed -n "${ln},$(( ln + 2 ))p" "$TAIL_LOG" | cut -c1-120 | tr '\n' ' ' | sed 's/[[:space:]]*$//')
               echo "::error::${ctx}"
             done
             exit 1
@@ -255,10 +258,13 @@ jobs:
             $hits = $body | Select-String -Pattern $pattern | Select-Object -First 8
             foreach ($hit in $hits) {
               $i = $hit.LineNumber                       # 相对 $body，从 1 开始
-              $from = [Math]::Max(1, $i - 2)
-              $to = [Math]::Min($body.Count, $i + 3)
-              $ctx = ($body[($from - 1)..($to - 1)] -join ' ')
-              if ($ctx.Length -gt 400) { $ctx = $ctx.Substring(0, 400) }
+              # 上下文 = 命中行 + 后 2 行，逐行截 120 字符再拼接。整段拼接后截 400 会让
+              # 几千字符的链接命令行把随后的 "LINK : fatal error LNK1181" 整行吃掉，
+              # 于是注解里只剩 FAILED 和 cmd.exe 前缀（ci #26 实测）。
+              $to = [Math]::Min($body.Count, $i + 2)
+              $ctx = ($body[($i - 1)..($to - 1)] | ForEach-Object {
+                if ($_.Length -gt 120) { $_.Substring(0, 120) } else { $_ }
+              }) -join ' '
               "::error::$ctx"
             }
             exit 1
@@ -338,8 +344,10 @@ jobs:
             # pattern 要覆盖真实写法：clang 的 "error:"、MSVC 的 "fatal error LNK1181"、
             # 归档/链接的 "ar:" / "ld:" / "Undefined symbols"。只写带冒号的
             # 'error:'/'fatal error:' 会把后几类全漏掉，annotation 只剩 FAILED 行。
-            # 每条再带上下文：根因几乎总在 FAILED 的下一两行（如
-            # "ar: no archive members specified"）。
+            # 上下文一律取「命中行 + 后 2 行」，且每行各自截 120 字符再拼接。
+            # 不能先拼接再整体截 400：ninja 的失败块是「FAILED:」+ 一整条几千字符的
+            # 链接命令行 + 真正的错误行，先拼接会被长命令行吃满，根因整行丢掉
+            # （ci #26 Windows 注解就是这样只剩命令行前缀，看不到 LNK1181）。
             TAIL_LOG="$RUNNER_TEMP/build.tail"
             marker=$(grep -n '__PS_BUILD_LOG_START__' "$LOG" | tail -1 | cut -d: -f1)
             marker=${marker:-0}
