@@ -1,4 +1,4 @@
-; PlotScope Windows 安装包（NSIS 3）
+﻿; PlotScope Windows 安装包（NSIS 3）
 ;
 ; 由 tools/pack-windows.ps1 调用：
 ;   makensis /DVERSION=<ver> /DSTAGE=<payload目录> /DOUTFILE=<输出exe> packaging\windows\installer.nsi
