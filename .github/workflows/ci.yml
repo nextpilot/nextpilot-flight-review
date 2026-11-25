@@ -188,7 +188,20 @@ jobs:
         shell: pwsh
         # All targets, not just the two shipped executables: the point is maximum
         # compile surface, so a broken header in fastplot or the Rust bridge is caught.
-        run: cmake --build build --parallel 4
+        #
+        # On failure the tail of the build log is written to the step summary: the
+        # Actions log itself needs an authenticated download, and a bare
+        # "exit code 1" annotation is not enough to tell a Qt/SDK incompatibility
+        # from a genuine compiler error in our own code.
+        run: |
+          cmake --build build --parallel 4 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\build.log"
+          if ($LASTEXITCODE -ne 0) {
+            "### Build failed on Windows — last 150 lines" | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
+            '```' | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
+            Get-Content "$env:RUNNER_TEMP\build.log" -Tail 150 | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
+            '```' | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
+            exit 1
+          }
 
   macos-compile:
     # GitHub retired the macos-14 hosted image in Nov 2026. A job asking for it is
@@ -242,4 +255,19 @@ jobs:
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
       - name: Build all targets (compile-only gate)
-        run: cmake --build build --parallel "$(sysctl -n hw.ncpu)"
+        # A bare "exit code 1" annotation cannot distinguish a Qt 6.2.4 / new-Xcode
+        # incompatibility from a real error in our own code, and the Actions log
+        # needs an authenticated download. So dump the tail of the build log into
+        # the step summary, which is readable from the public run page.
+        run: |
+          set -o pipefail
+          LOG="$RUNNER_TEMP/build.log"
+          if ! cmake --build build --parallel "$(sysctl -n hw.ncpu)" 2>&1 | tee "$LOG"; then
+            {
+              echo '### Build failed on macOS — last 150 lines'
+              echo '```'
+              tail -150 "$LOG"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
