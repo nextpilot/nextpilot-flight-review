@@ -43,4 +43,5 @@
 - 改动符合 `src/AGENTS.md` 的目录、依赖与层级边界。
 - 新增 include 不跨越依赖矩阵；UI 遵守主题硬约束（`src/AGENTS.md` 对应章节）。
 - 新模块/扩展有对应测试；改 UI 做 GUI 冒烟；`ctest` 全过（双配置）。
+- 动过 C++ 的提交先跑 `cmake --build build --target format`（只格式化变更行；换基线用 `-DPS_FORMAT_BASE=<sha>`），或执行一次 `git config core.hooksPath .githooks` 让提交前自动处理。CI 的 `format` job 只检查、不修复，红了再补的代价更高。
 - 文档归位正确：成熟指南在 `docs/develop/`，长期规划在 `docs/roadmap/`；任务跟踪在 gitee issue。

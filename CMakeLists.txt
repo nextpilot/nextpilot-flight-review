@@ -91,3 +91,9 @@ ps_layer_guard_contract()
 # 专拦"纸面合规、源码偷编"（ShellLinkGuard 只看 target 链接面，看不见 include）。
 include("${CMAKE_SOURCE_DIR}/cmake/ArchitectureGuard.cmake")
 ps_arch_guard_contract()
+
+# === 格式化工具（开发机用）===
+# 只提供显式的 `format` target（变更行格式化），不挂进默认构建：
+# 构建期静默改写源码会让 lint 的 format 门禁失效，也会在并发编译下制造读写竞态。
+# 详见 cmake/Format.cmake 顶部说明。
+include("${CMAKE_SOURCE_DIR}/cmake/Format.cmake")

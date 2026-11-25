@@ -69,6 +69,24 @@ PS_JOBS=2 cmake --build --preset default
 
 `~/.ps-deps` 不完整时 configure 会报找不到 Qt6，先跑 `tools/ubuntu-setup.sh --install --qt`。Lua 由仓库内 `src/3rdparty/lua-5.4` 源码编静态库，不依赖系统 Lua。
 
+## 格式化（只改变更行）
+
+`.clang-format` 只对**变更行**生效：整文件重排会改写约 15% 的行、毁掉 git blame，明确不在范围内。三种用法：
+
+```bash
+# 1) 显式目标，默认以 origin/main 为基线
+cmake --build build --target format
+
+# 2) 换基线（整理历史提交的格式，例如 A1b 那批）
+cmake -S . -B build -DPS_FORMAT_BASE=dda1f8c9
+cmake --build build --target format
+
+# 3) 提交前自动，一次配置长期有效
+git config core.hooksPath .githooks
+```
+
+hook 只格式化暂存区的 C++ 变更行，并把结果重新暂存（不会改动未暂存的文件）。CI 的 `lint.yml` 里 `format` job **只检查、不修复**——构建期自动改写会让门禁永远绿，所以格式化始终是开发机侧的动作。本地 clang-format 版本要与 CI 的 `23.1.5` 对齐，否则会出现"本地已格式化、CI 仍报 diff"。
+
 ## 构建加速开关
 
 开关的作用与实测数据见 `build-performance.md`，这里只列默认值与适用场景。**三个开关的默认值都偏向"日常热迭代"**：缓存与增量优先，冷建优化留给 CI。
