@@ -221,6 +221,11 @@ jobs:
         with:
           version: ${{ env.PS_QT_VER }}
           host: mac
+          # Pin the arch explicitly. Left to itself, v4 derives an aqt configuration
+          # name from the runner ("macos-14-arm64-us-default") that does not exist,
+          # so the step dies in 0s on the arm64 runner. Qt 6.2.4 ships a universal
+          # (arm64+x86_64) macOS build under the clang_64 arch, which links fine here.
+          arch: clang_64
           modules: 'qtcharts'
 
       - name: Set up ccache
