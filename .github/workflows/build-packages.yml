@@ -277,8 +277,20 @@ jobs:
           if-no-files-found: error
 
   macos:
-    runs-on: macos-15        # Apple Silicon; macos-14 was retired by GitHub in Nov 2026 (job dies instantly)
+    # Two architectures in one matrix. An Intel Mac can only launch an x86_64 .app and an Apple
+    # Silicon Mac an arm64 one, so each leg builds natively; macos-13/14 are retired in 2026,
+    # which makes macos-15-intel the only Intel label left. The Qt 6.2.4 clang_64 package is
+    # universal, so both legs install the same Qt.
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15        # Apple Silicon (arm64)
+            arch: arm64
+          - os: macos-15-intel  # Intel (x86_64)
+            arch: x86_64
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -318,15 +330,19 @@ jobs:
       - name: Set up ccache
         uses: hendrikmuhs/ccache-action@v1
         with:
-          key: macos-release
+          key: macos-release-${{ matrix.arch }}
 
       - name: Configure CMake
         run: |
           # QT_ROOT_DIR is already an absolute path containing clang_64 (install-qt-action v4);
           # do not prepend $(pwd)/ or append /macos.
+          # CMAKE_OSX_ARCHITECTURES is pinned to the runner's own architecture so the .app is a
+          # single-arch binary the matching Mac can launch; tools/pack-macos.sh names the DMG
+          # after `uname -m`, so the two legs produce arm64 / x86_64 files.
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
+            -DCMAKE_OSX_ARCHITECTURES="${{ matrix.arch }}" \
             -DPS_BUILD_TESTS=OFF \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
@@ -357,7 +373,7 @@ jobs:
       - name: Upload DMG artifact
         uses: actions/upload-artifact@v4
         with:
-          name: macos-dmg
+          name: macos-dmg-${{ matrix.arch }}
           path: dist/*.dmg
           if-no-files-found: error
 
