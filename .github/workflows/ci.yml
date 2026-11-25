@@ -191,8 +191,11 @@ jobs:
         run: cmake --build build --parallel 4
 
   macos-compile:
-    # macos-13 (Intel) is no longer a GitHub-hosted label; macos-14 is standard arm64.
-    runs-on: macos-14
+    # GitHub retired the macos-14 hosted image in Nov 2026. A job asking for it is
+    # cancelled at once with "The configuration 'macos-14-arm64-us-default' is not
+    # supported" and never runs a single step, so this gate silently never executed.
+    # macos-15 is the current Apple Silicon image.
+    runs-on: macos-15
     timeout-minutes: 60
     steps:
       - name: Checkout repository
@@ -221,11 +224,6 @@ jobs:
         with:
           version: ${{ env.PS_QT_VER }}
           host: mac
-          # Pin the arch explicitly. Left to itself, v4 derives an aqt configuration
-          # name from the runner ("macos-14-arm64-us-default") that does not exist,
-          # so the step dies in 0s on the arm64 runner. Qt 6.2.4 ships a universal
-          # (arm64+x86_64) macOS build under the clang_64 arch, which links fine here.
-          arch: clang_64
           modules: 'qtcharts'
 
       - name: Set up ccache

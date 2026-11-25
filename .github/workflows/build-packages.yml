@@ -277,7 +277,7 @@ jobs:
           if-no-files-found: error
 
   macos:
-    runs-on: macos-14        # Apple Silicon; macos-13 (Intel) is no longer a GitHub-hosted runner label
+    runs-on: macos-15        # Apple Silicon; macos-14 was retired by GitHub in Nov 2026 (job dies instantly)
     timeout-minutes: 150
     steps:
       - name: Checkout repository
