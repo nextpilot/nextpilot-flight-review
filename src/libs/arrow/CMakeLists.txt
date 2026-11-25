@@ -8,3 +8,5 @@ add_library(ps_arrow STATIC
 target_include_directories(ps_arrow PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(ps_arrow PUBLIC ps_nanoarrow)
 set_target_properties(ps_arrow PROPERTIES CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)
+# 统一告警口径；MSVC 侧必须带 /utf-8，否则源码里的中文常量会被按 GBK 解码触发 C2001。
+ps_set_warnings(ps_arrow)

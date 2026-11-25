@@ -58,9 +58,11 @@ if(UNIX)
   target_link_libraries(ps_kernel INTERFACE ${CMAKE_DL_LIBS} m)
 endif()
 if(WIN32)
-  # Rust std 的 Windows 后端会引用 winsock 与 ntdll 的原生符号，
+  # Rust std 的 Windows 后端会引用 winsock、ntdll 与 futex 的原生符号，
   # 静态链进 C++ 可执行文件时必须显式补上这些系统库，否则 LNK2019。
-  target_link_libraries(ps_kernel INTERFACE ws2_32 ntdll userenv bcrypt advapi32 ole32 oleaut32)
+  # synchronization 提供 WaitOnAddress / WakeByAddress*。
+  target_link_libraries(ps_kernel INTERFACE
+    ws2_32 ntdll userenv bcrypt advapi32 ole32 oleaut32 synchronization)
 endif()
 
 # === 公共基础头（header-only，最底层）===
