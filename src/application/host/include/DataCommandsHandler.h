@@ -170,8 +170,11 @@ private:
         // 收字节与解析解耦：readyRead 只入环，泵按预算 drain。
         // 好处是慢解析器不会把事件循环堵死；环满则丢最旧并计入 dropped（背压可见）。
         QByteArray buf;
-        qint64 bufCap = 4 * 1024 * 1024;   // 环上限（字节）
-        qint64 pumpBudget = 256 * 1024;    // 每 tick 最多喂多少字节
+        // 4LL / 256LL：乘法先在 int 里算再隐式加宽到 qint64，clang-tidy 的
+        // bugprone-implicit-widening-of-multiplication-result 会报这一类（当前数值虽然
+        // 不溢出，但同类表达式只要系数再大一点就会先溢出再加宽，属于同一隐患形态）。
+        qint64 bufCap = 4LL * 1024 * 1024; // 环上限（字节）
+        qint64 pumpBudget = 256LL * 1024;  // 每 tick 最多喂多少字节
         qint64 droppedBytes = 0;
         qint64 fedBytes = 0;
     };
