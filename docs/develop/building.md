@@ -90,6 +90,11 @@ git config core.hooksPath .githooks
 
 hook 只格式化暂存区的 C++ 变更行，并把结果重新暂存（不会改动未暂存的文件）。CI 的 `lint.yml` 里 `format` job **只检查、不修复**——构建期自动改写会让门禁永远绿，所以格式化始终是开发机侧的动作。本地 clang-format 版本要与 CI 的 `23.1.5` 对齐，否则会出现"本地已格式化、CI 仍报 diff"。
 
+两个容易踩的边界：
+
+- **临时绕过**：`git commit --no-verify` 只跳过这一次；要彻底关掉用 `git config --unset core.hooksPath`（恢复就重新 `git config core.hooksPath .githooks`）。绕过不改变 CI 的判定——`format` job 照样会拦。
+- **hook 只看已暂存内容**：`git add` 之后又改了文件，hook 处理的是改之前的那版；提交前请重新 `add`，或直接跑一次 `--target format`。另外 hook 只做格式，**不跑 clang-tidy**——tidy 只在 CI 的 `lint.yml` 里以 report-only 方式跑（见该 workflow 的 `tidy` job），本地想提前看结果需自行执行 `clang-tidy -p build <file>`。
+
 工具不用单独装：`clang-format==23.1.5` 已写进 `tools/requirements.txt`，`tools/ubuntu-setup.sh --install --python` 会把它装进 `$PS_DEPS_ROOT/toolchain/python/venv`，该 venv 的 `bin` 目录本来就在编写的 shell 块 PATH 里（脚本不做 `source activate`，而是直接注入 PATH），因此 `clang-format`、`git-clang-format`、`clang-format-diff.py` 三个入口开箱可用。手动装的话：`$PS_DEPS_ROOT/toolchain/python/venv/bin/pip install -r tools/requirements.txt`。
 
 ## 构建加速开关
