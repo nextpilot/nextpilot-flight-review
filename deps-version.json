@@ -16,7 +16,7 @@
     },
 
     "rust": {
-      "version": ">=1.93",
+      "version": "=1.93",
       "configuration": "src/kernel/rust-toolchain.toml",
       "mirrors": [
         { "installer": "https://mirrors.ustc.edu.cn/misc/rustup-install.sh", "dist_server": "https://mirrors.ustc.edu.cn/rust-static", "update_root": "https://mirrors.ustc.edu.cn/rust-static/rustup" },
