@@ -131,3 +131,107 @@ jobs:
           # instead of relying on a console script from pip.
           PYTHONPATH="$CLANG_FORMAT_PY" python3 -m clang_format.git_clang_format \
             --binary "$CLANG_FORMAT_BIN" --diff "$BASE" -- "${FILES[@]}"
+
+  tidy:
+    # Changed-files-only clang-tidy pass — the companion to `format`. Formatting catches
+    # layout; this catches defects layout cannot see: use-after-move, uninitialised
+    # locals, implicit narrowing, dangling references.
+    #
+    # Report-only on first landing: the point is to measure what the current tree
+    # produces. Turning it into a hard gate before knowing the baseline would make every
+    # PR red on pre-existing findings, and a permanently red check gets ignored. Once
+    # the baseline is clean, promote a subset via WarningsAsErrors in .clang-tidy.
+    #
+    # Only translation units are checked: clang-tidy needs a compile_commands entry, and
+    # those exist for .cpp but not for headers. Headers are still covered through
+    # HeaderFilterRegex whenever a touched .cpp includes them.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Collect changed C++ sources
+        id: changed
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="origin/${{ github.base_ref }}"
+          else
+            BASE="${{ github.event.before }}"
+            git cat-file -e "${BASE}^{commit}" 2>/dev/null || BASE="$(git rev-parse HEAD~1)"
+          fi
+          echo "base = $BASE"
+          mapfile -t FILES < <(git diff --name-only --diff-filter=d "$BASE"...HEAD \
+            -- '*.cpp' '*.cxx' | grep -v -e '/3rdparty/' || true)
+          if [ "${#FILES[@]}" -eq 0 ]; then
+            echo "files=" >> "$GITHUB_OUTPUT"
+            echo "no C++ translation units changed, nothing to tidy"
+            exit 0
+          fi
+          printf '%s\n' "${FILES[@]}"
+          printf 'files=%s\n' "${FILES[*]}" >> "$GITHUB_OUTPUT"
+
+      - name: Install clang-tidy
+        if: steps.changed.outputs.files != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-tidy ninja-build
+          clang-tidy --version
+
+      - name: Read Qt version
+        if: steps.changed.outputs.files != ''
+        run: |
+          source versions.env
+          echo "PS_QT_VER=${PS_QT_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install Qt
+        if: steps.changed.outputs.files != ''
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.PS_QT_VER }}
+          modules: 'qtcharts'
+
+      - name: Install Rust toolchain
+        if: steps.changed.outputs.files != ''
+        uses: dtolnay/rust-toolchain@1.93.0
+
+      - name: Generate compile_commands.json
+        if: steps.changed.outputs.files != ''
+        run: |
+          # Configure only — clang-tidy needs the translation unit's flags, not the binaries.
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
+            -DPS_BUILD_TESTS=OFF \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+      - name: Run clang-tidy on changed files
+        if: steps.changed.outputs.files != ''
+        run: |
+          set +e
+          LOG="$RUNNER_TEMP/tidy.log"
+          : > "$LOG"
+          for f in ${{ steps.changed.outputs.files }}; do
+            echo "=== $f ===" | tee -a "$LOG"
+            clang-tidy -p build "$f" 2>&1 | tee -a "$LOG"
+          done
+          N=$(grep -c 'warning:' "$LOG")
+          echo "clang-tidy findings: $N"
+          {
+            echo "### clang-tidy (report-only): ${N} warning(s)"
+            echo '```'
+            grep 'warning:' "$LOG" | head -50
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Report-only for now: never fail the run on findings.
+          exit 0
+
+      - name: Upload clang-tidy log
+        if: always() && steps.changed.outputs.files != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: clang-tidy-log
+          path: ${{ runner.temp }}/tidy.log
+          if-no-files-found: ignore

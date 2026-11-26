@@ -1,0 +1,35 @@
+# clang-tidy 基线配置（保守集）。
+#
+# 口径：宁少勿多。只开「能抓到真实缺陷」的检查，宁可少查也不制造噪音——
+# 一个常年报几百条 warning 的门禁，等于没有门禁（大家会习惯性忽略它）。
+#
+# 刻意不开的：
+#   readability-*  —— 风格口味，职责已归 .clang-format
+#   modernize-*    —— 大半是「可以换成新写法」的改造建议，不是缺陷
+#   performance-*  —— 实测在 Qt 代码上基本是噪音：Qt 容器隐式共享，
+#                     unnecessary-copy-initialization / use-std-move 报的大多无害；
+#                     enum-size 是对 ABI 的取向，不是缺陷
+#   bugprone-signed-bitwise —— 协议位解析本来就用 int 做位运算，全量误报
+#   *-magic-numbers / *-identifier-length —— 噪音大户
+#
+# WarningsAsErrors 故意留空：先在 report-only 模式下量出存量基线，
+# 确认稳定后再把确定性子集提升为硬门禁（否则第一次上线就把所有 PR 变红）。
+
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-narrowing-conversions,
+  -bugprone-signed-bitwise,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-pro-type-const-cast,
+  cppcoreguidelines-slicing,
+  modernize-use-nullptr,
+  modernize-use-override
+
+WarningsAsErrors: ''
+
+# 只看本项目头文件；compile_commands 里的路径是绝对的，所以用 .*/(src|cmake)/ 而非 ^。
+HeaderFilterRegex: '.*/(src|cmake)/.*\.(h|hpp)$'
+
+FormatStyle: none
