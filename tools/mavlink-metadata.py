@@ -9,6 +9,7 @@ import argparse
 import importlib
 import inspect
 import json
+from typing import Any, cast
 
 TYPE_SIZE = {
     "char": 1,
@@ -37,6 +38,10 @@ def dump_dialect(dialect: str) -> dict:
             continue
         if not getattr(cls, "fieldnames", None):
             continue
+        # pymavlink 的 message 类是运行期生成的，静态类型上是 type[object]；
+        # 后面读的全是它的动态属性（fieldnames/fieldtypes/...），这里收窄成 Any，
+        # 而不是给每个属性写一遍 cast。
+        cls = cast(Any, cls)
 
         by_name = {}
         for index, name in enumerate(cls.fieldnames):

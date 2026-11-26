@@ -147,7 +147,7 @@ def enum_for(name: str, enum_by: str = ""):
     if name == "gnss_id" and not enum_by:
         return {"values": {str(k): v for k, v in GNSSLIST.items()}}
     if name == "sig_id" and enum_by:
-        values = {}
+        values: dict[str, dict[str, str]] = {}
         for (gnss, sig), label in SIGID.items():
             values.setdefault(str(gnss), {})[str(sig)] = label
         return {"by": enum_by, "values": values}

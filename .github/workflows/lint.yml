@@ -126,6 +126,7 @@ jobs:
             git cat-file -e "${BASE}^{commit}" 2>/dev/null || BASE="$(git rev-parse HEAD~1)"
           fi
           echo "base = $BASE"
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
           mapfile -t FILES < <(git diff --name-only --diff-filter=d "$BASE"...HEAD -- '*.cpp' '*.h' '*.hpp' \
             | grep -v -e '/3rdparty/' || true)
           if [ "${#FILES[@]}" -eq 0 ]; then echo "no C++ changes, nothing to check"; exit 0; fi
@@ -225,15 +226,48 @@ jobs:
       - name: ruff (changed python)
         run: tools/format.sh --check "${{ steps.base.outputs.base }}" --only py
 
+  python-types:
+    # Python 类型检查（mypy）。范围见仓库根 mypy.ini：只查仓库自维护的脚本，
+    # src/3rdparty 里的第三方脚本不在门禁内。
+    #
+    # 与 clang-tidy 那条腿不同，这里没有"存量豁免"——基线已清零，所以直接阻断：
+    # 类型错误一旦混进 main，下游的 pyright/IDE 体验会立刻变脏，且难以回溯是哪个 PR 带进来的。
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install mypy (pinned in tools/requirements.txt)
+        run: |
+          set -euo pipefail
+          V="$(sed -n 's/^mypy==//p' tools/requirements.txt)"
+          if [ -z "$V" ]; then echo "::error::mypy is not pinned in tools/requirements.txt"; exit 1; fi
+          python3 -m pip install --user "mypy==$V"
+          "$HOME/.local/bin/mypy" --version
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: mypy (config in mypy.ini)
+        run: |
+          set -o pipefail
+          mypy | tee "$RUNNER_TEMP/mypy.log"
+          {
+            echo '### mypy'
+            echo '```'
+            tail -40 "$RUNNER_TEMP/mypy.log"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   tidy:
     # Changed-files-only clang-tidy pass — the companion to `format`. Formatting catches
     # layout; this catches defects layout cannot see: use-after-move, uninitialised
     # locals, implicit narrowing, dangling references.
     #
-    # Report-only on first landing: the point is to measure what the current tree
-    # produces. Turning it into a hard gate before knowing the baseline would make every
-    # PR red on pre-existing findings, and a permanently red check gets ignored. Once
-    # the baseline is clean, promote a subset via WarningsAsErrors in .clang-tidy.
+    # Gate scope: findings on lines added by this change fail the job, pre-existing findings
+    # are counted and printed but never block. The tree carries ~329 legacy findings
+    # (290 of them cppcoreguidelines-init-variables, mostly in tests and 3rdparty headers);
+    # making that a hard gate on day one would red every PR, and a permanently red check
+    # gets ignored. Choosing "only the lines you touched" keeps the gate actionable today
+    # and ratchets for free: as files get cleaned up, their legacy debt shrinks.
     #
     # Only translation units are checked: clang-tidy needs a compile_commands entry, and
     # those exist for .cpp but not for headers. Headers are still covered through
@@ -320,8 +354,10 @@ jobs:
             grep 'warning:' "$LOG" | head -50
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          # Report-only for now: never fail the run on findings.
-          exit 0
+          # 存量不计、新增阻断。脚本自己解析 diff 的新增行号与 warning 行号的交集，
+          # 有交集才 exit 1——报的是你这次新写的那一行，不是历史欠账。
+          python3 tools/clang-tidy-diff-gate.py \
+            --log "$LOG" --base "${{ steps.changed.outputs.base }}" 
 
       - name: Upload clang-tidy log
         if: always() && steps.changed.outputs.files != ''

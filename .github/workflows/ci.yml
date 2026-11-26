@@ -135,13 +135,50 @@ jobs:
         # ps_gui 在 CI 上偶发 SegFault：Windows 第五轮、Linux Release 第七轮各一次，都崩在
         # dock 首帧焦点之后（1.5~1.8 s 就死）。本步串行重跑 5 次只为拿复现率，不参与判定：
         # 主跑的 ctest 已经对这轮给过一次结论，探针红了只写摘要。
+        # 只统计复现率是没用的——崩了 8 轮也就两个数字。探针改成正向取证：
+        # 直接跑二进制，任何一个 run 出现段错误就翻 core 文件用 gdb 打 backtrace，
+        # 打不到就 gdb 重跑一次抓现场。下次再崩，日志里会带真实调用栈。
         run: |
           set +e
-          QT_QPA_PLATFORM=offscreen ctest --test-dir build -R "^ps_gui$" \
-            --repeat until-fail:5 --output-on-failure
-          rc=$?
-          set -e
-          echo "ps_gui 探针 rc=$rc（0 = 连跑 5 次全绿；非 0 = 复现崩溃）" >> "$GITHUB_STEP_SUMMARY"
+          BIN="$(find build -type f -name 'ps_test_gui' | head -1)"
+          if [ -z "$BIN" ]; then
+            echo "没找到 ps_test_gui 二进制（该轮可能没编测试目标），跳过探针" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          out="$RUNNER_TEMP/psgui"; mkdir -p "$out"
+          sudo apt-get install -y -qq gdb >/dev/null 2>&1
+          ulimit -c unlimited
+          echo "core_pattern: $(cat /proc/sys/kernel/core_pattern 2>/dev/null || echo '(unreadable)')"
+          crashes=0
+          for i in $(seq 1 8); do
+            QT_QPA_PLATFORM=offscreen timeout 60 "$BIN" > "$out/run$i.log" 2>&1
+            rc=$?
+            echo "run$i rc=$rc"
+            if [ "$rc" -ge 128 ]; then
+              crashes=$((crashes + 1))
+              echo "=== run$i 崩溃（rc=$rc），抓堆栈 ==="
+              CORE="$(ls -t "$out"/core* core core.* build/core* 2>/dev/null | head -1)"
+              if [ -n "$CORE" ] && [ -f "$CORE" ]; then
+                echo "core: $CORE"
+                gdb -batch -ex 'bt' -ex 'info registers' "$BIN" "$CORE" 2>&1 | tail -80
+              else
+                echo "(无 core 文件，gdb 重跑一次取现场)"
+                gdb -batch -ex run -ex 'bt' --args "$BIN" 2>&1 | tail -80
+              fi
+              echo "--- run$i 输出 ---"
+              tail -40 "$out/run$i.log"
+            fi
+          done
+          echo "ps_gui 探针：8 次运行，崩溃 $crashes 次" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$crashes" -gt 0 ]; then
+            {
+              echo '### ps_gui 探针复现崩溃，堆栈见本例日志'
+              echo '```'
+              tail -60 "$out"/run*.log 2>/dev/null | tail -60
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+          exit 0
 
       - name: Smoke test - GUI starts (offscreen)
         # ctest 覆盖不到「GUI 能不能真的起窗」：编译通过、单测全绿，进程仍可能因为平台
@@ -271,7 +308,11 @@ jobs:
   # leg that could tell the difference — four red CI runs were needed before it was found locally
   # with ASan. ASan/UBSan turns that class into a first-class signal at PR time.
   #
-  # Scope: tests ON, ccache OFF (sanitizer objects must never share a cache with plain builds).
+  # Scope: tests ON, ccache ON but under its own cache key/dir. Sanitizer objects must never
+  # be *restored* from a plain build's cache, yet they are perfectly reusable across sanitizer
+  # runs: ccache hashes the compiler command line, so -fsanitize=... never collides with a plain
+  # Release object. Turning the cache off entirely used to cost ~20 min per run (603 targets
+  # from scratch); an isolated key makes later runs incremental without mixing the two worlds.
   # -fno-sanitize=vptr is deliberate: vptr checks fire inside the bundled ads library whenever a
   # QPointer<CDockManager> is touched during CDockManager's own destruction (vptr already rolled
   # back to CDockContainerWidget). That is a well-known false positive for this pattern, and
@@ -279,8 +320,8 @@ jobs:
   test-sanitizers:
     name: test (Release, asan+ubsan)
     runs-on: ubuntu-22.04
-    # Sanitizer instrumentation is several times slower than a plain Release build, and this leg
-    # compiles the whole tree from scratch (no ccache by design).
+    # Sanitizer instrumentation is several times slower than a plain Release build. The isolated
+    # cache below absorbs most of that: the first run on a key still compiles the whole tree.
     timeout-minutes: 180
     env:
       QT_QPA_PLATFORM: offscreen
@@ -325,6 +366,14 @@ jobs:
           version: ${{ env.PS_QT_VER }}
           modules: 'qtcharts'
 
+      # 独立 key：不与 Linux Release/Debug/clang 三条腿共享缓存（对象可以复用，
+      # 但两条腿的构建目录、参数语义完全不同，混在一起只会让命中率统计失真）。
+      - name: Set up ccache (sanitizer, isolated)
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: linux-ci-sanitizers
+          max-size: 2G
+
       - name: Python 桥依赖（numpy）
         run: |
           python3 -m pip install --user numpy
@@ -337,7 +386,9 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
             -DPS_BUILD_TESTS=ON \
-            -DPS_USE_CCACHE=OFF \
+            -DPS_USE_CCACHE=ON \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
             -DCMAKE_C_FLAGS="$SAN" \
             -DCMAKE_CXX_FLAGS="$SAN" \
             -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined' \
@@ -356,6 +407,10 @@ jobs:
             } >> "$GITHUB_STEP_SUMMARY"
             exit 1
           fi
+
+      - name: ccache stats
+        if: always()
+        run: ccache --show-stats || true
 
       - name: Run CTest (offscreen)
         run: ctest --test-dir build -j"$(nproc)" --output-on-failure

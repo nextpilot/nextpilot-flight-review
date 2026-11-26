@@ -2,7 +2,8 @@
 # PlotScope 编译环境统一入口（Ubuntu/Debian）。
 #
 #   tools/ubuntu-setup.sh --check                 # 只体检，不改任何文件（默认）
-#   tools/ubuntu-setup.sh --install               # 全量：工具链 + Qt + Rust + Python venv + shell 块
+#   tools/ubuntu-setup.sh --install               # 全量：系统 apt 依赖 + 工具链 + Qt + Rust + Python venv + shell 块
+#   tools/ubuntu-setup.sh --install --system      # 只补系统 apt 依赖（GL / X11 / xcb 开发包）
 #   tools/ubuntu-setup.sh --install --toolchain   # 只处理 cmake / ninja / ccache（gcc 只体检，不自动装）
 #   tools/ubuntu-setup.sh --install --qt          # 只处理 Qt
 #   tools/ubuntu-setup.sh --install --python      # 只处理 venv 与 pip 依赖
@@ -36,6 +37,7 @@ MARK_END="# <<< plotscope build env <<<"
 STARTUP_FILES=("${BASHRC:-$HOME/.bashrc}" "${PROFILE:-$HOME/.profile}")
 
 MODE="--check"
+DO_SYSTEM=1
 DO_TOOLCHAIN=1
 DO_QT=1
 DO_PYTHON=1
@@ -47,10 +49,11 @@ for arg in "$@"; do
     --check | --install | --print-env | --uninstall) MODE="$arg" ;;
     --warm-cache) DO_WARM=1 ;;
     --force) DO_FORCE=1 ;;
-    --toolchain) DO_QT=0; DO_PYTHON=0; DO_RUST=0 ;;
-    --qt) DO_TOOLCHAIN=0; DO_PYTHON=0; DO_RUST=0 ;;
-    --python) DO_TOOLCHAIN=0; DO_QT=0; DO_RUST=0 ;;
-    --rust) DO_TOOLCHAIN=0; DO_QT=0; DO_PYTHON=0 ;;
+    --system) DO_TOOLCHAIN=0; DO_QT=0; DO_PYTHON=0; DO_RUST=0 ;;
+    --toolchain) DO_SYSTEM=0; DO_QT=0; DO_PYTHON=0; DO_RUST=0 ;;
+    --qt) DO_SYSTEM=0; DO_TOOLCHAIN=0; DO_PYTHON=0; DO_RUST=0 ;;
+    --python) DO_SYSTEM=0; DO_TOOLCHAIN=0; DO_QT=0; DO_RUST=0 ;;
+    --rust) DO_SYSTEM=0; DO_TOOLCHAIN=0; DO_QT=0; DO_PYTHON=0 ;;
     -h | --help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "未知参数：$arg" >&2; exit 2 ;;
   esac
@@ -403,6 +406,44 @@ apt_install() {
   apt_mirror_opts
   sudo apt-get "${APT_OPTS[@]}" update -qq && \
     sudo DEBIAN_FRONTEND=noninteractive apt-get "${APT_OPTS[@]}" install -y "${pkgs[@]}"
+}
+
+# ---------- 系统 apt 依赖 ----------
+# Qt 6 的编译与运行都依赖这批 GL/X11/xcb 开发包。此前脚本只「提示」装 build-essential，
+# 结果是脚本跑完仍编不过 Qt 工程，得人肉对着 CI 抄包名。这里按缺失检测后补装：
+# 有免密 sudo 才动手（不静默提权），没有就打印一行可直接粘贴的命令。
+APT_PACKAGES=(
+  build-essential libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev
+  libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1
+  libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0
+  libxkbcommon-x11-0 libfontconfig1 libdbus-1-3
+)
+
+apt_pkg_missing() { ! dpkg-query -W -f='${Status}' "$1" 2>/dev/null | grep -q "install ok installed"; }
+
+install_system_deps() {
+  local missing=() p
+  for p in "${APT_PACKAGES[@]}"; do
+    if apt_pkg_missing "$p"; then missing+=("$p"); fi
+  done
+  if [ "${#missing[@]}" -eq 0 ]; then
+    log "系统依赖齐全（${#APT_PACKAGES[@]} 个包）"
+    return 0
+  fi
+  log "缺 ${#missing[@]} 个系统包：${missing[*]}"
+  if ! command -v sudo >/dev/null 2>&1 || ! sudo -n true 2>/dev/null; then
+    log "无免密 sudo，跳过系统包安装；需要时执行："
+    log "  sudo apt-get install -y ${missing[*]}"
+    return 0
+  fi
+  sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq ||
+    log "apt-get update 失败，仍继续尝试安装"
+  if sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${missing[@]}"; then
+    log "系统依赖已安装：${missing[*]}"
+  else
+    log "系统包安装失败，请手动执行：sudo apt-get install -y ${missing[*]}"
+    return 1
+  fi
 }
 
 install_toolchain() {
@@ -954,6 +995,7 @@ case "$MODE" in
     write_ccache_conf
     fails=0
     [ -n "$V_RUST_CHANNEL" ] && ! ver_satisfy "$V_RUST_CHANNEL" "$V_RUST_VER" && log "警告：$RUST_TOML channel($V_RUST_CHANNEL) 不满足 deps-version.json 要求($V_RUST_VER)"
+    if [ "$DO_SYSTEM" = 1 ]; then install_system_deps || fails=$((fails + 1)); fi
     if [ "$DO_PYTHON" = 1 ]; then install_python || fails=$((fails + 1)); fi
     if [ "$DO_TOOLCHAIN" = 1 ]; then install_toolchain || fails=$((fails + 1)); fi
     if [ "$DO_RUST" = 1 ]; then install_rust || fails=$((fails + 1)); fi
