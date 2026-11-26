@@ -15,6 +15,7 @@
 
 #include "Domain.h"
 #include "Region.h"
+#include "ResourceRef.h"
 
 #include <QList>
 #include <QString>
@@ -182,7 +183,8 @@ struct ActivitySpec
     int order = 0;       // Activity Bar 排序
     QString ribbonPage;  // 点击后切到的 ribbon 页 area，如 "ribbon.page.script"
     QStringList panelTypes; // 左栏 section 栈里属于本 activity 的面板类型 id
-    QString centralPanel;   // 点击后请求的中央面板类型 id（空=不动中央）
+    QString centralEditor;  // 点击后打开的中央编辑器 viewType（空=不动中央；A2b 笔2b 由 centralPanel 改名）
+    ResourceRef centralRef; // 中央编辑器资源引用：由 owner 模块构造，壳只消费不解析（A2b 笔2b）
 
     QString provider; // mount() 自动写入
 };

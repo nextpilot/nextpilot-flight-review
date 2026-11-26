@@ -249,16 +249,22 @@ void MainWindow::declareStandardSlots()
     // --- 视图页：面板开关（**每个 dock 页签一个按钮**，点击出现/再点消失）---
     // 动作 id = "view.toggleDock." + 面板类型 id（稳定 pageKey，不随标题改动失效）；
     // 标签与页签标题一致。曾按区做整组开关，按钮名称与实际效果不符（历史缺陷）。
-    static const struct { const char *type; const char *label; const char *icon; } kDockPageActions[] = {
-        {"dataset-tree",   "数据源",     "datasource"},    // 左栏
-        {"script-files",   "脚本文件",   "script"},        // 左栏
-        {"property-panel", "属性",       "property"},      // 右栏
-        {"script-debug",   "调试",       "script_debug"},  // 右栏
-        {"script-console", "终端",       "terminal"},      // 底部
-        {"output-console", "输出",       "output"},        // 底部
-        {"problems",       "问题",       "problems"},      // 底部
-        {"debug-console",  "调试控制台", "debug_console"}, // 底部
-        {"diagnostics",    "诊断",       "diagnostics"},   // 底部（归并页签）
+    static const struct
+    {
+        const char *type;
+        const char *label;
+        const char *icon;
+    } kDockPageActions[] = {
+        {"dataset-tree", "数据源", "datasource"}, // 左栏（③步迁 data.datasetTree）
+        {"script-files", "脚本文件", "script"},   // 左栏（⑤步迁 script.files）
+        {"property-panel", "属性",
+         "property"}, // 右栏（工厂表留至笔 4 随 modules/plot 迁 plot.properties，届时同步改 pageKey + isLeftPage）
+        {"script-debug", "调试", "script_debug"},                // 右栏（⑤步迁 script.debug）
+        {"script-console", "终端", "terminal"},                  // 底部（⑤步迁 script.console）
+        {"workbench.panel.output", "输出", "output"},            // 底部（②步已迁 views 声明）
+        {"workbench.panel.markers", "问题", "problems"},         // 底部（②步已迁 views 声明）
+        {"workbench.panel.repl", "调试控制台", "debug_console"}, // 底部（②步已迁 views 声明）
+        {"diagnostics", "诊断", "diagnostics"},                  // 底部（②步已迁 views 声明；归并页签）
     };
     for (int i = 0; i < (int)(sizeof(kDockPageActions) / sizeof(kDockPageActions[0])); ++i)
     {
@@ -291,6 +297,10 @@ void MainWindow::build(RuntimeHost &host)
         m_formatHints = services->getService<IFormatHints>(QStringLiteral("format.hints"));
         m_themeService = services->getService<IThemeService>(QStringLiteral("theme.readback"));
         m_slotsService = services->getService<ISlotsService>(QStringLiteral("slots.binding"));
+        // 视图/编辑器打开服务（A2b 笔2b 复审必修 A）：openView/openEditor 的执行体，
+        // 注入 GuiContext（壳只转调，不桥回旧工厂表）。未装配时保持 nullptr。
+        m_viewsService = services->getService<IViewsService>(QStringLiteral("views.readback"));
+        m_editorService = services->getService<IEditorService>(QStringLiteral("editor.readback"));
     }
 
     // 绑定器需要槽位服务，构造时给。
@@ -339,22 +349,24 @@ void MainWindow::build(RuntimeHost &host)
         }
         return actions;
     });
-    m_context = new GuiContext(this, m_slotsService, m_binder, m_appCtx, &host, m_panelsService, this);
+    m_context = new GuiContext(this, m_slotsService, m_binder, m_appCtx, &host, m_panelsService, m_viewsService,
+                               m_editorService, this);
     // 状态栏：先接好信号，模块 onAttach（activate 内）声明状态项时即可排布（验收 7）。
     setupStatusBar();
 
     m_binder->setActivityActivatedHandler([this](const ActivitySpec &spec) {
-        // Activity 的侧栏切换由 ShellBinder 完成；这里只处理“要打开哪个面板”。
-        if (!spec.centralPanel.isEmpty()
-            && m_context->requestPanel(nextpilot::plotscope::registry::Region::Editor,
-                                       spec.centralPanel))
+        // Activity 的侧栏切换由 ShellBinder 完成；这里只处理"要打开哪个中央面板"。
+        // 第①步只做接口声明与字段改名；调用点迁移（→ openEditor/openView）随各 owner 步进行。
+        if (!spec.centralEditor.isEmpty() &&
+            m_context->requestPanel(nextpilot::plotscope::registry::Region::Editor, spec.centralEditor))
         {
             // 请求成功即已置前；没有额外业务动作。
         }
         if (spec.id == QStringLiteral("diagnostics"))
         {
-            m_context->requestPanel(nextpilot::plotscope::registry::Region::Panel,
-                                    QStringLiteral("diagnostics"));
+            // A2b 笔2b 第②步：diagnostics 已迁 views 声明（owner core.workbench），
+            // 走 openView——落区由 viewsContainers[].area 决定，壳不再指定。
+            m_context->openView(QStringLiteral("diagnostics"));
         }
     });
     m_binder->setSettingsHandler([this]() {
@@ -425,9 +437,11 @@ void MainWindow::build(RuntimeHost &host)
     m_binder->rebuildActivityBar();
 
     // 3.0a) 面板引用启动期校验（验收 4）：三源（包 PanelSpec / Activity panelTypes、
-    // centralPanel / 产品 defaultPanels）必须在工厂表命中。binder 只收集，这里统一进
-    // AppContext error 诊断 + stderr，同一问题不打两遍；不 abort。缺失列表由 test_gui 断言为空。
-    m_binder->setPanelReferenceContext(m_panelsService, m_spec.defaultPanels);
+    // centralPanel / 产品 defaultPanels）必须命中——命中面二选一：旧工厂表，或
+    // views 声明（A2b 笔2b 第②步：gui 内置面板已迁 ViewRegistry）。binder 只收集，
+    // 这里统一进 AppContext error 诊断 + stderr，同一问题不打两遍；不 abort。
+    // 缺失列表由 test_gui 断言为空。
+    m_binder->setPanelReferenceContext(m_panelsService, m_spec.defaultPanels, m_viewsService);
     m_panelReferenceIssues = m_binder->missingPanelTypes();
     for (const QString &entry : m_panelReferenceIssues)
     {
@@ -440,14 +454,18 @@ void MainWindow::build(RuntimeHost &host)
     refreshThemeTokens();
 
     // 3.0) 默认面板布局：清单来自产品 spec（完整产品 / 裸壳各一份）。
-    // 外壳只用**部件类型字符串**请求，不 include 任何 views/ 头文件——
-    // 具体 QWidget 由视图层自注册（PS_REGISTER_PANEL）。工厂未注册的类型
-    // （裸壳无模块面板）requestPanel 返回 nullptr，这里安全跳过，不算错误。
+    // A2b 笔2b 第②步返工（复审必修 3）：分流**前**先查声明——已迁 views 声明
+    // （owner 非空）才走 openView（落区由 viewsContainers[].area 决定）；未迁移
+    // 的 id（property-panel 留笔 4，data/script/toolbox 归③④⑤⑥）直接走旧工厂
+    // requestPanel，不先撞 openView 的"未声明"假警报（真缺失不被埋掉）。各
+    // owner 步迁移后 openView 分支自然扩容，回退分支⑦步删。
     for (const auto &placement : m_spec.defaultPanels)
     {
-        if (placement.panelType.isEmpty())
+        if (placement.viewId.isEmpty())
             continue;
-        QWidget *panel = m_context->requestPanel(placement.region, placement.panelType);
+        const bool declared = m_viewsService && !m_viewsService->viewForId(placement.viewId).owner.isEmpty();
+        QWidget *panel = declared ? m_context->openView(placement.viewId)
+                                  : m_context->requestPanel(placement.region, placement.viewId);
         if (panel && placement.raiseAfter)
             m_binder->raisePanel(panel);
     }

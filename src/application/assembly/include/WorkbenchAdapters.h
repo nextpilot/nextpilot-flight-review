@@ -520,6 +520,13 @@ public:
     {
         return m_views.viewsIn(containerId);
     }
+    registry::ContributedViewContainer containerForId(const QString &containerId) const override
+    {
+        for (const registry::ContributedViewContainer &c : m_views.allContainers())
+            if (c.id == containerId)
+                return c;
+        return registry::ContributedViewContainer{};
+    }
     registry::ContributedView viewForId(const QString &viewId) const override
     {
         for (const registry::ContributedView &v : m_views.allViews())

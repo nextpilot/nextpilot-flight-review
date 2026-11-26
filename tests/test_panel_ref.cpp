@@ -1,6 +1,6 @@
 // 验收 4：面板引用启动期校验。
 //
-// 声明侧三处（包 PanelSpec / Activity panelTypes、centralPanel / 产品默认布局）
+// 声明侧三处（包 PanelSpec / Activity panelTypes、centralEditor / 产品默认布局）
 // 引用的面板类型必须在工厂表命中；未命中必须产出 error 诊断，且诊断说清
 // 来源模块、未命中类型、可用类型从哪查。本用例故意声明不存在的面板类型，
 // 断言校验器真的报错（不是"我觉得会炸"）。
@@ -89,7 +89,7 @@ int main(int argc, char **argv)
     ActivitySpec activity;
     activity.id = QStringLiteral("test.activity");
     activity.panelTypes = {QStringLiteral("bogus-side-panel")};
-    activity.centralPanel = QStringLiteral("bogus-central");
+    activity.centralEditor = QStringLiteral("bogus-central");
     slotHub.registerActivity(activity);
 
     Pack pack;
@@ -102,12 +102,12 @@ int main(int argc, char **argv)
     QList<ProductPanelPlacement> placements;
     ProductPanelPlacement placement;
     placement.region = Region::Panel;
-    placement.panelType = QStringLiteral("bogus-placement");
+    placement.viewId = QStringLiteral("bogus-placement");
     placements.append(placement);
 
     const auto issues = validatePanelReferences(toolbox, slotHub, placements);
 
-    // 三条来源共四个未命中（activity 两个：panelTypes + centralPanel）。
+    // 三条来源共四个未命中（activity 两个：panelTypes + centralEditor）。
     CHECK(issues.size() == 4);
 
     const PanelReferenceIssue *side = findIssue(issues, QStringLiteral("bogus-side-panel"));
@@ -122,7 +122,7 @@ int main(int argc, char **argv)
     const PanelReferenceIssue *central = findIssue(issues, QStringLiteral("bogus-central"));
     CHECK(central != nullptr);
     if (central)
-        CHECK(central->source.contains(QStringLiteral("centralPanel")));
+        CHECK(central->source.contains(QStringLiteral("centralEditor")));
 
     const PanelReferenceIssue *packIssue = findIssue(issues, QStringLiteral("bogus-pack-panel"));
     CHECK(packIssue != nullptr);

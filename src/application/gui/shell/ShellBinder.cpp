@@ -266,10 +266,12 @@ void ShellBinder::rebuildActivityBar()
 
 void ShellBinder::setPanelReferenceContext(
     const nextpilot::plotscope::workbench::IPanelsService *panels,
-    const QList<nextpilot::plotscope::registry::ProductPanelPlacement> &placements)
+    const QList<nextpilot::plotscope::registry::ProductPanelPlacement> &placements,
+    nextpilot::plotscope::workbench::IViewsService *viewsService)
 {
     m_panelsService = panels;
     m_placements = placements;
+    m_viewsRefService = viewsService;
 }
 
 QStringList ShellBinder::missingPanelTypes() const
@@ -280,10 +282,35 @@ QStringList ShellBinder::missingPanelTypes() const
     // 已注入包面板声明与产品布局时走 lib 级三源校验器；否则退化为只查 Activity panelTypes。
     if (m_panelsService)
     {
-        const auto issues = validatePanelReferences(
-            m_panelsService->panels(),
-            m_slots ? m_slots->activities() : QList<nextpilot::plotscope::registry::ActivitySpec>{},
-            m_placements);
+        // views 命中面（A2b 笔2b 第②步）：已迁 ViewRegistry 的 id（gui 内置面板，
+        // 注册不再走工厂表）经 IViewsService::viewForId 判声明命中——壳只查
+        // 接口、不直连 ViewRegistry。旧工厂路径保留到⑦步删。
+        // Activity 清单取一次共用（三处：命中面循环 + 校验器 + 计数口径不动）。
+        const QList<ActivitySpec> slotActivities = m_slots ? m_slots->activities() : QList<ActivitySpec>{};
+        QStringList knownViewIds;
+        if (m_viewsRefService)
+        {
+            for (const ProductPanelPlacement &placement : m_placements)
+            {
+                if (placement.viewId.isEmpty())
+                    continue;
+                if (!m_viewsRefService->viewForId(placement.viewId).owner.isEmpty())
+                    knownViewIds << placement.viewId;
+            }
+            for (const ActivitySpec &activity : slotActivities)
+            {
+                for (const QString &type : activity.panelTypes)
+                    if (!type.isEmpty() && !knownViewIds.contains(type) &&
+                        !m_viewsRefService->viewForId(type).owner.isEmpty())
+                        knownViewIds << type;
+                const QString &central = activity.centralEditor;
+                if (!central.isEmpty() && !knownViewIds.contains(central) &&
+                    !m_viewsRefService->viewForId(central).owner.isEmpty())
+                    knownViewIds << central;
+            }
+        }
+        const auto issues =
+            validatePanelReferences(m_panelsService->panels(), slotActivities, m_placements, knownViewIds);
         for (const PanelReferenceIssue &issue : issues)
             missing << QStringLiteral("%1:%2").arg(issue.source, issue.type);
         return missing;
@@ -1254,6 +1281,15 @@ QList<QWidget *> ShellBinder::panelWidgets(Region region) const
     for (ads::CDockWidget *dw : docks)
         out.append(dw->widget());
     return out;
+}
+
+QWidget *ShellBinder::dockHost()
+{
+    // 区域宿主 = ADS dock 容器本体（懒建；与 dock()/setCentralContent 同一容器）。
+    // dock 视图/中央编辑器的控件先生在这里，随后由 dock()/setCentralContent()
+    // 经 ADS 接管——不会出现"挂在 QMainWindow 上先浮窗再回抱"的窗口闪烁。
+    ensureDockManager();
+    return m_dock;
 }
 
 QList<QWidget *> ShellBinder::centralWidgets() const

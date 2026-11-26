@@ -2,7 +2,6 @@
 
 #include "AppContext.h"
 #include "InteractionHub.h"
-#include "PanelFactoryHub.h"
 #include "RegistryNode.h"
 #include "RegistryTree.h"
 #include "Result.h"
@@ -19,15 +18,14 @@ namespace nextpilot::plotscope::gui
 using nextpilot::plotscope::context::AppContext;
 using nextpilot::plotscope::foundation::Result;
 
-namespace
-{
+// 视图工厂（导出，见 DiagnosticsPanel.h）：装配层（BuiltinWorkbenchViews）经它
+// 注册进 ViewRegistry（registerViewProvider，owner core.workbench）；旧工厂表注册已删。
 QWidget *createDiagnosticsPanel(AppContext &appCtx,
                                 nextpilot::plotscope::intent::IIntentExecutor &executor,
                                 QWidget *parent)
 {
     return new DiagnosticsPanel(appCtx, executor, parent);
 }
-} // namespace
 
 DiagnosticsPanel::DiagnosticsPanel(AppContext &appCtx,
                                    nextpilot::plotscope::intent::IIntentExecutor &executor,
@@ -84,7 +82,3 @@ int DiagnosticsPanel::refresh()
 }
 
 } // namespace nextpilot::plotscope::gui
-
-// 面板自注册：底部面板组（Region::Panel）+ 页签标题「诊断」。
-PS_REGISTER_PANEL_TI("diagnostics", diagnosticsPanel,
-                    ::nextpilot::plotscope::gui::createDiagnosticsPanel, "诊断", "diagnostics")

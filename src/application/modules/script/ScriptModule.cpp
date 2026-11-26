@@ -590,7 +590,9 @@ ModuleContributions ScriptModule::contributes() const
     scriptActivity.order = 1;
     scriptActivity.ribbonPage = QStringLiteral("ribbon.page.script");
     scriptActivity.panelTypes = {QStringLiteral("script-files")};
-    scriptActivity.centralPanel = QStringLiteral("script-editor");
+    scriptActivity.centralEditor = QStringLiteral("script-editor");
+    scriptActivity.centralRef = nextpilot::plotscope::registry::ResourceRef{QStringLiteral("script://editor"),
+                                                                            QString(), QStringLiteral("脚本编辑器")};
     c.activities.append(scriptActivity);
 
     using nextpilot::plotscope::registry::UiAction;

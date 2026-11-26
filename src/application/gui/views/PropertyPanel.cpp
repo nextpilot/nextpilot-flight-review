@@ -1,9 +1,9 @@
 #include "PropertyPanel.h"
 
 #include "AppContext.h"
-#include "PanelFactoryHub.h"
 #include "IIntentExecutor.h"
 #include "Intent.h"
+#include "PanelFactoryHub.h"
 #include "PropertySchema.h"
 #include "Result.h"
 
@@ -222,6 +222,9 @@ QWidget *createPropertyPanel(AppContext &appCtx, IIntentExecutor &exec, QWidget 
 }
 
 // 视图层自注册：模块只声明类型字符串 "property-panel"，外壳据此装配本面板。
+// A2b 笔2b 第②步返工（复审必修 1）：plot.properties 不得由 core.workbench
+// 声明（v3 §78"业务视图一律由模块自己声明"），property-panel 留工厂表、
+// 笔 4 随 modules/plot/gui 归位时再迁（届时按表 A 改名 plot.properties）。
 PS_REGISTER_PANEL_TI("property-panel", propertyPanel, createPropertyPanel, "属性", "property")
 
 } // namespace nextpilot::plotscope::gui

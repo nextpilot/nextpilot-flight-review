@@ -2,7 +2,6 @@
 
 #include "AppContext.h"
 #include "MessageLog.h"
-#include "PanelFactoryHub.h"
 #include "ThemeManager.h"
 
 #include <QDateTime>
@@ -53,14 +52,16 @@ QString renderLine(const QString &level, const QString &source, const QString &t
              source.toHtmlEscaped(), body, tail);
 }
 
+} // namespace
+
+// 视图工厂（导出，见 OutputPanel.h）：装配层（BuiltinWorkbenchViews）经它注册进
+// ViewRegistry（registerViewProvider，owner core.workbench）；旧工厂表注册已删。
 QWidget *createOutputPanel(AppContext &appCtx,
                            nextpilot::plotscope::intent::IIntentExecutor &,
                            QWidget *parent)
 {
     return new OutputPanel(appCtx, parent);
 }
-
-} // namespace
 
 OutputPanel::OutputPanel(AppContext &appCtx, QWidget *parent)
     : QWidget(parent), m_appCtx(appCtx)
@@ -120,6 +121,3 @@ void OutputPanel::clearLog()
 }
 
 } // namespace nextpilot::plotscope::gui
-
-PS_REGISTER_PANEL_TI("output-console", outputConsole,
-                     ::nextpilot::plotscope::gui::createOutputPanel, "输出", "output")

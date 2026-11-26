@@ -32,19 +32,20 @@ struct PanelReferenceIssue
 // 校验全部声明引用；返回空清单 = 全部命中工厂表。
 // ToolboxHub 版本为兼容入口；壳侧（A8b-M2 裁定 52441633 §三）走声明清单版本，
 // 面板清单经 workbench::IPanelsService::panels() 读回。
-QList<PanelReferenceIssue> validatePanelReferences(
-    const ToolboxHub &toolbox,
-    const UiSlotHub &slotHub,
-    const QList<ProductPanelPlacement> &placements);
-QList<PanelReferenceIssue> validatePanelReferences(
-    const QList<PanelSpec> &panels,
-    const UiSlotHub &slotHub,
-    const QList<ProductPanelPlacement> &placements);
+// knownViewIds：views 声明命中面（A2b 笔2b 第②步）——已迁 ViewRegistry 的 id
+// （gui 内置面板，注册不再走工厂表）由壳经 IViewsService 判定后传入；旧工厂表
+// 路径保留到⑦步删，两命中面并存期间任一命中即放行。
+QList<PanelReferenceIssue> validatePanelReferences(const ToolboxHub &toolbox, const UiSlotHub &slotHub,
+                                                   const QList<ProductPanelPlacement> &placements,
+                                                   const QStringList &knownViewIds = {});
+QList<PanelReferenceIssue> validatePanelReferences(const QList<PanelSpec> &panels, const UiSlotHub &slotHub,
+                                                   const QList<ProductPanelPlacement> &placements,
+                                                   const QStringList &knownViewIds = {});
 // 壳侧版本（裁定 52442006 Step 4）：壳不再持 UiSlotHub，Activity 清单经
 // ISlotsService::activities() 取回后传入，语义与 UiSlotHub 版完全一致。
-QList<PanelReferenceIssue> validatePanelReferences(
-    const QList<PanelSpec> &panels,
-    const QList<ActivitySpec> &activities,
-    const QList<ProductPanelPlacement> &placements);
+QList<PanelReferenceIssue> validatePanelReferences(const QList<PanelSpec> &panels,
+                                                   const QList<ActivitySpec> &activities,
+                                                   const QList<ProductPanelPlacement> &placements,
+                                                   const QStringList &knownViewIds = {});
 
 } // namespace nextpilot::plotscope::registry

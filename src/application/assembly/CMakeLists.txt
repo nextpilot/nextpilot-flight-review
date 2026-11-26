@@ -11,11 +11,18 @@ add_library(ps_assembly STATIC
     include/WorkbenchServices.h
     include/SettingsEditorWidget.h
     include/ExtensionActivationService.h
+    include/BuiltinWorkbenchViews.h
     src/WorkbenchAdapters.cpp
     src/WorkbenchServices.cpp
     src/ExtensionActivationService.cpp
     src/BuiltinTextEditor.cpp
     src/SettingsEditor.cpp
+    # 壳内置工作台视图装配（A2b 笔2b 第②步）：views 声明 + provider 注册；
+    # 只被 gui_main 装配钩子调用，CLI 不引用、不拉入 gui/views 目标文件。
+    # 壳内置工作台视图装配·声明半（A2b 笔2b 第②步返工，复审必修 2）：只构造
+    # ContributesDoc 调 declare，纯数据无 gui 依赖；provider 注册半在 gui 侧
+    # shell/BuiltinViewProviders（ps_assembly 不得 include gui/views）。
+    src/BuiltinWorkbenchViews.cpp
 )
 target_include_directories(ps_assembly PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(ps_assembly PUBLIC

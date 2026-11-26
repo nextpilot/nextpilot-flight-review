@@ -26,6 +26,8 @@
 #include "GuiContext.h"
 #include "MainWindow.h"
 #include "ReportExporter.h" // 装配层：测试不走 gui_main，须显式注册 report.export viewAction
+#include "BuiltinWorkbenchViews.h" // 装配层：测试不走 gui_main，须显式装配壳内置工作台视图
+#include "BuiltinViewProviders.h"  // gui 侧：壳内置工作台视图 provider 注册半（复审必修 2）
 #include "views/PropertyPanel.h"
 #include "ThemeManager.h"
 #include "ToolboxHub.h"
@@ -173,6 +175,10 @@ int main(int argc, char *argv[])
     // 故必须用 application 之前声明、之后的持久变量，不能捕获块内栈变量（悬空引用→堆损坏）。
     int g_derivedCount = 0, g_filterCount = 0, g_scriptFilterCount = 0;
     QString g_derivedName;
+    // A2b 笔2b 第②步返工（复审必修 2）：先声明（assembly）、后注册 provider
+    // （gui 侧）——两半都先于 build，build 内 defaultPanels 走 views 声明与 provider。
+    nextpilot::plotscope::assembly::declareBuiltinWorkbenchViews(application.host().services());
+    nextpilot::plotscope::gui::installBuiltinWorkbenchViewProviders(application.host().services());
     window.build(application.host());
     // 测试不走 gui_main，须在此显式装配 report.export viewAction（业务在 report 模块呈现层）。
     nextpilot::plotscope::gui::installReportExport(application.context());
@@ -789,13 +795,16 @@ int main(int argc, char *argv[])
         // 两者走同一个 requestPanel 入口。
         QWidget *canPanel = ui->requestPanel(canSpec->area, canSpec->id);
         CHECK(canPanel != nullptr);
-        // CAN 面板能力仍在（工厂 + 清单 + 可请求），但不再占据 dock.right 主位。
-        CHECK(binder->panelTitles(Region::SecondarySidebar).contains(QStringLiteral("属性"))); // 页签集里有属性面板（同区多面板后主位概念已废）
-        OK("模块侧闭环：按领域查清单 -> 按 id 请求面板成功；dock.right 主位归属性面板");
+        // 属性面板留工厂表（返工必修 1：plot.properties 不得由 core.workbench
+        // 声明，笔 4 随 modules/plot/gui 归位再迁），落区仍 SecondarySidebar。
+        CHECK(binder->panelTitles(Region::SecondarySidebar).contains(QStringLiteral("属性")));
+        OK("模块侧闭环：按领域查清单 -> 按 id 请求面板成功；属性面板（工厂表）仍落右栏");
     }
 
-    // --- 3d) 属性面板：dock.right 页签之一 + 统一 selection 联动 ---
+    // --- 3d) 属性面板：工厂表路径（返工必修 1：留笔 4 再迁）+ 统一 selection 联动 ---
     {
+        // 返工（必修 1）：plot.properties 不得由 core.workbench 声明——属性面板
+        // 回退 PS_REGISTER_PANEL（工厂表命中），落区仍 SecondarySidebar。
         CHECK(binder->panelWidget(Region::SecondarySidebar) != nullptr);
         // dock.right 可能并列多个页签（属性 + 脚本调试等，模块激活顺序不定），
         // 按类型查找属性面板，不依赖注册先后。
@@ -805,8 +814,8 @@ int main(int argc, char *argv[])
             if (!propPanel)
                 propPanel = qobject_cast<PropertyPanel *>(w);
         }
-        CHECK(nextpilot::plotscope::registry::PanelFactoryHub::types()
-                  .contains(QStringLiteral("property-panel")));
+        CHECK(nextpilot::plotscope::registry::PanelFactoryHub::types().contains(
+            QStringLiteral("property-panel"))); // 工厂表命中恢复
 
         // 统一 selection 联动：选中画布 -> 属性面板按 kind 找 provider 显示 schema。
         CHECK(propPanel != nullptr);
@@ -819,6 +828,78 @@ int main(int argc, char *argv[])
         CHECK(propPanel->rowCount() >= 2); // 图型/曲线数/图例
         CHECK(propPanel->selectionKindText() == QStringLiteral("canvas"));
         OK("统一 selection 联动：选中画布 -> 属性面板按 provider 显示 schema 行");
+
+        // A2b 返工（监工 52462438）：属性页签 toggle 契约——开关动作 id 的尾段
+        // （pageKey）必须就是 dock 定位表里的键。曾因 pageKey 漂移（动作注册
+        // plot.properties / dock 实际 property-panel）把开关弄成"点了弹尚未创建"，
+        // CI 全绿但功能是哑的。这里真点动作验证显隐翻转（两端对齐 CI 才能抓漂移）。
+        const bool propVisibleBefore = binder->isDockPageVisible(QStringLiteral("property-panel"));
+        CHECK(binder->triggerAction(QStringLiteral("view.toggleDock.property-panel")));
+        CHECK(binder->isDockPageVisible(QStringLiteral("property-panel")) == !propVisibleBefore);
+        CHECK(binder->triggerAction(QStringLiteral("view.toggleDock.property-panel")));
+        CHECK(binder->isDockPageVisible(QStringLiteral("property-panel")) == propVisibleBefore);
+        OK("属性页签 toggle：动作 id 与 dock pageKey 对齐，点击翻转显隐（不报尚未创建）");
+    }
+
+    // --- 3e) A2b 笔2b 复审必修 C：openView/openEditor 不只建、还要摆 ---
+    // 落区来自 viewsContainers[].area（sidebar→PrimarySidebar / auxiliary→
+    // SecondarySidebar / bottom→Panel）；editor 进中央页签且标题正确；
+    // 同一 view 二次 openView 仍是同一实例。缺一条打回②。
+    {
+        auto *viewsSvc =
+            application.host().services()
+                ? application.host().services()->getService<nextpilot::plotscope::workbench::IViewsService>(
+                      QStringLiteral("views.readback"))
+                : nullptr;
+        CHECK(viewsSvc != nullptr);
+        auto *reg = application.host().services()
+                        ? application.host().services()->getService<nextpilot::plotscope::registry::ViewRegistry>(
+                              QStringLiteral("views.registry"))
+                        : nullptr;
+        CHECK(reg != nullptr);
+        // 内置 5 点没有 auxiliary——测试自声明一个 auxiliary 容器 + 视图 + provider，
+        // 验证 auxiliary → SecondarySidebar 的映射（壳只读 area，不按 id 特判）。
+        namespace reg_ns = nextpilot::plotscope::registry;
+        reg_ns::ContributesDoc auxDoc;
+        auxDoc.owner = QStringLiteral("probe.aux");
+        reg_ns::ContributedViewContainer auxContainer;
+        auxContainer.id = QStringLiteral("probe.auxbar");
+        auxContainer.title = QStringLiteral("辅助侧栏");
+        auxContainer.area = QStringLiteral("auxiliary");
+        auxDoc.viewContainers.append(auxContainer);
+        reg_ns::ContributedView auxView;
+        auxView.id = QStringLiteral("probe.aux.view");
+        auxView.name = QStringLiteral("辅助视图");
+        auxView.container = QStringLiteral("probe.auxbar");
+        auxDoc.views.append(auxView);
+        reg->declare(auxDoc);
+        int auxCreated = 0;
+        CHECK(reg->registerViewProvider(
+            QStringLiteral("probe.aux.view"),
+            [&auxCreated](nextpilot::plotscope::context::AppContext &, nextpilot::plotscope::intent::IIntentExecutor &,
+                          QWidget *parent) -> QWidget * {
+                ++auxCreated;
+                return new QWidget(parent);
+            },
+            QStringLiteral("probe.aux")));
+
+        auto *ctx = window.context();
+        CHECK(ctx != nullptr);
+        // sidebar（3d 已回退：属性面板留工厂表落右栏 SecondarySidebar，不占左栏）+ bottom：
+        QWidget *diag = ctx->openView(QStringLiteral("diagnostics"));
+        CHECK(diag != nullptr);
+        CHECK(binder->panelWidgets(Region::Panel).contains(diag));
+        CHECK(binder->dockPageTitle(QStringLiteral("diagnostics")) == QStringLiteral("诊断"));
+        // auxiliary：
+        QWidget *aux = ctx->openView(QStringLiteral("probe.aux.view"));
+        CHECK(aux != nullptr);
+        CHECK(binder->panelWidgets(Region::SecondarySidebar).contains(aux));
+        // 二次 openView 同一实例（复用不重复 dock）：
+        CHECK(ctx->openView(QStringLiteral("probe.aux.view")) == aux);
+        CHECK(auxCreated == 1);
+        // editor：openEditor 会留下中央页签，为不污染本段之后的中央区绝对计数
+        // 断言（4b"画布仍是首签"），探针后置到 4b 段末（见下方 4b+ 探针块）。
+        OK("必修C（view 部分）：sidebar/auxiliary/bottom 落区来自 area，二次 openView 同实例");
     }
 
     // --- 4) 停靠区就位（Qt-ADS）---
@@ -1005,11 +1086,13 @@ int main(int argc, char *argv[])
         CHECK(activityIds.contains(QStringLiteral("diagnostics")));
         CHECK(activityIds.contains(QStringLiteral("plot"))); // 绘图域 Activity（c4b 起归 PlotModule 声明）
 
+        // 返工必修 1：属性面板留工厂表落右栏，左栏 section 仍为 2（dataset-tree
+        // + script-files）；plot.properties 声明笔 4 随 plot 模块迁入后再加。
         CHECK(binder->sideBarSectionCount() == 2);
         CHECK(binder->sideBarSectionActivity(QStringLiteral("dataset-tree")) == QStringLiteral("data"));
         CHECK(binder->sideBarSectionActivity(QStringLiteral("script-files")) == QStringLiteral("script"));
 
-        // Activity Bar 不再把左栏做成互斥页签：两个面板同属一个 section 栈。
+        // Activity Bar 不再把左栏做成互斥页签：多个面板同属一个 section 栈。
         const QStringList leftTitles = binder->panelTitles(Region::PrimarySidebar);
         CHECK(leftTitles.contains(QStringLiteral("数据源")));
         CHECK(leftTitles.contains(QStringLiteral("脚本文件")));
@@ -1069,6 +1152,29 @@ int main(int argc, char *argv[])
         CHECK(binder->setDockPageVisible(QStringLiteral("script-files"), true));
         CHECK(binder->isDockPageVisible(QStringLiteral("script-files")));
         OK("Activity Bar：四入口 + 点击切 section/Ribbon + 折叠 + Ctrl+B + badge + 顺序配置");
+    }
+
+    // --- 4b+) 必修C（editor 部分）：openEditor 进中央页签、标题取 ref.title ---
+    // 后置原因：openEditor 会留下中央页签，本段之前的中央区绝对计数断言
+    // （4b "画布仍是首签" 1→2）必须先跑完；之后的断言均为相对计数，不受影响。
+    {
+        auto *ctx = window.context();
+        CHECK(ctx != nullptr);
+        namespace reg_ns2 = nextpilot::plotscope::registry;
+        reg_ns2::ResourceRef editorRef;
+        editorRef.uri = QStringLiteral("untitled:probe.txt");
+        editorRef.mime = QStringLiteral("text/plain");
+        editorRef.title = QStringLiteral("必修C编辑器");
+        QWidget *ed = ctx->openEditor(QStringLiteral("text"), editorRef);
+        CHECK(ed != nullptr);
+        CHECK(binder->centralWidgets().contains(ed));
+        CHECK(binder->centralTitles().contains(QStringLiteral("必修C编辑器")));
+        // 同一 viewType + 不同资源：不复用（按 ref 区分，不走 view 缓存）。
+        reg_ns2::ResourceRef editorRef2 = editorRef;
+        editorRef2.title = QStringLiteral("必修C编辑器2");
+        QWidget *ed2 = ctx->openEditor(QStringLiteral("text"), editorRef2);
+        CHECK(ed2 != nullptr && ed2 != ed);
+        OK("必修C（editor 部分）：openEditor 进中央页签且标题取 ref.title");
     }
 
     // --- 5) 数据源面板：源列表 + 详情树（源 → 数据集 → 表 → 列）---
@@ -3594,12 +3700,16 @@ int main(int argc, char *argv[])
             const QVariantMap m = r.toMap();
             if (m.value(QStringLiteral("kind")).toString() == QStringLiteral("panel-factory"))
                 // Step 6：精确数（快照 2026-11-26；新增面板在此显式加行）。
-                CHECK(m.value(QStringLiteral("count")).toInt() == 16);
+                // A2b 笔2b 第②步返工（必修 1）：输出/问题/调试控制台/诊断 4 点已迁
+                // ViewRegistry provider（owner core.workbench）；属性面板留工厂表
+                // （笔 4 迁），工厂表 16 → 12。
+                CHECK(m.value(QStringLiteral("count")).toInt() == 12);
         }
 
         // 打开诊断面板（首次按需创建），面板行数 == 树上节点数
-        QWidget *diagWidget = window.context()->requestPanel(
-            Region::Panel, QStringLiteral("diagnostics"));
+        // A2b 笔2b 第②步：诊断工厂已迁 ViewRegistry（owner core.workbench），
+        // 调用点随之迁 openView（落区由容器 area=bottom 决定 → 底部 Panel）。
+        QWidget *diagWidget = window.context()->openView(QStringLiteral("diagnostics"));
         CHECK(diagWidget != nullptr);
         auto *diag = qobject_cast<nextpilot::plotscope::gui::DiagnosticsPanel *>(diagWidget);
         CHECK(diag != nullptr);

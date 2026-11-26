@@ -3,7 +3,6 @@
 #include "AppContext.h"
 #include "InteractionHub.h"
 #include "MessageLog.h"
-#include "PanelFactoryHub.h"
 #include "Result.h"
 #include "ThemeManager.h"
 
@@ -45,14 +44,16 @@ bool splitLocator(const QString &locator, QString &name, int &line)
     return !name.isEmpty();
 }
 
+} // namespace
+
+// 视图工厂（导出，见 ProblemsPanel.h）：装配层（BuiltinWorkbenchViews）经它注册进
+// ViewRegistry（registerViewProvider，owner core.workbench）；旧工厂表注册已删。
 QWidget *createProblemsPanel(AppContext &appCtx,
                              nextpilot::plotscope::intent::IIntentExecutor &,
                              QWidget *parent)
 {
     return new ProblemsPanel(appCtx, parent);
 }
-
-} // namespace
 
 ProblemsPanel::ProblemsPanel(AppContext &appCtx, QWidget *parent)
     : QWidget(parent), m_appCtx(appCtx)
@@ -163,6 +164,3 @@ int ProblemsPanel::rowCount() const
 }
 
 } // namespace nextpilot::plotscope::gui
-
-PS_REGISTER_PANEL_TI("problems", problemsPanel,
-                     ::nextpilot::plotscope::gui::createProblemsPanel, "问题", "problems")

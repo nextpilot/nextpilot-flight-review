@@ -9,6 +9,10 @@ namespace nextpilot::plotscope::context
 class AppContext;
 }
 
+namespace nextpilot::plotscope::intent {
+class IIntentExecutor;
+}
+
 namespace nextpilot::plotscope::gui
 {
 
@@ -36,5 +40,11 @@ private:
     context::AppContext &m_appCtx;
     QPlainTextEdit *m_view = nullptr;
 };
+
+// 视图工厂（A2b 笔2b 第②步导出）：装配层（BuiltinWorkbenchViews）经它把本视图
+// 注册进 ViewRegistry（registerViewProvider，owner core.workbench）——旧
+// PS_REGISTER_PANEL 工厂表注册已随之删除。
+QWidget *createOutputPanel(nextpilot::plotscope::context::AppContext &appCtx,
+                           nextpilot::plotscope::intent::IIntentExecutor &exec, QWidget *parent);
 
 } // namespace nextpilot::plotscope::gui

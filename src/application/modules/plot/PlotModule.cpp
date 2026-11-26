@@ -732,7 +732,9 @@ ModuleContributions PlotModule::contributes() const
     plotActivity.icon = QStringLiteral("plot_refresh");
     plotActivity.order = 3;
     plotActivity.ribbonPage = QStringLiteral("ribbon.page.plot");
-    plotActivity.centralPanel = QStringLiteral("plot.workspace");
+    plotActivity.centralEditor = QStringLiteral("plot.workspace");
+    plotActivity.centralRef = nextpilot::plotscope::registry::ResourceRef{QStringLiteral("plot://workspace"), QString(),
+                                                                          QStringLiteral("绘图工作区")};
     c.activities.append(plotActivity);
 
     c.ribbonPages.append(RibbonPageDecl{QStringLiteral("ribbon.page.plot"),

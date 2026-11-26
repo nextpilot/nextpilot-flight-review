@@ -48,6 +48,8 @@ class IPanelsService;
 class IFormatHints;
 class IThemeService;
 class ISlotsService;
+class IViewsService;
+class IEditorService;
 }
 
 
@@ -210,6 +212,10 @@ private:
     const nextpilot::plotscope::workbench::IThemeService *m_themeService = nullptr;
     // 槽位表服务（裁定 52442006 Step 4）：壳读写唯一通道；未装配（bare 壳）为 nullptr。
     nextpilot::plotscope::workbench::ISlotsService *m_slotsService = nullptr;
+    // 视图/编辑器打开服务（A2b 笔2b 复审必修 A）：构造 GuiContext 时注入，
+    // openView/openEditor 的执行体；借用指针，归装配层，未装配为 nullptr。
+    nextpilot::plotscope::workbench::IViewsService *m_viewsService = nullptr;
+    nextpilot::plotscope::workbench::IEditorService *m_editorService = nullptr;
     // 系统级 preferences.open handler（打开全局偏好对话框）；随窗口存亡。
     PreferencesIntentHandler *m_preferencesHandler = nullptr;
     bool m_sessionRestored = false;   // 会话恢复只跑一次（首次显示后）

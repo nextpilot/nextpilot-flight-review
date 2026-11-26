@@ -1,6 +1,8 @@
 #include "MainWindow.h"
 #include "ShellBinder.h"
 #include "ExtensionActivationService.h"
+#include "BuiltinViewProviders.h"  // gui 侧：壳内置工作台视图 provider 注册半（复审必修 2）
+#include "BuiltinWorkbenchViews.h" // 装配层：壳内置工作台视图声明半（owner core.workbench，纯数据）
 #ifdef PS_HAS_REPORT_GUI
 #include "ReportExporter.h" // 装配层：注册 report.export viewAction（业务在 report 模块）
 #endif
@@ -140,6 +142,11 @@ int main(int argc, char *argv[])
     }
 
     nextpilot::plotscope::app::App application(settingsPath);
+    // 壳内置工作台视图（A2b 笔2b 第②步返工）：先声明（assembly，纯数据）、
+    // 后注册 provider（gui 侧）——两半都**先于** window.build：build 内
+    // defaultPanels 走 views 声明与 provider。
+    nextpilot::plotscope::assembly::declareBuiltinWorkbenchViews(application.host().services());
+    nextpilot::plotscope::gui::installBuiltinWorkbenchViewProviders(application.host().services());
     nextpilot::plotscope::gui::MainWindow window(application.context(), productSpec);
     window.build(application.host());
 

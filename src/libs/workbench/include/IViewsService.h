@@ -34,6 +34,12 @@ public:
     virtual QList<nextpilot::plotscope::registry::ContributedView>
     viewsInContainer(const QString &containerId) const = 0;
 
+    // 容器声明（未命中返回 id 为空的默认值）——壳把 viewId 解到落区时的只读
+    // readback 面（A2b 笔2b 复审必修 C）：壳只查一次容器拿 area，不再把三个
+    // area 各扫一遍按字符串猜。补 readback 不是平行入口。
+    virtual nextpilot::plotscope::registry::ContributedViewContainer
+    containerForId(const QString &containerId) const = 0;
+
     // 视图声明（未命中返回 owner 为空的默认值；用 owner 判空）。
     virtual nextpilot::plotscope::registry::ContributedView
     viewForId(const QString &viewId) const = 0;

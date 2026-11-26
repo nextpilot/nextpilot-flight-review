@@ -21,22 +21,23 @@ PanelReferenceIssue makeIssue(const QString &source, const QString &type)
 }
 } // namespace
 
-QList<PanelReferenceIssue> validatePanelReferences(const ToolboxHub &toolbox,
-                                                   const UiSlotHub &slotHub,
-                                                   const QList<ProductPanelPlacement> &placements)
+QList<PanelReferenceIssue> validatePanelReferences(const ToolboxHub &toolbox, const UiSlotHub &slotHub,
+                                                   const QList<ProductPanelPlacement> &placements,
+                                                   const QStringList &knownViewIds)
 {
-    return validatePanelReferences(toolbox.panels.values(), slotHub, placements);
+    return validatePanelReferences(toolbox.panels.values(), slotHub, placements, knownViewIds);
 }
 
 QList<PanelReferenceIssue> validatePanelReferences(const QList<PanelSpec> &panels,
                                                    const QList<ActivitySpec> &activities,
-                                                   const QList<ProductPanelPlacement> &placements)
+                                                   const QList<ProductPanelPlacement> &placements,
+                                                   const QStringList &knownViewIds)
 {
     QList<PanelReferenceIssue> issues;
     const QStringList known = PanelFactoryHub::types();
 
-    auto check = [&issues, &known](const QString &source, const QString &type) {
-        if (type.isEmpty() || known.contains(type))
+    auto check = [&issues, &known, &knownViewIds](const QString &source, const QString &type) {
+        if (type.isEmpty() || known.contains(type) || knownViewIds.contains(type))
             return;
         issues.append(makeIssue(source, type));
     };
@@ -48,24 +49,24 @@ QList<PanelReferenceIssue> validatePanelReferences(const QList<PanelSpec> &panel
     {
         for (const QString &type : activity.panelTypes)
             check(QStringLiteral("Activity \"%1\" panelTypes").arg(activity.id), type);
-        check(QStringLiteral("Activity \"%1\" centralPanel").arg(activity.id), activity.centralPanel);
+        check(QStringLiteral("Activity \"%1\" centralEditor").arg(activity.id), activity.centralEditor);
     }
 
     for (const ProductPanelPlacement &placement : placements)
-        check(QStringLiteral("产品默认布局 %1").arg(regionName(placement.region)), placement.panelType);
+        check(QStringLiteral("产品默认布局 %1").arg(regionName(placement.region)), placement.viewId);
 
     return issues;
 }
 
-QList<PanelReferenceIssue> validatePanelReferences(const QList<PanelSpec> &panels,
-                                                   const UiSlotHub &slotHub,
-                                                   const QList<ProductPanelPlacement> &placements)
+QList<PanelReferenceIssue> validatePanelReferences(const QList<PanelSpec> &panels, const UiSlotHub &slotHub,
+                                                   const QList<ProductPanelPlacement> &placements,
+                                                   const QStringList &knownViewIds)
 {
     QList<PanelReferenceIssue> issues;
     const QStringList known = PanelFactoryHub::types();
 
-    auto check = [&issues, &known](const QString &source, const QString &type) {
-        if (type.isEmpty() || known.contains(type))
+    auto check = [&issues, &known, &knownViewIds](const QString &source, const QString &type) {
+        if (type.isEmpty() || known.contains(type) || knownViewIds.contains(type))
             return;
         issues.append(makeIssue(source, type));
     };
@@ -79,12 +80,12 @@ QList<PanelReferenceIssue> validatePanelReferences(const QList<PanelSpec> &panel
     {
         for (const QString &type : activity.panelTypes)
             check(QStringLiteral("Activity \"%1\" panelTypes").arg(activity.id), type);
-        check(QStringLiteral("Activity \"%1\" centralPanel").arg(activity.id), activity.centralPanel);
+        check(QStringLiteral("Activity \"%1\" centralEditor").arg(activity.id), activity.centralEditor);
     }
 
     // 3) 产品默认布局占位。
     for (const ProductPanelPlacement &placement : placements)
-        check(QStringLiteral("产品默认布局 %1").arg(regionName(placement.region)), placement.panelType);
+        check(QStringLiteral("产品默认布局 %1").arg(regionName(placement.region)), placement.viewId);
 
     return issues;
 }

@@ -25,11 +25,12 @@ using namespace nextpilot::plotscope::host;
 namespace nextpilot::plotscope::gui
 {
 
-GuiContext::GuiContext(QMainWindow *window, workbench::ISlotsService *slotSvc, ShellBinder *binder,
-                       AppContext &appCtx, IIntentExecutor *executor,
-                       const workbench::IPanelsService *panelsService, QObject *parent)
-    : QObject(parent), m_window(window), m_slots(slotSvc), m_binder(binder), m_appCtx(appCtx),
-      m_executor(executor), m_panelsService(panelsService)
+GuiContext::GuiContext(QMainWindow *window, workbench::ISlotsService *slotSvc, ShellBinder *binder, AppContext &appCtx,
+                       IIntentExecutor *executor, const workbench::IPanelsService *panelsService,
+                       workbench::IViewsService *viewsService, workbench::IEditorService *editorService,
+                       QObject *parent)
+    : QObject(parent), m_window(window), m_slots(slotSvc), m_binder(binder), m_appCtx(appCtx), m_executor(executor),
+      m_panelsService(panelsService), m_viewsService(viewsService), m_editorService(editorService)
 {
     // 状态栏中继：登记/文案/瞬时消息的真源在 AppContext::status()（libs/context），
     // 这里只把 hub 事件转发成壳侧信号，MainWindow 的订阅代码不用动。
@@ -89,9 +90,11 @@ void GuiContext::setActivityBadge(const QString &activityId, int count)
 // A8b-M2 裁定 52442006 Step 3：installContributions 整段搬 assembly/ContributionsInstaller
 // （写 ISlotsService/StatusHub，壳只渲染）；壳不再灌回，见 ExtensionActivationService.cpp。
 
-QWidget *GuiContext::requestPanel(nextpilot::plotscope::registry::Region region,
-                                  const QString &panelType)
+QWidget *GuiContext::requestPanel(nextpilot::plotscope::registry::Region region, const QString &panelType)
 {
+    // 旧工厂入口（A2b 笔2b 第①步复审必修 A 后唯一余留）：仅尚未迁移的调用点使用；
+    // ②~⑥步逐 owner 迁到 openView/openEditor（走 IViewsService/IEditorService），
+    // ⑦步删本函数，旧工厂全退场。
     // 去重由**工厂登记**决定，不在这里一刀切：
     //   singleton=true（默认）：同一类型已有活着的实例就聚焦它（"再打开"=置前），
     //     键只用 panelType——同类面板只该有一个家，换区请求也是聚焦既有实例。
@@ -141,6 +144,88 @@ QWidget *GuiContext::requestPanel(nextpilot::plotscope::registry::Region region,
         dockCentral(widget, title);
     else
         dockWidget(widget, region, title, panelType);
+    return widget;
+}
+
+QWidget *GuiContext::openView(const QString &viewId)
+{
+    // A2b 笔2b（复审必修 C：不只建、还要摆）：壳把 viewId 解到落区并交给 dock——
+    // 落区由 viewsContainers[].area 决定（§6 模块不指定区域），壳不按 id 特判、
+    // 不自建控件。复用/创建走 IViewsService（2a 定死语义），摆放走 ShellBinder。
+    if (!m_viewsService || viewId.isEmpty())
+        return nullptr;
+    // 已开复用（dock 簿记，与 requestPanel 的 m_panels 同款）：同一 viewId 已有
+    // 活实例 → 置前返回，不重复 dock（页签可关，QPointer 兜底自动失效）。
+    if (QWidget *existing = m_openViews.value(viewId))
+    {
+        if (m_binder)
+            m_binder->raisePanel(existing);
+        return existing;
+    }
+    // 落区解析：view → 容器 → area 映射（sidebar/auxiliary/bottom 可停靠；
+    // ribbon 页是声明式入口不走打开；未知 area 出诊断不猜）。
+    const nextpilot::plotscope::registry::ContributedView view = m_viewsService->viewForId(viewId);
+    if (view.owner.isEmpty())
+    {
+        qWarning() << "openView: 未声明 view, viewId =" << viewId;
+        return nullptr;
+    }
+    const nextpilot::plotscope::registry::ContributedViewContainer container =
+        m_viewsService->containerForId(view.container);
+    nextpilot::plotscope::registry::Region region;
+    if (container.area == QLatin1String("sidebar"))
+        region = nextpilot::plotscope::registry::Region::PrimarySidebar;
+    else if (container.area == QLatin1String("auxiliary"))
+        region = nextpilot::plotscope::registry::Region::SecondarySidebar;
+    else if (container.area == QLatin1String("bottom"))
+        region = nextpilot::plotscope::registry::Region::Panel;
+    else
+    {
+        qWarning() << "openView: 容器 area 不可停靠或未声明, viewId =" << viewId << "containerId =" << view.container
+                   << "area =" << container.area;
+        return nullptr;
+    }
+    // parent = 区域宿主（ADS dock 容器），不用裸 QMainWindow——避免"先浮窗再
+    // reparent"的窗口闪烁（复审必修 C 第 2 条）。
+    QWidget *parent = m_binder ? m_binder->dockHost() : m_window;
+    QWidget *widget = m_viewsService->openView(viewId, m_appCtx, executor(), parent);
+    if (!widget)
+        return nullptr;
+    // 摆放：标题/图标来自声明（壳不猜）；pageKey = viewId（稳定键，视图页
+    // 开关按钮按它定位页签）。
+    if (m_binder)
+        m_binder->dock(region, view.name, widget, view.icon, viewId);
+    m_openViews.insert(viewId, widget);
+    return widget;
+}
+
+QWidget *GuiContext::openEditor(const QString &viewType, const nextpilot::plotscope::registry::ResourceRef &ref)
+{
+    // A2b 笔2b（复审必修 C：不只建、还要摆）：IEditorService 造控件，壳接进
+    // 中央区页签（dockCentral——首到占位、后来并页签）。ref 由 owner 构造、
+    // 壳不解析 uri；同一 viewType 不同资源不会按错复用。
+    if (!m_editorService || viewType.isEmpty())
+        return nullptr;
+    QWidget *parent = m_binder ? m_binder->dockHost() : m_window;
+    QWidget *widget = m_editorService->openEditor(viewType, ref, m_appCtx, executor(), parent);
+    if (!widget)
+        return nullptr;
+    // 页签标题：ref.title（资源名）优先；空则回退编辑器声明的 displayName——
+    // 壳只挑显示名，不解析 uri 语义。
+    QString title = ref.title;
+    if (title.isEmpty())
+    {
+        for (const nextpilot::plotscope::registry::ContributedCustomEditor &editor : m_editorService->customEditors())
+        {
+            if (editor.viewType == viewType)
+            {
+                title = editor.displayName;
+                break;
+            }
+        }
+    }
+    if (m_binder)
+        m_binder->setCentralContent(widget, title);
     return widget;
 }
 

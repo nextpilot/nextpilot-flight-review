@@ -1,9 +1,11 @@
 #pragma once
 
 #include "AppContext.h"
-#include "IWorkbenchContribution.h"
+#include "IEditorService.h"
 #include "IPanelsService.h"
 #include "ISlotsService.h"
+#include "IViewsService.h"
+#include "IWorkbenchContribution.h"
 #include "UiSlotTypes.h"
 
 #include <QHash>
@@ -29,11 +31,12 @@ class GuiContext final : public QObject, public nextpilot::plotscope::host::IUiC
 {
     Q_OBJECT
 public:
-    GuiContext(QMainWindow *window, nextpilot::plotscope::workbench::ISlotsService *slotSvc,
-               ShellBinder *binder,
-               nextpilot::plotscope::context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor *executor = nullptr,
+    GuiContext(QMainWindow *window, nextpilot::plotscope::workbench::ISlotsService *slotSvc, ShellBinder *binder,
+               nextpilot::plotscope::context::AppContext &appCtx,
+               nextpilot::plotscope::intent::IIntentExecutor *executor = nullptr,
                const nextpilot::plotscope::workbench::IPanelsService *panelsService = nullptr,
-               QObject *parent = nullptr);
+               nextpilot::plotscope::workbench::IViewsService *viewsService = nullptr,
+               nextpilot::plotscope::workbench::IEditorService *editorService = nullptr, QObject *parent = nullptr);
 
     // nextpilot::plotscope::host::IUiContext（只留工作台服务；灌回已搬装配层，
     // 裁定 52442006 Step 3——IContributionsInstaller）
@@ -44,6 +47,14 @@ public:
     // 请求 app 外壳提供一个部件，放到指定逻辑区域（通用面板与扩展包领域面板同一入口）。
     QWidget *requestPanel(nextpilot::plotscope::registry::Region region,
                           const QString &panelType) override;
+
+    // A2b 笔2b：视图/编辑器打开入口——壳只转调 workbench 服务，不自己建控件、
+    // 不自己判落区（落区由 viewsContainers[].area 决定，随各 owner 步迁移）。
+    // openView：转调 IViewsService::openView（已开则置前复用，未注册出诊断返 nullptr）；
+    // openEditor：转调 IEditorService::openEditor（ref 由 owner 构造、壳不解析）。
+    // 未装配（bare 壳）服务为 nullptr 时诚实返回 nullptr。
+    QWidget *openView(const QString &viewId) override;
+    QWidget *openEditor(const QString &viewType, const nextpilot::plotscope::registry::ResourceRef &ref) override;
 
     // 领域面板清单查询（纯数据）：请求仍走 requestPanel。
     QList<nextpilot::plotscope::registry::PanelSpec> availableDomainPanels(
@@ -106,6 +117,12 @@ private:
     // 服务接口注入，GuiContext 不直连扩展注册表。借用指针，生命周期归装配层。
     const nextpilot::plotscope::workbench::IPanelsService *m_panelsService = nullptr;
 
+    // 视图/编辑器打开服务（A2b 笔2b 复审必修 A）：openView/openEditor 的唯一执行体，
+    // 与 IPanelsService 同一路构造注入；借用指针，生命周期归装配层。未装配（bare 壳）为
+    // nullptr，openView/openEditor 诚实返回 nullptr——不允许桥回旧工厂表。
+    nextpilot::plotscope::workbench::IViewsService *m_viewsService = nullptr;
+    nextpilot::plotscope::workbench::IEditorService *m_editorService = nullptr;
+
     // 状态栏：登记与文案都在 AppContext::status()（libs/context），
     // 本类只做"IUiContext → hub"的转发与信号中继；**不含节流**——
     // 某个键要不要限频是生产方（模块）的领域知识（D2），壳不认识业务键。
@@ -114,6 +131,11 @@ private:
     // 不再新建页签（脚本编辑器/数据表格的"再打开"都是复用语义）。
     // QPointer 兜底：页签被用户关掉后自动清空，下次请求重新创建。
     QHash<QString, QPointer<QWidget>> m_panels;
+
+    // openView 已开簿记（A2b 笔2b 复审必修 C）：viewId → 已 dock 的活实例。
+    // 命中且存活 → 置前返回（不重复 dock）；页签被关后 QPointer 自动失效，
+    // 下次 openView 重新走创建+摆放路径。
+    QHash<QString, QPointer<QWidget>> m_openViews;
 
     // 面板图标（widget -> 图标名）：requestPanel 从
     // PanelFactoryHub / PanelSpec 取到图标后先记这里，dockWidget/dockCentral

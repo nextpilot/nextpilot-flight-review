@@ -60,6 +60,14 @@ public:
     // 返回部件的宿主引用（QWidget 前置声明），模块可用它设置数据/标题等。
     virtual QWidget *requestPanel(nextpilot::plotscope::registry::Region region, const QString &panelType) = 0;
 
+    // ---- A2b 笔2b：视图/编辑器打开入口（取代 requestPanel，requestPanel 待旧面清除步删除）----
+    // 打开一个已声明视图（落区由 viewsContainers[].area 决定，模块不指定 Region）；
+    // 已创建则置前复用。未声明/未注册返回 nullptr。壳内部补齐 AppContext/executor/parent。
+    virtual QWidget *openView(const QString &viewId) = 0;
+    // 在中央区打开编辑器：viewType 直接指定编辑器类型，ref 由 owner 模块构造、壳不解析 uri。
+    // 未注册 provider 或 canOpen 拒绝返回 nullptr。
+    virtual QWidget *openEditor(const QString &viewType, const nextpilot::plotscope::registry::ResourceRef &ref) = 0;
+
     // 查询当前可用的领域面板清单（纯数据，headless 也能问）。
     //
     // 模块怎么知道该请求哪个？它不写死 id，而是先问

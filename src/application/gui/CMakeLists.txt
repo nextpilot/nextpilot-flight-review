@@ -57,6 +57,10 @@ add_library(ps_gui OBJECT
     shell/ActivityBar.h
     shell/GuiContext.cpp
     shell/GuiContext.h
+    # 壳内置工作台视图装配·注册半（复审必修 2）：registerViewProvider 在 gui 侧，
+    # 与 assembly 的声明半（BuiltinWorkbenchViews）分立，装配层次不倒挂。
+    shell/BuiltinViewProviders.cpp
+    shell/BuiltinViewProviders.h
     shell/CommandPalette.cpp
     shell/CommandPalette.h
     shell/KeybindingDialog.cpp
@@ -89,7 +93,13 @@ add_library(ps_gui OBJECT
 target_include_directories(ps_gui PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}
     ${CMAKE_CURRENT_SOURCE_DIR}/shell
-    ${CMAKE_CURRENT_SOURCE_DIR}/theme)
+    ${CMAKE_CURRENT_SOURCE_DIR}/theme
+    # 注册半（BuiltinViewProviders）需要 gui/views 各面板的导出头（复审必修 2：
+    # 工厂实现留 gui/views，ps_gui 自己 include 自己的子目录——ps_assembly 不沾）。
+    ${CMAKE_CURRENT_SOURCE_DIR}/views/output
+    ${CMAKE_CURRENT_SOURCE_DIR}/views/problems
+    ${CMAKE_CURRENT_SOURCE_DIR}/views/debugconsole
+    ${CMAKE_CURRENT_SOURCE_DIR}/views/diagnostics)
 # c8（契约 §11 链接关 / 验收 6）：ps_gui 的链接依赖**只许**是 libs 层
 # （ps_host / ps_context / ps_command / ps_gui_theme / ps_widgets / 其余 libs/*）
 # 与 Qt；不许出现任何业务模块、工具箱、解析器库，也不含 fastplot / ps_protocol——

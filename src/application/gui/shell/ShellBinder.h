@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ISlotsService.h"
+#include "IViewsService.h"
 #include "UiSlotTypes.h"
 #include "ProductSpec.h"
 
@@ -108,10 +109,13 @@ public:
     QString dockPageTitle(const QString &pageKey) const;
 
     // 注入面板引用校验所需的另外两源：包面板声明（经 IPanelsService，裁定
-    // 52441633 §三——壳不直连扩展注册表）与产品默认布局。
+    // 52441633 §三——壳不直连扩展注册表）与产品默认布局；viewsService 可空，
+    // 非空时校验加第二命中面：views 声明命中（A2b 笔2b 第②步——gui 内置面板
+    // 已迁 ViewRegistry、不再在工厂表的 id 由此放行；旧工厂路径⑦步删）。
     // 由外壳在模块 onAttach 完成后注入；未注入时退化为只查 Activity panelTypes。
     void setPanelReferenceContext(const workbench::IPanelsService *panels,
-                                  const QList<registry::ProductPanelPlacement> &placements);
+                                  const QList<registry::ProductPanelPlacement> &placements,
+                                  workbench::IViewsService *viewsService = nullptr);
 
     // --- Activity Bar / Side Bar ---
     // 启动期校验（验收 4）：声明侧引用的面板类型必须在面板工厂表命中。
@@ -172,6 +176,12 @@ public:
     bool focusPanel(QWidget *panel);
     // 该停靠区**全部**面板（同侧页签化的每个成员；属性/脚本调试等并列时逐个可查）。
     QList<QWidget *> panelWidgets(nextpilot::plotscope::registry::Region area) const;
+
+    // 区域宿主（A2b 笔2b 复审必修 C）：openView/openEditor 向服务要控件时的
+    // parent——ADS dock 体系所在容器，不是裸 QMainWindow。后续 dock()/中央区
+    // 接管时由 ADS reparent，避免"先挂在窗体上、再回抱进 dock"的浮窗闪烁。
+    // （窗体只适合"尚未定位"的临时父；本方法保证造出来的控件生在 dock 容器里。）
+    QWidget *dockHost();
 
     // 中央内容（画布区）——不在 dock 体系里，故单独暴露。
     QWidget *centralContent() const { return m_centralContent; }
@@ -292,6 +302,8 @@ private:
     // 面板引用校验的另外两源（外壳注入；空 = 退化为只查 Activity panelTypes）。
     const nextpilot::plotscope::workbench::IPanelsService *m_panelsService = nullptr;
     QList<nextpilot::plotscope::registry::ProductPanelPlacement> m_placements;
+    // views 命中面（A2b 笔2b 第②步）：非空时校验器把 views 声明也当命中来源。
+    nextpilot::plotscope::workbench::IViewsService *m_viewsRefService = nullptr;
     std::function<bool(const QString &)> m_whenEval;
     std::function<QList<QAction *>(QWidget *, const QString &)> m_viewTitleProvider;
     QHash<QString, QList<QAction *>> m_viewTitleActions;
