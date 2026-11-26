@@ -90,8 +90,10 @@ int main(int argc, char **argv)
     CHECK(writeCsv(d + QStringLiteral("/good1.csv"), 1));
     CHECK(writeCsv(d + QStringLiteral("/good2.csv"), 2));
     // 故意损坏：二进制垃圾，摄取管道必失败
-    CHECK(writeFile(d + QStringLiteral("/bad.csv"),
-                    QByteArray("\x89PNG\r\n\x1a\nnot a csv at all", 26)));
+    // 注意：这里必须用 QByteArrayLiteral 让长度编译期定死。原先写
+    // QByteArray("...", 26) —— 字面量只有 24 字节，ASan 直接报 global-buffer-overflow
+    // （sanitizer 腿首轮抓到，GCC -O3 普通构建下只是读两个越界字节、看不出问题）。
+    CHECK(writeFile(d + QStringLiteral("/bad.csv"), QByteArrayLiteral("\x89PNG\r\n\x1a\nnot a csv at all")));
 
     // ---- 2.4.1：3 个文件 1 个损坏 → 2 成功 1 失败，失败明细准确 ----
     QVariantMap p;

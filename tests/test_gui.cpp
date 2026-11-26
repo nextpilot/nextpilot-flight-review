@@ -53,6 +53,7 @@
 #include "RegistryTree.h"
 #include "SettingsStore.h"
 
+#include <QDir>
 #include <QProcess>
 #include "ChannelTransformConfig.h"
 
@@ -3091,7 +3092,7 @@ int main(int argc, char *argv[])
     // 第二份**同构** CSV：文件名不同 → 另一个源，列名完全相同 —— 正是
     // "两台设备同一套参数对比"的真实形态。
     {
-        const QString copyPath = QStringLiteral("/tmp/ps_gui_overlay_b.csv");
+        const QString copyPath = QDir::temp().filePath(QStringLiteral("ps_gui_overlay_b.csv"));
         QFile::remove(copyPath);
         CHECK(QFile::copy(fixture, copyPath));
         Intent load2;
@@ -3187,7 +3188,7 @@ int main(int argc, char *argv[])
         auto *workspace2 = qobject_cast<PlotWorkspace *>(binder->centralContent());
         (void)workspace2;
         // 要验证截断，需要一张**列数 > 8** 的表：现场造 12 列数值 csv。
-        const QString widePath = QStringLiteral("/tmp/ps_gui_wide.csv");
+        const QString widePath = QDir::temp().filePath(QStringLiteral("ps_gui_wide.csv"));
         {
             QFile f(widePath);
             CHECK(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
@@ -3386,7 +3387,7 @@ int main(int argc, char *argv[])
         const int snapDs = application.data().add(sds);
         CHECK(snapDs >= 0);
 
-        const QString xlsxPath = QStringLiteral("/tmp/ps_snapshot_multi.xlsx");
+        const QString xlsxPath = QDir::temp().filePath(QStringLiteral("ps_snapshot_multi.xlsx"));
         QFile::remove(xlsxPath);
         Intent snap;
         snap.op = QStringLiteral("data.exportSnapshot");
@@ -3403,7 +3404,7 @@ int main(int argc, char *argv[])
         CHECK(QFileInfo(xlsxPath).size() > 0);
 
         // 读回结构：sheet 名 / 每 sheet 行数 / 首个文本表头。
-        const QString scriptPath = QStringLiteral("/tmp/ps_snapshot_check.py");
+        const QString scriptPath = QDir::temp().filePath(QStringLiteral("ps_snapshot_check.py"));
         {
             QFile f(scriptPath);
             CHECK(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
@@ -3431,7 +3432,7 @@ int main(int argc, char *argv[])
         CHECK(out.contains(QStringLiteral("hdr:time")));    // 列名与 schema 对齐（time 在前）
 
         // csv 分支：每表一个文件（含空表）。
-        const QString csvDir = QStringLiteral("/tmp/ps_snapshot_csv");
+        const QString csvDir = QDir::temp().filePath(QStringLiteral("ps_snapshot_csv"));
         QDir(csvDir).removeRecursively();
         Intent snapCsv = snap;
         snapCsv.params[QStringLiteral("format")] = QStringLiteral("csv");

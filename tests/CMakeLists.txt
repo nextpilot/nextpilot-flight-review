@@ -511,3 +511,9 @@ set_tests_properties(${_ps_gui_tests} PROPERTIES RESOURCE_LOCK ps_gui)
 if(PS_BUILD_BARE AND TARGET ps_shell_bare)
     set_tests_properties(ps_shell_bare_smoke PROPERTIES RESOURCE_LOCK ps_gui)
 endif()
+
+# Windows：测试目录也要部署 ads.dll。application 的三个目录各自调用过
+# ps_deploy_windows_runtime_all()，但 tests 目录此前没有——CI 在 Windows 上跑 ctest 时
+# 可执行找不到 ads.dll 会直接 0xc0000135（STATUS_DLL_NOT_FOUND），只能手工往 PATH 塞目录。
+# 现在 Windows 腿要真跑测试，这条必须补上。非 Windows 平台函数直接空转。
+ps_deploy_windows_runtime_all()

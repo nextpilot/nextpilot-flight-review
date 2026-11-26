@@ -207,12 +207,17 @@ int main(int argc, char *argv[])
     // e2e：manifest configuration 解析进同一张贡献表（属性数/默认值/scope）。
     // 注：core.settings 先于本 owner 挂载，旧对话框的设置项已迁进它的四个分组，按 owner 查。
     {
-        const auto *helloCfg = [&ext]() -> const ToolboxHub::OwnedConfiguration * {
-            for (const auto &c : ext.contributedConfigurations())
-                if (c.owner == QLatin1String("plotscope.helloworld"))
-                    return &c;
-            return nullptr;
-        }();
+        // contributedConfigurations() 按值返回 QList：直接在 range-for 里取 &c，指针指向临时
+        // 容器，循环结束即析构。ASan 报 heap-use-after-free；macOS 上则表现为这里 4 条断言
+        // 读到垃圾值（同一处 bug、不同分配器不同表现）。先把列表落到局部变量再取地址。
+        const auto helloCfgs = ext.contributedConfigurations();
+        const ToolboxHub::OwnedConfiguration *helloCfg = nullptr;
+        for (const auto &c : helloCfgs)
+            if (c.owner == QLatin1String("plotscope.helloworld"))
+            {
+                helloCfg = &c;
+                break;
+            }
         CHECK(helloCfg != nullptr);
         int coreCfgGroups = 0;
         QStringList coreCfgIds;
@@ -241,6 +246,16 @@ int main(int argc, char *argv[])
             CHECK(coreCfgKeys.contains(k));
         if (helloCfg)
         {
+            // 平台诊断：只在断言将失败时打印实际值。macOS 首轮这里红了，日志里只有断言文本，
+            // 看不出是编码、顺序还是解析本身的问题。
+            if (helloCfg->item.title != QStringLiteral("示例设置") || helloCfg->item.properties.size() != 3)
+            {
+                std::printf("[diag] hello.title=[%s] props=%d\n", qPrintable(helloCfg->item.title),
+                            int(helloCfg->item.properties.size()));
+                for (const auto &p : helloCfg->item.properties)
+                    std::printf("[diag] key=[%s] type=[%s] default=[%s] scope=[%s]\n", qPrintable(p.key),
+                                qPrintable(p.type), qPrintable(p.defaultValue.toString()), qPrintable(p.scope));
+            }
             CHECK(helloCfg->item.title == QStringLiteral("示例设置"));
             CHECK(helloCfg->item.properties.size() == 3);
             bool greetingOk = false;

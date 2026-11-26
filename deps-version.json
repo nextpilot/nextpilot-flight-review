@@ -28,7 +28,6 @@
       "version": "=6.2.4",
       "abi": "gcc_64",
       "mirrors": [
-        "https://mirrors.ustc.edu.cn/qtproject",
         "https://mirrors.aliyun.com/qt",
         "https://download.qt.io"
       ]

@@ -130,6 +130,19 @@ jobs:
           PS_REQUIRE_PY_NUMPY: '1' 
         run: ctest --test-dir build -j"$(nproc)" --output-on-failure
 
+      - name: ps_gui 稳定性探针（非阻断）
+        if: always()
+        # ps_gui 在 CI 上偶发 SegFault：Windows 第五轮、Linux Release 第七轮各一次，都崩在
+        # dock 首帧焦点之后（1.5~1.8 s 就死）。本步串行重跑 5 次只为拿复现率，不参与判定：
+        # 主跑的 ctest 已经对这轮给过一次结论，探针红了只写摘要。
+        run: |
+          set +e
+          QT_QPA_PLATFORM=offscreen ctest --test-dir build -R "^ps_gui$" \
+            --repeat until-fail:5 --output-on-failure
+          rc=$?
+          set -e
+          echo "ps_gui 探针 rc=$rc（0 = 连跑 5 次全绿；非 0 = 复现崩溃）" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Smoke test - GUI starts (offscreen)
         # ctest 覆盖不到「GUI 能不能真的起窗」：编译通过、单测全绿，进程仍可能因为平台
         # 插件缺失或启动路径断裂而一启动就崩。
@@ -252,6 +265,138 @@ jobs:
         if: always()
         run: tail -n 200 build/Testing/Temporary/LastTest.log || true
 
+  # Sanitizer leg. The regression it exists for: `ps_plot_io` held a lambda connected to a
+  # canvas that outlived the block, so it read a destroyed stack slot. GCC -O3 happened to pass
+  # (the slot was not overwritten yet), Clang -O3 segfaulted on every run, and the suite had no
+  # leg that could tell the difference — four red CI runs were needed before it was found locally
+  # with ASan. ASan/UBSan turns that class into a first-class signal at PR time.
+  #
+  # Scope: tests ON, ccache OFF (sanitizer objects must never share a cache with plain builds).
+  # -fno-sanitize=vptr is deliberate: vptr checks fire inside the bundled ads library whenever a
+  # QPointer<CDockManager> is touched during CDockManager's own destruction (vptr already rolled
+  # back to CDockContainerWidget). That is a well-known false positive for this pattern, and
+  # leaving it on would red the leg permanently instead of catching our own UB.
+  test-sanitizers:
+    name: test (Release, asan+ubsan)
+    runs-on: ubuntu-22.04
+    # Sanitizer instrumentation is several times slower than a plain Release build, and this leg
+    # compiles the whole tree from scratch (no ccache by design).
+    timeout-minutes: 180
+    env:
+      QT_QPA_PLATFORM: offscreen
+      PS_REQUIRE_PY_NUMPY: '1'
+      # Qt leaves heap blocks behind on exit; leak detection would only produce noise here.
+      ASAN_OPTIONS: detect_leaks=0
+      # UBSan is recover-only on day one: the bundled Lua / ads / saribbon sources are compiled
+      # into this leg too, and their known UB would red the gate permanently before we have
+      # triaged a single line of our own. Memory errors (ASan) still abort and fail the test;
+      # UBSan findings are counted and surfaced in the step summary instead (see the report step).
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=0
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Verify version (versions.env is the single source of truth)
+        shell: bash
+        run: |
+          set -euo pipefail
+          source versions.env
+          echo "PS_QT_VER=${PS_QT_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build build-essential curl file \
+            libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
+            libxkbcommon-x11-0 libfontconfig1 libdbus-1-3 \
+            python3 python3-numpy
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.93.0
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.PS_QT_VER }}
+          modules: 'qtcharts'
+
+      - name: Python 桥依赖（numpy）
+        run: |
+          python3 -m pip install --user numpy
+          python3 -c "import sys, numpy; print('python:', sys.executable, 'numpy:', numpy.__version__)"
+
+      - name: Configure CMake (ASan + UBSan)
+        run: |
+          SAN='-fsanitize=address,undefined -fno-sanitize=vptr -fno-omit-frame-pointer'
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
+            -DPS_BUILD_TESTS=ON \
+            -DPS_USE_CCACHE=OFF \
+            -DCMAKE_C_FLAGS="$SAN" \
+            -DCMAKE_CXX_FLAGS="$SAN" \
+            -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined' \
+            -DCMAKE_SHARED_LINKER_FLAGS='-fsanitize=address,undefined'
+
+      - name: Build targets (all, including tests)
+        run: |
+          set -o pipefail
+          LOG="$RUNNER_TEMP/build.log"
+          if ! { echo "__PS_BUILD_LOG_START__"; cmake --build build -j"$(nproc)"; } 2>&1 | tee "$LOG"; then
+            {
+              echo '### Build failed on the sanitizer leg — last 150 lines'
+              echo '```'
+              tail -150 "$LOG"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Run CTest (offscreen)
+        run: ctest --test-dir build -j"$(nproc)" --output-on-failure
+
+      - name: Report sanitizer findings (always)
+        if: always()
+        # 把「存量 UB」变成可读数字：UBSan recover-only 不会让腿变红，如果不统计就等于没说。
+        # ASan 错误本身已经让用例失败（abort），这里只做汇总，不重复阻断。
+        run: |
+          LOG=build/Testing/Temporary/LastTest.log
+          [ -f "$LOG" ] || { echo "(no LastTest.log yet)"; exit 0; }
+          ASAN=$(grep -c 'ERROR: AddressSanitizer' "$LOG" || true)
+          UBSAN=$(grep -c 'runtime error:' "$LOG" || true)
+          {
+            echo "### Sanitizer findings"
+            echo ""
+            echo "- AddressSanitizer errors: ${ASAN}"
+            echo "- UBSan runtime errors: ${UBSAN}"
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "asan=${ASAN} ubsan=${UBSAN}"
+          if [ "${UBSAN}" -gt 0 ]; then
+            echo '--- first 20 UBSan findings ---'
+            grep 'runtime error:' "$LOG" | head -20
+          fi
+
+      - name: Print ctest failure summary (always, for diagnostics)
+        if: always()
+        run: |
+          echo "=== LastTestsFailed.log ==="
+          cat build/Testing/Temporary/LastTestsFailed.log || echo "(no failure list)"
+          echo "=== LastTest.log (tail 300 lines) ==="
+          tail -n 300 build/Testing/Temporary/LastTest.log || true
+
+      - name: Upload ctest logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ctest-logs-sanitizers
+          path: build/Testing/Temporary/
+          if-no-files-found: ignore
+
   # Configure-only matrix. The gate above always configures with tests ON and ccache ON,
   # and packaging configures with tests OFF — the rest of the option space was never
   # exercised. That is exactly where IKY124 lived: an INTERFACE-only target declaring
@@ -320,9 +465,11 @@ jobs:
   # error, previously found by pushing a packaging branch or by building on a real
   # Windows box. These jobs close that hole at PR time.
   #
-  # Scope is deliberately narrow: configure + compile everything, nothing else. No tests
-  # (the suite depends on the Python bridge / numpy / offscreen, not yet verified
-  # cross-platform), no packaging, no smoke tests — packaging stays in build-packages.yml.
+  # Scope: configure + compile + ctest. Packaging and GUI smoke stay elsewhere
+  # (build-packages.yml / the Linux leg). Tests were previously excluded here because the
+  # suite pulls in the Python bridge, numpy and an offscreen platform — all of which are
+  # available on both hosted images now, so "compiles but has never executed a line" is no
+  # longer an acceptable gate for the two platforms that differ most from Linux.
 
   windows-compile:
     runs-on: windows-2022
@@ -388,13 +535,16 @@ jobs:
 
       - name: Configure CMake
         shell: pwsh
+        # PS_BUILD_TESTS=ON since the ctest leg landed: MSVC + MS STL is the platform where
+        # "compiles" most often differs from "runs correctly", so this gate now executes the
+        # suite instead of stopping at the link step.
         run: |
           New-Item -ItemType Directory -Force -Path $env:SCCACHE_DIR | Out-Null
           # QT_ROOT_DIR already contains msvc2019_64 (install-qt-action v4); do not append another level.
           cmake -S . -B build -G Ninja `
             -DCMAKE_BUILD_TYPE=Release `
             -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" `
-            -DPS_BUILD_TESTS=OFF `
+            -DPS_BUILD_TESTS=ON `
             -DCMAKE_C_COMPILER_LAUNCHER=sccache `
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
@@ -440,6 +590,61 @@ jobs:
             exit 1
           }
 
+      - name: Provide fonts for the offscreen font engine
+        shell: pwsh
+        # Windows 的 offscreen 插件走 QBasicFontDatabase，只从 <Qt>/lib/fonts 读字体；Qt 6 起官方
+        # 不再随包发字体，启动时便报 "Cannot find font directory"，零警告冒烟随之变红。
+        # 实测（run 45768458092）：喂入 arial/segoeui/consola 后 ps_shell_bare_smoke 单独跑 1/1
+        # Passed、无字体警告 —— 所以它已经不再是环境噪音，主跑恢复严格口径，不再排除。
+        run: |
+          $dir = Join-Path $env:QT_ROOT_DIR "lib\fonts"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          foreach ($f in @("arial.ttf", "segoeui.ttf", "consola.ttf", "times.ttf")) {
+            $src = Join-Path "C:\Windows\Fonts" $f
+            if (Test-Path $src) { Copy-Item $src $dir -Force }
+          }
+          Get-ChildItem $dir | Select-Object -ExpandProperty Name
+
+      - name: Run CTest (offscreen)
+        shell: pwsh
+        env:
+          QT_QPA_PLATFORM: offscreen
+        # Qt's bin dir is on PATH via install-qt-action and ps_deploy_windows_runtime_all()
+        # copies the dlls next to every executable, so the tests start without a PATH fix.
+        # PS_REQUIRE_PY_NUMPY is deliberately not set: windows-2022 has no guaranteed `python3`
+        # alias, and a missing interpreter must degrade to a skipped ps_python, not red the leg.
+        # ps_shell_bare_smoke 恢复进主跑：字体步骤喂好 <Qt>\lib\fonts 之后它已实测转绿
+        # （1/1 Passed），这条腿和 Linux 一样承担「启动零警告」的严格口径。
+        run: |
+          ctest --test-dir build -j 4 --output-on-failure
+          if ($LASTEXITCODE -ne 0) {
+            "### ctest failed on Windows" | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
+            '```' | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
+            if (Test-Path build\Testing\Temporary\LastTest.log) {
+              Get-Content build\Testing\Temporary\LastTest.log -Tail 150 | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
+            }
+            '```' | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
+            exit 1
+          }
+
+      - name: UI driver smoke (offscreen render + screenshot)
+        shell: pwsh
+        # ps_ui_driver 走的是和 fastplot 同一套 offscreen 软件光栅，ctest 从不执行它（它只是
+        # 构建出来的工具）。跑一遍 overview.json：起窗 → 装载 fixture → 全部通道上图 → 截图
+        # 落盘，一次把「GUI 能起、能渲染、能出像素」三件事验证掉。
+        # CWD 保持仓库根：脚本里的 fixture 是相对仓库根的路径。
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP "ui-driver"
+          New-Item -ItemType Directory -Force -Path $out | Out-Null
+          & .\build\tests\ps_ui_driver.exe --script docs/screenshots/scripts/overview.json `
+            --out-dir $out --width 1280 --height 800
+          if ($LASTEXITCODE -ne 0) { throw "ps_ui_driver exited with $LASTEXITCODE" }
+          $shot = Join-Path $out "PlotScope-Overview.png"
+          if (-not (Test-Path $shot)) { throw "no screenshot produced: $shot" }
+          $len = (Get-Item $shot).Length
+          if ($len -lt 10000) { throw "screenshot suspiciously small: $len bytes" }
+          "ui-driver screenshot OK: $len bytes" | Out-File -Append "$env:GITHUB_STEP_SUMMARY"
+
   macos-compile:
     # GitHub retired the macos-14 hosted image in Nov 2026. A job asking for it is
     # cancelled at once with "The configuration 'macos-14-arm64-us-default' is not
@@ -484,10 +689,13 @@ jobs:
       - name: Configure CMake
         run: |
           # QT_ROOT_DIR is already an absolute path containing clang_64; do not prepend $(pwd)/.
+          # PS_BUILD_TESTS=ON: AppleClang + arm64 is a different ABI from the Linux legs,
+          # and fastplot's floating point / LOD paths are exactly where "compiles" stops
+          # being evidence. The suite runs below.
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
-            -DPS_BUILD_TESTS=OFF \
+            -DPS_BUILD_TESTS=ON \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache \
             -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
 
@@ -530,3 +738,52 @@ jobs:
             done
             exit 1
           fi
+
+      - name: Python 桥依赖（numpy）
+        # ps_python 会用 findExecutable("python3") 找解释器，runner 上那个 python3 未必装了
+        # numpy；这里对实际会被调用的解释器再装一次并打印 sys.executable 作为证据。
+        # macOS 的 brew python 带 PEP 668 标记时会拒绝 --user 安装，回退到
+        # --break-system-packages（老 pip 不认识这个参数，所以先试不带它的写法）。
+        run: |
+          python3 -m pip install --user numpy \
+            || python3 -m pip install --user --break-system-packages numpy
+          python3 -c "import sys, numpy; print('python:', sys.executable, 'numpy:', numpy.__version__)"
+
+      - name: Run CTest (offscreen)
+        env:
+          # offscreen 让 GUI 用例在无窗口会话的 shell 里也能起窗；与 Linux 腿同口径。
+          QT_QPA_PLATFORM: offscreen
+          # macOS runner 一定有 python3，所以这里按严格口径：numpy 缺失要红，不能靠跳过变绿。
+          PS_REQUIRE_PY_NUMPY: '1'
+        # ps_shell_bare_smoke 排除：它要求「启动零警告」，而 macOS 的 offscreen 插件走 CoreText，
+        # 会报 missing font family "Sans Serif"。喂字体到 <Qt>/lib/fonts 对 macOS 无效 —— 实测
+        # （run 45762239698）把 Arial.ttf 拷进去后警告与判定一字未变，故该步骤已移除。
+        # 严格口径由 Linux 腿（fontconfig）与 Windows 腿（QBasicFontDatabase + lib/fonts）承担。
+        run: |
+          set -o pipefail
+          LOG="$RUNNER_TEMP/ctest.log"
+          if ! ctest --test-dir build -j"$(sysctl -n hw.ncpu)" --output-on-failure \
+            -E "ps_shell_bare_smoke" 2>&1 | tee "$LOG"; then
+            {
+              echo '### ctest failed on macOS — last 150 lines'
+              echo '```'
+              tail -150 "$LOG"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: UI driver smoke (offscreen render + screenshot)
+        # 与 Windows 腿同一条冒烟：ps_ui_driver 是构建出来的工具、不进 ctest，这里用
+        # overview.json 把「GUI 起窗 → 渲染 → 截图落盘」跑一遍（脚本内已 qputenv offscreen）。
+        # CWD 是仓库根，脚本里的 fixture 相对路径才成立。
+        run: |
+          OUT="$RUNNER_TEMP/ui-driver"
+          mkdir -p "$OUT"
+          ./build/tests/ps_ui_driver --script docs/screenshots/scripts/overview.json \
+            --out-dir "$OUT" --width 1280 --height 800
+          SHOT="$OUT/PlotScope-Overview.png"
+          [ -f "$SHOT" ] || { echo "::error::no screenshot produced: $SHOT"; exit 1; }
+          SIZE=$(wc -c < "$SHOT" | tr -d ' ')
+          [ "$SIZE" -ge 10000 ] || { echo "::error::screenshot suspiciously small: $SIZE bytes"; exit 1; }
+          echo "ui-driver screenshot OK: $SIZE bytes" >> "$GITHUB_STEP_SUMMARY"

@@ -796,33 +796,42 @@ pip_install() {
   return 1
 }
 
-install_python() {
-  mkdir -p "$PS_DEPS_ROOT"
-  if [ ! -x "$PS_DEPS_ROOT/toolchain/python/venv/bin/python" ]; then
-    log "创建 venv：$PS_DEPS_ROOT/toolchain/python/venv"
-    local errf; errf="$(mktemp)"
-    if ! python3 -m venv "$PS_DEPS_ROOT/toolchain/python/venv" 2>"$errf"; then
-      rm -rf "$PS_DEPS_ROOT/toolchain/python/venv"
-      # Ubuntu 默认不带 ensurepip（缺 python3-venv），有免密 sudo 时自动补齐后重试一次
-      if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
-        log "venv 创建失败（多为缺 python3-venv），apt 补齐后重试"
-        sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-venv >/dev/null 2>&1 || true
-        if ! python3 -m venv "$PS_DEPS_ROOT/toolchain/python/venv" 2>"$errf"; then
-          cat "$errf" >&2
-          rm -f "$errf"
-          log "venv 仍创建失败：$PS_DEPS_ROOT/toolchain/python/venv"
-          return 1
-        fi
-      else
+# ensure_python_venv：保证 $PS_DEPS_ROOT/toolchain/python/venv 的 pip 可用。
+# 抽成独立函数是因为 install_qt 也要用：单独跑 --install --qt 时 install_python 不会执行，
+# venv 不存在 → pip_install 直接失败 → 静默回退系统 aqt（版本不受控）。
+ensure_python_venv() {
+  local venv="$PS_DEPS_ROOT/toolchain/python/venv"
+  [ -x "$venv/bin/pip" ] && return 0
+  mkdir -p "$PS_DEPS_ROOT/toolchain/python"
+  log "创建 venv：$venv"
+  local errf; errf="$(mktemp)"
+  if ! python3 -m venv "$venv" 2>"$errf"; then
+    rm -rf "$venv"
+    # Ubuntu 默认不带 ensurepip（缺 python3-venv），有免密 sudo 时自动补齐后重试一次
+    if command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+      log "venv 创建失败（多为缺 python3-venv），apt 补齐后重试"
+      sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-venv >/dev/null 2>&1 || true
+      if ! python3 -m venv "$venv" 2>"$errf"; then
         cat "$errf" >&2
         rm -f "$errf"
-        rm -rf "$PS_DEPS_ROOT/toolchain/python/venv"
-        log "venv 创建失败：请先 sudo apt-get install -y python3-venv，再重跑 --install --python"
+        log "venv 仍创建失败：$venv"
         return 1
       fi
+    else
+      cat "$errf" >&2
+      rm -f "$errf"
+      rm -rf "$venv"
+      log "venv 创建失败：请先 sudo apt-get install -y python3-venv，再重跑 --install"
+      return 1
     fi
-    rm -f "$errf"
   fi
+  rm -f "$errf"
+  return 0
+}
+
+install_python() {
+  mkdir -p "$PS_DEPS_ROOT"
+  ensure_python_venv || return 1
   local req="$ROOT/${V_PY_REQ:-tools/requirements.txt}"
   if [ -f "$req" ]; then
     if pip_install "$PS_DEPS_ROOT/toolchain/python/venv/bin/pip" -r "$req"; then
@@ -840,31 +849,59 @@ install_qt() {
   if find_qt >/dev/null; then log "Qt $V_QT 已存在：$(find_qt)"; return 0; fi
   mkdir -p "$PS_DEPS_ROOT/toolchain/qt"
 
-  local aqt="$PS_DEPS_ROOT/toolchain/python/venv/bin/aqt"
-  if [ ! -x "$aqt" ]; then
-    if pip_install "$PS_DEPS_ROOT/toolchain/python/venv/bin/pip" aqtinstall; then
-      log "aqtinstall 已装入 venv"
-    else
-      aqt="$(command -v aqt || true)"
+  # aqtinstall 装在 venv 里：单独跑 --install --qt 时 install_python 没执行过，venv 可能不存在。
+  # 这里自己保证一次，避免静默回退系统 aqt —— 那个版本不受控（3.3.0 对 archive 名支持更窄）。
+  local venv_ok=0
+  ensure_python_venv && venv_ok=1 || log "venv 不可用，稍后将回退系统 aqt"
+
+  local aqt=""
+  # venv 建不起来就别去调它的 pip：那只会再刷一行 127，掩盖真正的失败原因
+  if [ "$venv_ok" = 1 ]; then
+    aqt="$PS_DEPS_ROOT/toolchain/python/venv/bin/aqt"
+    if [ ! -x "$aqt" ]; then
+      aqt=""
+      if pip_install "$PS_DEPS_ROOT/toolchain/python/venv/bin/pip" aqtinstall; then
+        aqt="$PS_DEPS_ROOT/toolchain/python/venv/bin/aqt"
+        log "aqtinstall 已装入 venv"
+      fi
     fi
+  fi
+  if [ ! -x "$aqt" ]; then
+    aqt="$(command -v aqt || true)"
+    [ -n "$aqt" ] && log "回退系统 aqt（$("$aqt" version 2>/dev/null | head -1)）：版本不受控"
   fi
   if [ ! -x "$aqt" ]; then
     log "缺 aqt：先跑 --install --python（venv 里装 aqtinstall）"
     return 1
   fi
 
-  # 轮询 deps-version.json → toolchains.qt.mirrors，选第一个可达的下载站传给 aqt --base
-  local base base_opt
-  base="$(pick_url qt /online/qtsdkrepository/linux_x64/desktop/)"
-  base_opt=()
-  [ -n "$base" ] && base_opt=(--base "$base")
-  log "下载 Qt $V_QT 到 $PS_DEPS_ROOT/toolchain/qt（约 200MB；镜像=${base:-aqt默认}）"
-  "$aqt" install-qt linux desktop "$V_QT" "$QT_ABI" \
-    -O "$PS_DEPS_ROOT/toolchain/qt" --archives qtbase qtsvg qttools icu \
-    "${base_opt[@]}" || {
-    log "Qt 下载失败（检查网络与 aqt 源）"
-    return 1
-  }
+  # mirrors 逐项试：aqt 在解析 Updates.xml 阶段就会快速失败（exit=1，不落地任何文件），
+  # 所以换下一个源的代价是秒级，不需要事先探测「这个镜像有没有该版本」。
+  # 全部失败才不带 --base 走 aqt 默认源（download.qt.io）兜底。
+  local ok=0 base
+  while IFS= read -r base; do
+    [ -z "$base" ] && continue
+    log "尝试 Qt 源：$base"
+    if "$aqt" install-qt linux desktop "$V_QT" "$QT_ABI" \
+      -O "$PS_DEPS_ROOT/toolchain/qt" --archives qtbase qtsvg qttools icu \
+      --base "$base"; then
+      ok=1
+      break
+    fi
+    log "该源不可用（无 $V_QT 或下载中断），清理残留后换下一个"
+    # 必须清：aqt 中途失败可能留下半个安装目录，而 find_qt 只看目录在不在，
+    # 残留在下一轮会被误判成「已安装」。
+    rm -rf "$PS_DEPS_ROOT/toolchain/qt/$V_QT"
+  done < <(json_array toolchains qt mirrors)
+
+  if [ "$ok" -eq 0 ]; then
+    log "所有镜像都失败，回退 aqt 默认源重试"
+    "$aqt" install-qt linux desktop "$V_QT" "$QT_ABI" \
+      -O "$PS_DEPS_ROOT/toolchain/qt" --archives qtbase qtsvg qttools icu || {
+      log "Qt 下载失败（检查网络与 aqt 源）"
+      return 1
+    }
+  fi
   if ! find_qt >/dev/null; then
     log "Qt 安装后仍找不到 $V_QT/$QT_ABI"
     return 1

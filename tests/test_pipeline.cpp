@@ -24,6 +24,7 @@
 #include "RawCodec.h"
 #include "Recorder.h"
 
+#include <QDir>
 #include <QByteArray>
 #include <QFile>
 #include <QTemporaryDir>
@@ -628,9 +629,9 @@ int main()
         info.name = QStringLiteral("flight.ulg");
         const int id = 7;
         info.recordings.append(RecordingTarget{QStringLiteral("raw"), QStringLiteral("file"),
-                                               QStringLiteral("/tmp/a.raw"), true});
+                                               QDir::temp().filePath(QStringLiteral("a.raw")), true});
         info.recordings.append(RecordingTarget{QStringLiteral("mcap"), QStringLiteral("file"),
-                                               QStringLiteral("/tmp/a.mcap"), true});
+                                               QDir::temp().filePath(QStringLiteral("a.mcap")), true});
         info.recordings.append(RecordingTarget{QStringLiteral("raw"), QStringLiteral("udp"),
                                                QStringLiteral("239.0.0.1:5600"), true});
         CHECK(info.recordings.size() == 3);

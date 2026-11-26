@@ -12,6 +12,7 @@
 #include "Result.h"
 #include "SourceHub.h"
 
+#include <QDir>
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QHostAddress>
@@ -94,8 +95,8 @@ int main(int argc, char **argv)
     CHECK(srcId >= 0 && dsId >= 0);
 
     // 录制：raw + mcap 同时两路（正交组合的直接验收），写入 /tmp。
-    const QString rawPath = QStringLiteral("/tmp/ps_record_test.raw");
-    const QString mcapPath = QStringLiteral("/tmp/ps_record_test.mcap");
+    const QString rawPath = QDir::temp().filePath(QStringLiteral("ps_record_test.raw"));
+    const QString mcapPath = QDir::temp().filePath(QStringLiteral("ps_record_test.mcap"));
     QFile::remove(rawPath);
     QFile::remove(mcapPath);
     Intent rs1;
@@ -499,7 +500,7 @@ int main(int argc, char **argv)
 
     // ---- M4/T4.3 缓存可观测：命中/未命中/条目/字节 ----
     {
-        const QString csvPath = QStringLiteral("/tmp/ps_cache_probe.csv");
+        const QString csvPath = QDir::temp().filePath(QStringLiteral("ps_cache_probe.csv"));
         const QString pscPath = csvPath + QStringLiteral(".csv.psc");
         QFile::remove(pscPath); // 清历史缓存，保证第一次是 miss
         QFile f(csvPath);
@@ -546,7 +547,7 @@ int main(int argc, char **argv)
 
     // ---- M4/T4.4 采样上限：export.csv.maxPoints 控制导出点数，0=不限 ----
     {
-        const QString csvPath = QStringLiteral("/tmp/ps_sample_probe.csv");
+        const QString csvPath = QDir::temp().filePath(QStringLiteral("ps_sample_probe.csv"));
         QFile::remove(csvPath + QStringLiteral(".csv.psc"));
         QFile f(csvPath);
         CHECK(f.open(QIODevice::WriteOnly | QIODevice::Truncate));
@@ -596,7 +597,8 @@ int main(int argc, char **argv)
         };
 
         QString fullFirst, fullLast;
-        const int fullRows = exportTo(QStringLiteral("/tmp/ps_sample_full.csv"), &fullLast, &fullFirst);
+        const int fullRows =
+            exportTo(QDir::temp().filePath(QStringLiteral("ps_sample_full.csv")), &fullLast, &fullFirst);
         std::printf("export full rows=%d first=%s last=%s\n", fullRows, qPrintable(fullFirst),
                     qPrintable(fullLast));
         CHECK(fullRows == 300);
@@ -604,13 +606,13 @@ int main(int argc, char **argv)
         // 消费方（导出命令）按 App 作用域读 export.csv.maxPoints，写入端须同作用域。
         app.context().settings().setScopedValue(SettingsScope::App, QStringLiteral("export.csv.maxPoints"), 100);
         QString smpLast;
-        const int smpRows = exportTo(QStringLiteral("/tmp/ps_sample_100.csv"), &smpLast, nullptr);
+        const int smpRows = exportTo(QDir::temp().filePath(QStringLiteral("ps_sample_100.csv")), &smpLast, nullptr);
         std::printf("export maxPoints=100 rows=%d last=%s\n", smpRows, qPrintable(smpLast));
         CHECK(smpRows >= 99 && smpRows <= 101);  // 均匀抽稀到约 100 点
         CHECK(smpLast == fullLast);             // 末点保留：抽稀不是截断
 
         app.context().settings().setScopedValue(SettingsScope::App, QStringLiteral("export.csv.maxPoints"), 0);
-        const int backRows = exportTo(QStringLiteral("/tmp/ps_sample_0.csv"), nullptr, nullptr);
+        const int backRows = exportTo(QDir::temp().filePath(QStringLiteral("ps_sample_0.csv")), nullptr, nullptr);
         std::printf("export maxPoints=0 rows=%d\n", backRows);
         CHECK(backRows == 300);                 // 0 = 不限，回到全量
         app.context().settings().removeScoped(SettingsScope::App, QStringLiteral("export.csv.maxPoints"));

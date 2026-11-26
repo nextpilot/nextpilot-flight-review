@@ -143,24 +143,76 @@ int main(int argc, char **argv)
         const QColor bg = plot.background();
         const QRectF pr = plot.plotRect();
 
-        // 取下轴第一个主刻度，横向扫 ±2 像素找网格线
+        // 取下轴主刻度，纵向扫整列找网格线。
+        //
+        // 这里曾经只在绘图区中线采一个点，是个隐藏的跨平台相位 bug：网格是
+        // Qt::CustomDashLine（4 实 / 3 空，见 Axis::paintGrid），同一份正确渲染在不同
+        // plotRect.top() 下会让中线落进不同的虚线相位 —— Linux top=29 时 171%7==3（实段，
+        // 命中），macOS top=0 时 186%7==4（空隙，全部漏判）。渲染完全正确却得出相反结论，
+        // 表现为 macOS 长期 `hit=1`。改为一列纵向扫，任一段实线即算竖线存在。
         const nextpilot::plotscope::fastplot::ScaleDiv &xDiv = plot.axis(nextpilot::plotscope::fastplot::AxisSide::Bottom).scaleDiv();
+        const int yTop = std::max(0, static_cast<int>(std::ceil(pr.top())) + 4);
+        const int yBottom = std::min(img.height() - 1, static_cast<int>(std::floor(pr.bottom())) - 4);
         int hit = 0;
+        QColor firstProbe;
+        int firstPx = -1;
+        int firstPy = -1;
         for (const nextpilot::plotscope::fastplot::Tick &t : xDiv.ticks)
         {
             if (!t.major || t.value < 0.0)
                 continue;
             const int px = static_cast<int>(std::lround(plot.viewport().xToPixel(t.value)));
-            const int py = static_cast<int>(std::lround((pr.top() + pr.bottom()) / 2.0));
             for (int dx = -2; dx <= 2; ++dx)
             {
-                const QColor c = img.pixelColor(std::clamp(px + dx, 0, 799), py);
-                if (c != bg)
+                const int col = std::clamp(px + dx, 0, img.width() - 1);
+                bool found = false;
+                for (int y = yTop; y <= yBottom; ++y)
+                {
+                    const QColor c = img.pixelColor(col, y);
+                    if (!firstProbe.isValid())
+                    {
+                        firstProbe = c;
+                        firstPx = col;
+                        firstPy = y;
+                    }
+                    if (c != bg)
+                    {
+                        found = true;
+                        break;
+                    }
+                }
+                if (found)
                 {
                     ++hit;
                     break;
                 }
             }
+        }
+        // 平台诊断：必须写在 CHECK 之前 —— 本文件的 CHECK 宏失败即 std::exit(1)，
+        // 放在后面永远不会执行（macOS 第二轮就是这么丢掉输出的）。
+        if (hit < 3)
+        {
+            // 列扫描：一张 800x400 的图里，一条完整竖线（绘图区高 ~371）的列计数器会接近 371。
+            // 只有一列符合 → 内部网格根本没画；多列符合但都不在 tick 位置 → 画在了别处。
+            QString tallCols;
+            int nonBg = 0;
+            for (int x = 0; x < img.width(); ++x)
+            {
+                int cnt = 0;
+                for (int y = 0; y < img.height(); ++y)
+                    if (img.pixelColor(x, y) != bg)
+                        ++cnt;
+                nonBg += cnt;
+                if (cnt >= 100)
+                    tallCols += QString::number(x) + QLatin1Char(' ');
+            }
+            fprintf(stdout, "[diag] nonBg=%d tallCols=[%s]\n", nonBg, qPrintable(tallCols));
+            fprintf(stdout,
+                    "[diag] hit=%d bg=(%d,%d,%d,a=%d) first=(%d,%d,%d,a=%d) at=(%d,%d) "
+                    "dpr=%.2f img=%dx%d plotRect=(%.1f,%.1f %.1fx%.1f)\n",
+                    hit, bg.red(), bg.green(), bg.blue(), bg.alpha(), firstProbe.red(), firstProbe.green(),
+                    firstProbe.blue(), firstProbe.alpha(), firstPx, firstPy, img.devicePixelRatio(), img.width(),
+                    img.height(), pr.left(), pr.top(), pr.width(), pr.height());
         }
         CHECK(hit >= 3);
 
