@@ -601,18 +601,19 @@ int main(int argc, char **argv)
                     qPrintable(fullLast));
         CHECK(fullRows == 300);
 
-        app.context().settings().setValue(QStringLiteral("export.csv.maxPoints"), 100);
+        // 消费方（导出命令）按 App 作用域读 export.csv.maxPoints，写入端须同作用域。
+        app.context().settings().setScopedValue(SettingsScope::App, QStringLiteral("export.csv.maxPoints"), 100);
         QString smpLast;
         const int smpRows = exportTo(QStringLiteral("/tmp/ps_sample_100.csv"), &smpLast, nullptr);
         std::printf("export maxPoints=100 rows=%d last=%s\n", smpRows, qPrintable(smpLast));
         CHECK(smpRows >= 99 && smpRows <= 101);  // 均匀抽稀到约 100 点
         CHECK(smpLast == fullLast);             // 末点保留：抽稀不是截断
 
-        app.context().settings().setValue(QStringLiteral("export.csv.maxPoints"), 0);
+        app.context().settings().setScopedValue(SettingsScope::App, QStringLiteral("export.csv.maxPoints"), 0);
         const int backRows = exportTo(QStringLiteral("/tmp/ps_sample_0.csv"), nullptr, nullptr);
         std::printf("export maxPoints=0 rows=%d\n", backRows);
         CHECK(backRows == 300);                 // 0 = 不限，回到全量
-        app.context().settings().setValue(QStringLiteral("export.csv.maxPoints"), QVariant());
+        app.context().settings().removeScoped(SettingsScope::App, QStringLiteral("export.csv.maxPoints"));
     }
 
     if (failures == 0)

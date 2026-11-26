@@ -8,9 +8,11 @@
 //     （SettingsStore，app 唯一出口）之间的唯一合并 / 复位 / 诊断出口。
 //   - 分层合并按既有 SettingsScope 三层：user(App) ← workspace ← document，
 //     即 document 覆盖 workspace 覆盖 user 覆盖声明默认值。
-//   - 持久化只走 SettingsStore（键空间 "config/<点号键>"，按 scope 分层），
-//     不造第二套存储；owner 不读写任何配置文件（§5）。
-//   - owner unmount：其属性从目录消失；各层残留值保留但不生效 + 诊断（不删用户数据）。
+//   - 持久化只走 SettingsStore（键 = 声明里的键原文，按 scope 分层），不造第二套
+//     存储；Settings editor 写的就是消费方读的键（无 config/ 影子命名空间）。
+//   - 旧值迁移：历史 "config/<键>" 位置的值在装配时一次性补位到键原文（旧值保留）。
+//   - owner unmount：其属性从目录消失；旧命名空间里的残留值保留但不生效 + 诊断
+//     （不删用户数据）。
 //   - 实现放 assembly（ConfigurationServiceAdapter）；壳经本接口读写，不 include registry。
 
 #include "ContributionParser.h" // ConfigurationSpec（纯数据）
@@ -65,7 +67,7 @@ public:
     // 单键复位：清 user/workspace/document 三层覆盖（默认值是声明数据，不可写）。
     virtual void reset(const QString &key) = 0;
 
-    // 诊断：键未在任何 owner 的 configuration 声明中但某层有残留值 →
+    // 诊断：旧 config/ 命名空间里仍有不在任何声明中的值 →
     // 「残留值保留但不生效」。纯状态推导（读时算），不依赖卸载时序。
     struct Diagnostic
     {

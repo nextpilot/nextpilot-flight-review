@@ -40,6 +40,7 @@
 
 #include "App.h"
 #include "AppContext.h"
+#include "WorkbenchAdapters.h" // settings 场景：SettingsEditorWidget / BuiltinSettingsEditorProvider
 #include "MainWindow.h"
 #include "ShellBinder.h"
 #include "GuiContext.h"
@@ -50,7 +51,6 @@
 #include "TransformEditorDialog.h"
 #include "Transform.h"
 #include "FilterEditorDialog.h"
-#include "PreferencesDialog.h"
 #include "PlotWorkspace.h"
 #include "AxesView.h"
 #include "RuntimeHost.h"
@@ -243,15 +243,53 @@ bool dialogFilter(App &application, MainWindow &window, const QJsonObject &param
     return shotDialog(dlg, path, 200);
 }
 
-bool dialogSettings(App &application, MainWindow &window, const QJsonObject &params, const QString &path)
+// 设置入口（A2b）：不再弹模态对话框——发 preferences.open，转派到工作台内置
+// Settings editor 页签，断言 viewType == settings2、resourceRef == settings: 后截图。
+bool dialogSettings(App &application, const QString &path)
 {
-    // 偏好设置（全局，App 作用域）：旧「数据设置」对话框已并入这里，
-    // 场景名沿用 "settings"，可用 section 指定首屏分组（appearance/timeline/data）。
-    const QString section = params.value(QStringLiteral("section")).toString();
-    PreferencesDialog dlg(application.context(), application.host(), section, &window);
-    dlg.show();
-    dlg.adjustSize();
-    return shotDialog(dlg, path, 250);
+    using nextpilot::plotscope::assembly::BuiltinSettingsEditorProvider;
+    using nextpilot::plotscope::assembly::SettingsEditorWidget;
+
+    Intent open;
+    open.op = QStringLiteral("preferences.open");
+    const auto result = application.host().execute(open);
+    if (!result || result.value().payload.toString() != QStringLiteral("workbench.action.openSettings"))
+    {
+        fprintf(stderr, "settings 场景：preferences.open 转派失败\n");
+        return false;
+    }
+    if (BuiltinSettingsEditorProvider::viewType() != QLatin1String("workbench.editor.settings2"))
+    {
+        fprintf(stderr, "settings 场景：viewType 不是 settings2\n");
+        return false;
+    }
+    SettingsEditorWidget *tab = nullptr;
+    for (QWidget *w : QApplication::topLevelWidgets())
+    {
+        auto *se = qobject_cast<SettingsEditorWidget *>(w);
+        if (se && se->resourceRef().uri == QLatin1String("settings:"))
+        {
+            tab = se;
+            break;
+        }
+    }
+    if (!tab)
+    {
+        fprintf(stderr, "settings 场景：没找到 settings2 页签\n");
+        return false;
+    }
+    tab->show();
+    QTest::qWait(200);
+    const QPixmap shot = tab->grab();
+    if (!shot.save(path))
+    {
+        fprintf(stderr, "设置页签截图保存失败: %s\n", qPrintable(path));
+        return false;
+    }
+    fprintf(stdout, "设置页签截图: %s (%dx%d) viewType=%s\n", qPrintable(path), shot.width(), shot.height(),
+            qPrintable(BuiltinSettingsEditorProvider::viewType()));
+    tab->close();
+    return true;
 }
 
 } // namespace
@@ -700,7 +738,7 @@ int main(int argc, char *argv[])
             else if (name == QStringLiteral("filter"))
                 done = dialogFilter(application, window, step, path);
             else if (name == QStringLiteral("settings"))
-                done = dialogSettings(application, window, step, path);
+                done = dialogSettings(application, path);
             else
             {
                 fail(op, QStringLiteral("未知对话框: %1（现有 import/protocol/transform/filter/settings）").arg(name));

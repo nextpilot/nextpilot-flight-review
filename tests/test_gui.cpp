@@ -298,41 +298,117 @@ int main(int argc, char *argv[])
 
     // --- 0a2) 真跑一次 preferences.open：GUI 系统级 handler 必须弹得出、收得回 ---
     {
-        // 模态对话框在 exec() 内跑事件循环，这里用一个重试定时器找到它并关闭，
-        // 证明「意图 → 系统级 handler → 对话框」这条链在 GUI 环境里真的闭合，
-        // 而不是只测了字符串绑定。
-        int dialogSeen = 0;
-        int tries = 0;
-        QTimer closer;
-        QObject::connect(&closer, &QTimer::timeout, [&]() {
-            if (++tries > 50)
-            {
-                closer.stop();
-                return;
-            }
-            for (QWidget *w : QApplication::topLevelWidgets())
-            {
-                if (w->isVisible() && w->windowTitle() == QStringLiteral("偏好设置"))
-                {
-                    ++dialogSeen;
-                    w->close();
-                    closer.stop();
-                    return;
-                }
-            }
-        });
-        closer.start(20);
-
+        // 设置入口不再是模态对话框：preferences.open 经 GUI 系统级 handler 只做转派，
+        // 最终执行体是 workbench.action.openSettings → 工作台内置 Settings editor 页签。
+        // 强断言：执行后中央区真出现一个 Settings editor（viewType 对位 settings2、
+        // resourceRef 是 settings: 资源），而不是只回显命令名——命令处理器空转也过不了这关。
         Intent openIntent;
         openIntent.op = QStringLiteral("preferences.open");
-        openIntent.params[QStringLiteral("section")] = QStringLiteral("data");
         const auto openResult = application.host().execute(openIntent);
-        closer.stop();
 
         CHECK(openResult);
-        CHECK(openResult.value().payload.toBool());
-        CHECK(dialogSeen == 1); // 确实弹过，而不是 handler 空转返回 true
-        OK("偏好对话框：preferences.open 经 GUI 系统级 handler 弹出并可关闭");
+        CHECK(openResult.value().payload.toString() == QStringLiteral("workbench.action.openSettings"));
+        // 找到真正打开的 Settings editor 页签（openEditor(parent=nullptr) 造出的顶层 QWidget）。
+        nextpilot::plotscope::assembly::SettingsEditorWidget *settingsTab = nullptr;
+        for (QWidget *w : QApplication::topLevelWidgets())
+        {
+            auto *se = qobject_cast<nextpilot::plotscope::assembly::SettingsEditorWidget *>(w);
+            if (se && se->resourceRef().uri == QLatin1String("settings:"))
+            {
+                settingsTab = se;
+                break;
+            }
+        }
+        CHECK(settingsTab != nullptr);
+        // 页签的 viewType 对位 VSCode SettingsEditor2.ID。
+        CHECK(nextpilot::plotscope::assembly::BuiltinSettingsEditorProvider::viewType() ==
+              QStringLiteral("workbench.editor.settings2"));
+        // 无模态对话框：不再有 windowTitle == 偏好设置 的顶层窗口。
+        bool modalPrefs = false;
+        for (QWidget *w : QApplication::topLevelWidgets())
+            if (w->isVisible() && w->windowTitle() == QStringLiteral("偏好设置"))
+                modalPrefs = true;
+        CHECK(!modalPrefs);
+        OK("设置入口：preferences.open 打开 settings2 页签（resourceRef=settings:），无模态对话框");
+    }
+
+    // --- 0a3a) section 正向：preferences.open + section=core.data 必须命中分组且只显示该组属性 ---
+    {
+        // 记录执行前已存在的 settings 页签，执行后只认「新增」的那一个，避免误取 0a2 的旧页签。
+        QList<nextpilot::plotscope::assembly::SettingsEditorWidget *> before;
+        for (QWidget *w : QApplication::topLevelWidgets())
+            if (auto *se = qobject_cast<nextpilot::plotscope::assembly::SettingsEditorWidget *>(w))
+                before.append(se);
+
+        Intent sectionIntent;
+        sectionIntent.op = QStringLiteral("preferences.open");
+        sectionIntent.params[QStringLiteral("section")] = QStringLiteral("core.data");
+        const auto sectionResult = application.host().execute(sectionIntent);
+
+        CHECK(sectionResult);
+        nextpilot::plotscope::assembly::SettingsEditorWidget *sectionTab = nullptr;
+        for (QWidget *w : QApplication::topLevelWidgets())
+        {
+            auto *se = qobject_cast<nextpilot::plotscope::assembly::SettingsEditorWidget *>(w);
+            if (se && !before.contains(se) && se->resourceRef().uri == QLatin1String("settings:"))
+            {
+                sectionTab = se;
+                break;
+            }
+        }
+        CHECK(sectionTab != nullptr);
+        if (sectionTab)
+        {
+            // 强断言：必须是「命中」诊断（不含「未找到」），且写明分组标题「数据」——
+            // 正向用例不接受未命中分支；handler 吞掉 section 时诊断为空，这里必红。
+            const QString diag = sectionTab->focusDiagnostic();
+            CHECK(diag == QStringLiteral("已聚焦分组：数据"));
+            CHECK(!diag.contains(QStringLiteral("未找到")));
+            const int focusCount = sectionTab->visibleSettingCount();
+            CHECK(focusCount > 0);
+            // 清掉聚焦取全屏基线：聚焦后行数必须少于全屏，证明「只显示该组」不是空话。
+            sectionTab->focusSection(QString());
+            const int allCount = sectionTab->visibleSettingCount();
+            CHECK(focusCount < allCount);
+            OK(QStringLiteral("设置入口：section=core.data 命中分组「数据」且只显示该组属性（聚焦%1<全屏%2）")
+                   .arg(focusCount)
+                   .arg(allCount)
+                   .toUtf8()
+                   .constData());
+        }
+    }
+
+    // --- 0a3b) section 负向：不存在的分组 id 必须退回全屏 + 出诊断，不静默吞 ---
+    {
+        QList<nextpilot::plotscope::assembly::SettingsEditorWidget *> before;
+        for (QWidget *w : QApplication::topLevelWidgets())
+            if (auto *se = qobject_cast<nextpilot::plotscope::assembly::SettingsEditorWidget *>(w))
+                before.append(se);
+
+        Intent missIntent;
+        missIntent.op = QStringLiteral("preferences.open");
+        missIntent.params[QStringLiteral("section")] = QStringLiteral("core.no.such.group");
+        const auto missResult = application.host().execute(missIntent);
+
+        CHECK(missResult);
+        nextpilot::plotscope::assembly::SettingsEditorWidget *missTab = nullptr;
+        for (QWidget *w : QApplication::topLevelWidgets())
+        {
+            auto *se = qobject_cast<nextpilot::plotscope::assembly::SettingsEditorWidget *>(w);
+            if (se && !before.contains(se) && se->resourceRef().uri == QLatin1String("settings:"))
+            {
+                missTab = se;
+                break;
+            }
+        }
+        CHECK(missTab != nullptr);
+        if (missTab)
+        {
+            const QString diag = missTab->focusDiagnostic();
+            CHECK(diag == QStringLiteral("未找到设置分组「core.no.such.group」，已显示全部"));
+            CHECK(missTab->visibleSettingCount() > 0); // 退回全屏，仍有可见项
+            OK(QStringLiteral("设置入口：不存在的 section 退回全屏并出诊断，诊断=%1").arg(diag).toUtf8().constData());
+        }
     }
 
     // --- 0b) App 作用域偏好的落盘往返（偏好对话框「保存」的核心链路）---
@@ -2197,9 +2273,8 @@ int main(int argc, char *argv[])
         CHECK(mapped.contains(QStringLiteral("#")));
 
         // themeChanged 信号确实发出（ribbon 联动挂在它上面）。
-        int changedCount = 0;
-        QObject::connect(tm, &Theme::themeChanged, &window,
-                         [&changedCount](Theme::Theme) { ++changedCount; });
+        auto changedCount = std::make_shared<int>(0);
+        QObject::connect(tm, &Theme::themeChanged, &window, [changedCount](Theme::Theme) { ++(*changedCount); });
 
         // 走意图切换：与按钮点击、脚本调用同一条路径。
         Intent dark;
@@ -2209,7 +2284,7 @@ int main(int argc, char *argv[])
         CHECK(r); // 系统级 handler 认领（headless 才会报无处理器）
         CHECK(r.value().payload.toString() == QStringLiteral("dark"));
         CHECK(tm->current() == Theme::Theme::Dark);
-        CHECK(changedCount == 1);
+        CHECK(*changedCount == 1);
         // 全局 QSS 真的应用到 QApplication。
         CHECK(!qApp->styleSheet().isEmpty());
         CHECK(qApp->styleSheet().contains(Theme::color(
@@ -2221,8 +2296,96 @@ int main(int argc, char *argv[])
         const auto r2 = application.host().execute(toggle);
         CHECK(r2);
         CHECK(tm->current() == Theme::Theme::Light);
-        CHECK(changedCount == 2);
+        CHECK(*changedCount == 2);
         OK("主题管理：双主题 token 分色 + theme.set/toggle 意图切换 + 全局 QSS + themeChanged 联动");
+    }
+
+    // --- 9b) 设置页切主题：经 configuration 服务写 theme（落盘 app/theme）后 ThemeManager 跟随 ---
+    {
+        using Theme = nextpilot::plotscope::gui::ThemeManager;
+        using IConfigurationService = nextpilot::plotscope::workbench::IConfigurationService;
+        Theme *tm = window.themeManager();
+        auto *cfgSvc = application.host().services() ? application.host().services()->getService<IConfigurationService>(
+                                                           QStringLiteral("configuration.readback"))
+                                                     : nullptr;
+        CHECK(tm != nullptr);
+        CHECK(cfgSvc != nullptr);
+        if (tm && cfgSvc)
+        {
+            CHECK(tm->current() == Theme::Theme::Light); // 接上一段 toggle 后为浅色
+            auto cfgChanged = std::make_shared<int>(0);
+            QObject::connect(tm, &Theme::themeChanged, &window, [cfgChanged](Theme::Theme) { ++(*cfgChanged); });
+            // 设置页 enum 控件写值走的正是 configuration 服务：theme=dark（相对键，作用域由声明给）。
+            cfgSvc->setUserValue(QStringLiteral("theme"), QJsonValue(QStringLiteral("dark")));
+            CHECK(tm->current() == Theme::Theme::Dark); // 必须经 themeChanged 路径生效
+            CHECK(*cfgChanged == 1);
+            OK("设置页改主题：configuration 写 theme 后 ThemeManager 跟随（走 themeChanged）");
+            // 持久化必须独立成立：新建实例从存储读回，而不是只在内存里联动过。
+            Theme fresh(application.context().settings());
+            CHECK(fresh.current() == Theme::Theme::Dark);
+            CHECK(application.context().settings().value(QStringLiteral("app/theme")).toString() ==
+                  QStringLiteral("dark"));
+            OK("主题持久化：新建 ThemeManager 从 app/theme 读回 dark（不是内存联动假绿）");
+        }
+    }
+
+    // --- 9c) 写后真生效：服务写相对键 → 消费方按作用域读到同一值（跨层，不自证）---
+    {
+        using IConfigurationService = nextpilot::plotscope::workbench::IConfigurationService;
+        using SettingsScope = nextpilot::plotscope::context::SettingsScope;
+        auto *cfgSvc = application.host().services() ? application.host().services()->getService<IConfigurationService>(
+                                                           QStringLiteral("configuration.readback"))
+                                                     : nullptr;
+        CHECK(cfgSvc != nullptr);
+        if (cfgSvc)
+        {
+            auto &settings = application.context().settings();
+            // 导出上限：写 → 消费方读（DataCommandsHandler.cpp 同一条 scopedValue 表达式）。
+            cfgSvc->setUserValue(QStringLiteral("export.csv.maxPoints"), QJsonValue(500));
+            CHECK(settings.scopedValue(SettingsScope::App, QStringLiteral("export.csv.maxPoints")).toInt() == 500);
+            CHECK(!settings.contains(QStringLiteral("export.csv.maxPoints"))); // 无旧扁平影子键
+            CHECK(!settings.contains(
+                settings.scopedKey(SettingsScope::App, QStringLiteral("config/export.csv.maxPoints"))));
+            CHECK(cfgSvc->effectiveValue(QStringLiteral("export.csv.maxPoints")).toInt() == 500);
+            // 派生上限。
+            cfgSvc->setUserValue(QStringLiteral("derive.maxPoints"), QJsonValue(20000));
+            CHECK(settings.scopedValue(SettingsScope::App, QStringLiteral("derive.maxPoints")).toInt() == 20000);
+            // 时间格式。
+            cfgSvc->setUserValue(QStringLiteral("plot.time.format"), QJsonValue(QStringLiteral("hms")));
+            CHECK(settings.scopedValue(SettingsScope::App, QStringLiteral("plot.time.format")).toString() ==
+                  QStringLiteral("hms"));
+            // 恢复档（相对键；落盘 app/startup.recovery，MainWindow.cpp 同一条读取）。
+            cfgSvc->setUserValue(QStringLiteral("startup.recovery"), QJsonValue(QStringLiteral("off")));
+            CHECK(settings.scopedValue(SettingsScope::App, QStringLiteral("startup.recovery")).toString() ==
+                  QStringLiteral("off"));
+            CHECK(!settings.contains(settings.scopedKey(SettingsScope::App, QStringLiteral("app/startup.recovery"))));
+            OK("配置写后真生效：导出/派生/时间格式/恢复档四条按作用域键读到（无扁平与双前缀影子）");
+        }
+    }
+
+    // --- 9d) 旧 config/ 命名空间值一次性迁移到键原文 ---
+    {
+        using SettingsScope = nextpilot::plotscope::context::SettingsScope;
+        auto &settings = application.context().settings();
+        settings.removeScoped(SettingsScope::App, QStringLiteral("plot.time.format"));
+        settings.removeScoped(SettingsScope::App, QStringLiteral("config/plot.time.format"));
+        settings.setScopedValue(SettingsScope::App, QStringLiteral("config/plot.time.format"), QStringLiteral("utc"));
+        nextpilot::plotscope::assembly::ConfigurationServiceAdapter migrated(
+            settings, application.context().toolbox(), nextpilot::plotscope::assembly::coreBuiltinConfigurations());
+        CHECK(migrated.effectiveValue(QStringLiteral("plot.time.format")).toString() == QStringLiteral("utc"));
+        CHECK(settings.scopedValue(SettingsScope::App, QStringLiteral("plot.time.format")).toString() ==
+              QStringLiteral("utc"));
+        // 旧值保留（回滚不丢），且被标成"可清理"而不是"未声明残留"。
+        CHECK(settings.contains(settings.scopedKey(SettingsScope::App, QStringLiteral("config/plot.time.format"))));
+        // 诊断只报"旧命名空间里没声明过的残留"，已声明的键迁移后不再提示。
+        settings.setScopedValue(SettingsScope::App, QStringLiteral("config/legacy.unknown"), 1);
+        bool legacyDiag = false;
+        for (const auto &d : migrated.diagnostics())
+            legacyDiag |= d.key == QStringLiteral("legacy.unknown") && d.message.contains(QStringLiteral("旧 config/"));
+        CHECK(legacyDiag);
+        settings.removeScoped(SettingsScope::App, QStringLiteral("config/legacy.unknown"));
+        settings.removeScoped(SettingsScope::App, QStringLiteral("config/plot.time.format"));
+        OK("配置迁移：config/plot.time.format → plot.time.format，旧值保留并出提示");
     }
 
     // --- plotting 全套操作：view action 必须已注册（GUI/脚本/回放同一路径）---
@@ -3361,32 +3524,19 @@ int main(int argc, char *argv[])
         CHECK(diag->refresh() == application.context().registryTree().nodes().size());
         OK("诊断面板：注册树节点齐全，面板行数==树上节点数（diag.registries 同路）");
     }
-    // --- c3b-2c/d 设置页与主题令牌：声明 → 壳排序 → 实际可解析 ---
+    // --- c3b-2d 主题令牌：声明 → 实际可解析 ---
     {
         using nextpilot::plotscope::registry::Pack;
-        using nextpilot::plotscope::registry::SettingsPageSpec;
         using nextpilot::plotscope::registry::ThemeTokenSpec;
         using nextpilot::plotscope::gui::ThemeManager;
         Pack pack;
         pack.id = QStringLiteral("pack.c3b-page");
-        SettingsPageSpec later;
-        later.id = QStringLiteral("test.page.later");
-        later.title = QStringLiteral("靠后页");
-        later.order = 20;
-        later.create = [](QWidget *parent) { return new QWidget(parent); };
-        SettingsPageSpec first = later;
-        first.id = QStringLiteral("test.page.first");
-        first.title = QStringLiteral("靠前页");
-        first.order = 10;
-        pack.settingsPages << later << first; // 故意乱序：排序由壳做
         ThemeTokenSpec token;
         token.id = QStringLiteral("plot.testToken");
         token.fallback = QStringLiteral("#123456");
         pack.themeTokens << token;
         auto &toolbox = application.context().toolbox();
         CHECK(toolbox.mount(std::move(pack)));
-        const auto pages = toolbox.settingsPagesSorted();
-        CHECK(pages.size() == 2 && pages.first().id == QStringLiteral("test.page.first"));
         // 用窗口持有的实例：ThemeManager 的静态 activeTheme 指向在册实例，
         // 测试里另造一个再析构会留下悬空指针，后续绘制才崩（踩过）。
         ThemeManager *theme = window.themeManager();
@@ -3397,7 +3547,7 @@ int main(int argc, char *argv[])
         CHECK(theme->color(QStringLiteral("app.bg")) ==
               ThemeManager::color(ThemeManager::Theme::Light, QStringLiteral("app.bg")));
         CHECK(toolbox.unmount(QStringLiteral("pack.c3b-page")));
-        OK("设置页与主题令牌：壳按 order 排页，包兜底色可解析且不覆盖内置色");
+        OK("主题令牌：包兜底色可解析且不覆盖内置色");
     }
 
     // --- c3b-2b 条目右键声明：View 作用域的 item.* + 命令接缝 ---

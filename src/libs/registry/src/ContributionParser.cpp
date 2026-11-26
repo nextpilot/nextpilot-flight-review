@@ -83,8 +83,8 @@ bool isKnownSelectorField(const QString &key)
 // configuration 条目字段（§4.1 白名单 + title/iconId/order/properties 容器字段）。
 bool isKnownConfigurationField(const QString &key)
 {
-    static const QSet<QString> allowed = {QStringLiteral("title"), QStringLiteral("iconId"), QStringLiteral("order"),
-                                          QStringLiteral("properties")};
+    static const QSet<QString> allowed = {QStringLiteral("id"), QStringLiteral("title"), QStringLiteral("iconId"),
+                                          QStringLiteral("order"), QStringLiteral("properties")};
     return allowed.contains(key);
 }
 
@@ -560,6 +560,7 @@ ParseResult parseContributes(const QJsonObject &contributes, const QString &owne
                     continue;
                 }
                 ConfigurationSpec spec;
+                spec.id = obj.value(QStringLiteral("id")).toString();
                 spec.title = obj.value(QStringLiteral("title")).toString();
                 spec.iconId = obj.value(QStringLiteral("iconId")).toString();
                 spec.order = readInt(obj, QStringLiteral("order"));

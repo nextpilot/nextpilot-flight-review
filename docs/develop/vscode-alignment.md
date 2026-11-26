@@ -42,17 +42,19 @@
 
 ## 3. 无 VSCode 对位（仓内类型，注释里必须标注“无 VSCode 对位”）
 
-| 本项目                                                                                      | 说明                                                                                                     |
-| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `ResourceRef`                                                                               | VSCode 用 `URI` + `IEditorInput`；本仓以单个 ref 代替，属**适配层**，不是照抄                            |
-| `Subscription`                                                                              | 事件退订的仓内映射（`= QMetaObject::Connection`）；VSCode 的事件订阅同样返回 `Disposable`，映射差异见 §5 |
-| `ToolboxHub` / `StatusHub` / `ContributionParser` / `PanelFactoryHub` / `DialogLauncherHub` | 数据层/装配层，VSCode 无对应类；`ToolboxHub`、`PanelFactoryHub`、`DialogLauncherHub` 随壳布局统一移除    |
+| 本项目                                                                                      | 说明                                                                                                                                       |
+| ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `ResourceRef`                                                                               | VSCode 用 `URI` + `IEditorInput`；本仓以单个 ref 代替，属**适配层**，不是照抄                                                              |
+| `Subscription`                                                                              | 事件退订的仓内映射（`= QMetaObject::Connection`）；VSCode 的事件订阅同样返回 `Disposable`，映射差异见 §5                                   |
+| `ToolboxHub` / `StatusHub` / `ContributionParser` / `PanelFactoryHub` / `DialogLauncherHub` | 数据层/装配层，VSCode 无对应类；`ToolboxHub`、`PanelFactoryHub`、`DialogLauncherHub` 随壳布局统一移除                                      |
+| `ConfigurationSpec.id`                                                                      | ⚠️ 无 VSCode 对位：VSCode 的 `contributes.configuration` 只有 `title`，分组靠标题；本仓的分组稳定 id 仅供 `openSettings(section)` 精确聚焦 |
 
 ## 4. 值域字符串
 
 - 菜单 place：`menubar/<pageId>`（VSCode `MenuId.MenubarFile = 'menubar/File'` 同形），**不许写成点号**。
 - 其余 place 走 VSCode 原值：`view/title`、`view/item/context`、`viewContainer/title`。
 - `customEditors[].viewType` 全局唯一；重复 → 后到者拒载 + 诊断，且**非法条目不得占 id**（校验通过再 `claimId`）。
+- `contributes.configuration[].properties` 的键是**相对键**：不带 scope 前缀（`theme`、`startup.recovery`、`plot.time.format`）。落盘位置由声明的 `scope` 决定（App → `app/<key>`，Workspace → `ws/<key>`），消费方按同一相对键以 `scopedValue(App, key)` 读取；键里出现 `app/` 前缀会落成 `app/app/<key>`，视为 bug。
 
 ## 5. 撤销三件套（边界写死，不许互相替代）
 

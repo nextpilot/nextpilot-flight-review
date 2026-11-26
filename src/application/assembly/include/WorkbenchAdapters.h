@@ -27,6 +27,8 @@
 
 #include <QRegularExpression>
 
+#include <functional>
+
 #include "DatasetHub.h"
 #include "SourceHub.h"
 #include "IngestPipeline.h"
@@ -178,13 +180,28 @@ public:
     ds::IIngest &ingest() override { return m_ingest; }
     rec::IRecorder &recorder() override { return m_recorder; }
     rec::IPlayback &playback() override { return m_playback; }
+    // VSCode 语义：workspace.getConfiguration(<相对键>) 默认落在 user（本仓 App）层。
+    // 相对键（不带 app/·ws/·doc/ 前缀）一律按 App 作用域存读，与设置面/消费方同一位置；
+    // 已带作用域前缀的完整键（如 window/state、app/theme）原样透传。
     QVariant getConfiguration(const QString &key, const QVariant &def = {}) const override
     {
-        return m_settings.value(key, def);
+        return isBareKey(key) ? m_settings.scopedValue(ctx::SettingsScope::App, key, def) : m_settings.value(key, def);
     }
-    void setConfiguration(const QString &key, const QVariant &value) override { m_settings.setValue(key, value); }
+    void setConfiguration(const QString &key, const QVariant &value) override
+    {
+        if (isBareKey(key))
+            m_settings.setScopedValue(ctx::SettingsScope::App, key, value);
+        else
+            m_settings.setValue(key, value);
+    }
     bool flushConfiguration(QString *err = nullptr) override { return m_settings.flush(err); }
-    void removeConfiguration(const QString &key) override { m_settings.remove(key); }
+    void removeConfiguration(const QString &key) override
+    {
+        if (isBareKey(key))
+            m_settings.removeScoped(ctx::SettingsScope::App, key);
+        else
+            m_settings.remove(key);
+    }
     QStringList configurationKeys(const QString &prefix = {}) const override
     {
         const QStringList all = m_settings.keys();
@@ -203,6 +220,12 @@ public:
     ctx::DerivedSeriesHub &derived() override { return m_derived; }
 
 private:
+    static bool isBareKey(const QString &key)
+    {
+        return !key.startsWith(QStringLiteral("app/")) && !key.startsWith(QStringLiteral("ws/")) &&
+               !key.startsWith(QStringLiteral("doc/"));
+    }
+
     ds::IDatasetAccess &m_datasets;
     ds::ISourceAccess &m_sources;
     ds::IIngest &m_ingest;
@@ -546,17 +569,43 @@ private:
 // ---- IConfigurationService ----
 // 声明面（ToolboxHub 的 contributes.configuration）与持久化（SettingsStore，
 // app 唯一出口）之间的唯一合并/复位/诊断出口；分层 SettingsScope：user(App) ←
-// workspace ← document。键空间 "config/<点号键>"；owner unmount 后属性从
+// workspace ← document。键空间 = 声明里的键原文（无第二命名空间：settings 与
+// 消费方读同一个键；旧的 "config/<键>" 位置只作一次性迁移来源）。owner unmount 后属性从
 // configurations() 消失，残留值保留但不生效 + 诊断（读时推导，不删用户数据）。
 
-// core.settings 自带「通用」配置组（§5：零 owner 也能开设置）——装配层自数据
-// （与 core.text 同风格），键对位 VSCode workbench.settings.editor。
+// core.settings 自带配置组（§5：零 owner 也能开设置）——装配层自数据。
+// id 供 openSettings(section) 精确聚焦；title/category 是对外显示名（分组靠标题，
+// id 无 VSCode 对位）。原 PreferencesDialog 承载的设置项在此补齐，删壳不丢内容：
+// 主题/缓存是命令（theme.set / data.clearCache），不进配置，仍走命令面板。
 inline QList<registry::ConfigurationSpec> coreBuiltinConfigurations()
 {
+    QList<registry::ConfigurationSpec> specs;
+
+    // 外观：theme（相对键，落盘为 app/theme——正是 ThemeManager 读的完整键）。
+    // 键名不带 scope 前缀：作用域是声明的 scope 属性，不是键名的一部分。
+    registry::ConfigurationSpec appearance;
+    appearance.id = QStringLiteral("core.appearance");
+    appearance.title = QStringLiteral("外观");
+    appearance.iconId = QStringLiteral("paint");
+    appearance.order = 0;
+    registry::ConfigurationProperty theme;
+    theme.key = QStringLiteral("theme");
+    theme.type = QStringLiteral("string");
+    theme.defaultValue = QStringLiteral("light");
+    theme.enumValues = {QStringLiteral("light"), QStringLiteral("dark")};
+    theme.enumDescriptions = {QStringLiteral("浅色"), QStringLiteral("深色")};
+    theme.description = QStringLiteral("界面主题（浅色/深色）");
+    theme.category = appearance.title;
+    theme.scope = QStringLiteral("window");
+    theme.order = 1;
+    appearance.properties.append(theme);
+    specs.append(appearance);
+
     registry::ConfigurationSpec general;
+    general.id = QStringLiteral("core.general");
     general.title = QStringLiteral("通用");
     general.iconId = QStringLiteral("gear");
-    general.order = 0;
+    general.order = 1;
     registry::ConfigurationProperty editorMode;
     editorMode.key = QStringLiteral("workbench.settings.editor");
     editorMode.type = QStringLiteral("string");
@@ -564,25 +613,112 @@ inline QList<registry::ConfigurationSpec> coreBuiltinConfigurations()
     editorMode.enumValues = {QStringLiteral("ui"), QStringLiteral("json")};
     editorMode.enumDescriptions = {QStringLiteral("图形界面"), QStringLiteral("JSON 文本")};
     editorMode.description = QStringLiteral("设置编辑器的呈现模式");
+    editorMode.category = general.title;
     editorMode.scope = QStringLiteral("application");
     editorMode.order = 1;
     general.properties.append(editorMode);
-    return {general};
+    specs.append(general);
+
+    // 时间轴：plot.time.format（原 PreferencesDialog「时间轴」页迁来）。
+    registry::ConfigurationSpec timeline;
+    timeline.id = QStringLiteral("core.timeline");
+    timeline.title = QStringLiteral("时间轴");
+    timeline.order = 2;
+    registry::ConfigurationProperty timeFormat;
+    timeFormat.key = QStringLiteral("plot.time.format");
+    timeFormat.type = QStringLiteral("string");
+    timeFormat.defaultValue = QStringLiteral("relative");
+    timeFormat.enumValues = {QStringLiteral("relative"), QStringLiteral("hms"), QStringLiteral("utc")};
+    timeFormat.enumDescriptions = {QStringLiteral("相对秒（12.345）"), QStringLiteral("时分秒（0:12:20）"),
+                                   QStringLiteral("UTC（无 epoch 时同 hms）")};
+    timeFormat.description = QStringLiteral("X 轴刻度文本格式（只改文本，不改刻度位置）");
+    timeFormat.category = timeline.title;
+    timeFormat.scope = QStringLiteral("window");
+    timeFormat.order = 1;
+    timeline.properties.append(timeFormat);
+    specs.append(timeline);
+
+    // 数据：derive.maxPoints / startup.recovery（原「数据」页迁来；
+    // 解析缓存是命令 data.clearCache / data.cache.stats，不进配置）。
+    registry::ConfigurationSpec data;
+    data.id = QStringLiteral("core.data");
+    data.title = QStringLiteral("数据");
+    data.order = 3;
+    registry::ConfigurationProperty deriveMax;
+    deriveMax.key = QStringLiteral("derive.maxPoints");
+    deriveMax.type = QStringLiteral("number");
+    deriveMax.defaultValue = 0;
+    deriveMax.minimum = 0.0;
+    deriveMax.hasMinimum = true;
+    deriveMax.maximum = 100000000.0;
+    deriveMax.hasMaximum = true;
+    deriveMax.description = QStringLiteral("派生通道重算上限（0=不限，n>0 限制点数）");
+    deriveMax.category = data.title;
+    deriveMax.scope = QStringLiteral("window");
+    deriveMax.order = 1;
+    data.properties.append(deriveMax);
+    registry::ConfigurationProperty startupRecovery;
+    startupRecovery.key = QStringLiteral("startup.recovery");
+    startupRecovery.type = QStringLiteral("string");
+    startupRecovery.defaultValue = QStringLiteral("layout");
+    startupRecovery.enumValues = {QStringLiteral("layout"), QStringLiteral("full"), QStringLiteral("off")};
+    startupRecovery.enumDescriptions = {QStringLiteral("仅布局（推荐）"), QStringLiteral("完整（含数据）"),
+                                        QStringLiteral("关闭")};
+    startupRecovery.description =
+        QStringLiteral("上次会话恢复档（layout=只还原布局；full=连数据一起加载；off=不恢复）");
+    startupRecovery.category = data.title;
+    startupRecovery.scope = QStringLiteral("window");
+    startupRecovery.order = 2;
+    data.properties.append(startupRecovery);
+    specs.append(data);
+
+    // 导出：export.csv.maxPoints（原「数据」页迁来，scope=window 归 user+workspace）。
+    registry::ConfigurationSpec exportSpec;
+    exportSpec.id = QStringLiteral("core.export");
+    exportSpec.title = QStringLiteral("导出");
+    exportSpec.order = 4;
+    registry::ConfigurationProperty exportMax;
+    exportMax.key = QStringLiteral("export.csv.maxPoints");
+    exportMax.type = QStringLiteral("number");
+    exportMax.defaultValue = 0;
+    exportMax.minimum = 0.0;
+    exportMax.hasMinimum = true;
+    exportMax.maximum = 100000000.0;
+    exportMax.hasMaximum = true;
+    exportMax.description = QStringLiteral("导出 CSV 采样上限（0=不限，n>0 均匀抽稀到 n 点且保留末点）");
+    exportMax.category = exportSpec.title;
+    exportMax.scope = QStringLiteral("window");
+    exportMax.order = 1;
+    exportSpec.properties.append(exportMax);
+    specs.append(exportSpec);
+
+    return specs;
 }
 
 class ConfigurationServiceAdapter final : public wb::IConfigurationService
 {
 public:
+    // 写后通知钩：配置值变更由装配层转发给命令侧（如 theme（落盘 app/theme）→ theme.set，让
+    // ThemeManager 经既有 themeChanged 路径生效）。配置服务自身不认识任何业务键。
+    using ValueChangedHook = std::function<void(const QString &key, const QJsonValue &value)>;
+
     // builtinConfigurations：工作台自带配置（core.settings 的「通用」组，§5——
     // 零扩展也能开设置；core 永不 unmount，无残留语义）。
     ConfigurationServiceAdapter(ctx::SettingsStore &settings, registry::ToolboxHub &toolbox,
-                                QList<registry::ConfigurationSpec> builtinConfigurations = {})
-        : m_settings(settings), m_toolbox(toolbox), m_builtin(std::move(builtinConfigurations))
+                                QList<registry::ConfigurationSpec> builtinConfigurations = {},
+                                ValueChangedHook valueChanged = {})
+        : m_settings(settings), m_toolbox(toolbox), m_builtin(std::move(builtinConfigurations)),
+          m_valueChanged(std::move(valueChanged))
     {
+        migrateLegacyNamespace();
     }
 
     QList<registry::ConfigurationSpec> configurations() const override
     {
+        // 惰性补迁：构造期只迁当时已声明的键；扩展可能在构造后才挂载，其旧 config/<key>
+        // 残留需在声明面可见时补迁。migrateLegacyNamespace 幂等（目标键已存在即跳过），
+        // 放在每次读取声明面之前，覆盖 late-mount owner，不改变已迁移键。
+        migrateLegacyNamespace();
         QList<registry::ConfigurationSpec> out = m_builtin;
         for (const auto &owned : m_toolbox.contributedConfigurations())
             out.append(owned.item);
@@ -606,6 +742,9 @@ public:
 
     wb::ConfigurationInspect inspect(const QString &key) const override
     {
+        // 惰性补迁（同 configurations()）：让 effectiveValue/inspect 读取路径也覆盖
+        // 构造后才挂载的 owner 的旧 config/<key> 残留；幂等，不重复迁移。
+        migrateLegacyNamespace();
         wb::ConfigurationInspect ins;
         ins.key = key;
         // 声明面：ToolboxHub + core 内置（core.settings「通用」组）双来源。
@@ -663,8 +802,10 @@ public:
 
     QList<wb::IConfigurationService::Diagnostic> diagnostics() const override
     {
+        migrateLegacyNamespace(); // 惰性补迁：先迁移，再按"已声明/未声明"分类诊断，避免误报。
         QList<wb::IConfigurationService::Diagnostic> out;
-        // 残留 = 存储里有值但不在任何 owner 的声明中（读时推导，纯状态函数）。
+        // 键空间统一后，"未声明残留"无法按前缀推导（theme、window/state 同层），
+        // 故只检查两种历史形态：<scope>/config/<key> 与旧的无作用域扁平键 <key>。
         QSet<QString> declared;
         for (const auto &spec : m_builtin)
             for (const auto &prop : spec.properties)
@@ -673,36 +814,68 @@ public:
             for (const auto &prop : owned.item.properties)
                 declared.insert(prop.key);
         const auto scan = [&](context::SettingsScope scope) {
-            // keysIn 返回带 scope 前缀的完整键（如 "app/config/plot.accent"）。
-            const QString fullPrefix = m_settings.scopedKey(scope, storagePrefix());
+            const QString legacyPrefix = m_settings.scopedKey(scope, QStringLiteral("config/"));
             for (const QString &sk : m_settings.keysIn(scope))
             {
-                if (!sk.startsWith(fullPrefix))
+                if (!sk.startsWith(legacyPrefix))
                     continue;
-                const QString key = sk.mid(fullPrefix.size());
-                if (declared.contains(key) || key.isEmpty())
+                const QString key = sk.mid(legacyPrefix.size());
+                if (key.isEmpty() || declared.contains(key))
                     continue;
-                bool already = false;
-                for (const auto &d : out)
-                    already |= d.key == key;
-                if (already)
-                    continue;
-                out.append({key, QStringLiteral("键 %1 未在任何 owner 的 configuration 声明中，"
-                                                "残留值保留但不生效（不删用户数据）")
+                out.append({key, QStringLiteral("旧 config/ 命名空间里的值 %1 不在任何 configuration 声明中，"
+                                                "保留但不生效（不删用户数据）")
                                      .arg(key)});
             }
         };
         scan(context::SettingsScope::App);
         scan(context::SettingsScope::Workspace);
         scan(context::SettingsScope::Document);
+        // 旧扁平键（无作用域前缀）：已声明的键会被上面一次性迁移补位，值保留 → 提示可清理。
+        for (const QString &key : declared)
+            if (m_settings.contains(key))
+                out.append({key, QStringLiteral("旧扁平键（无作用域前缀）里的值已迁移到 app/%1，"
+                                                "保留但不生效（不删用户数据）")
+                                     .arg(key)});
         out.append(m_patternViolations);
         return out;
     }
 
 private:
-    // SettingsStore 相对键：config/<点号键>（scope 前缀由 SettingsStore 拼）。
-    static QString storagePrefix() { return QStringLiteral("config/"); }
-    static QString storageKey(const QString &key) { return QStringLiteral("config/") + key; }
+    // SettingsStore 相对键 = 声明键原文（scope 前缀由 SettingsStore 拼）。
+    // 单一命名空间：Settings editor 写的就是消费方读的键（VSCode settings.json 同形）。
+    static QString storageKey(const QString &key) { return key; }
+
+    // 迁移：旧位置 config/<key> 有值、原键缺失 → 拷到原键（旧值保留，回滚不丢）。
+    // const：只经 m_settings 引用写外部 SettingsStore，不改本对象状态；故可由
+    // configurations() const 惰性调用，覆盖构造后才挂载的 owner。幂等（目标键已存在即跳过）。
+    void migrateLegacyNamespace() const
+    {
+        QList<QString> keys;
+        for (const auto &spec : m_builtin)
+            for (const auto &prop : spec.properties)
+                keys.append(prop.key);
+        for (const auto &owned : m_toolbox.contributedConfigurations())
+            for (const auto &prop : owned.item.properties)
+                keys.append(prop.key);
+        const auto scopes = {context::SettingsScope::App, context::SettingsScope::Workspace,
+                             context::SettingsScope::Document};
+        for (const QString &key : keys)
+            for (const auto scope : scopes)
+            {
+                const QString target = m_settings.scopedKey(scope, storageKey(key));
+                if (m_settings.contains(target))
+                    continue;
+                // 历史形态一：旧 config/ 影子命名空间（本次废除）。
+                const QString legacyScoped = m_settings.scopedKey(scope, QStringLiteral("config/") + key);
+                // 历史形态二：设置页迁来之前的无作用域扁平键（旧 PreferencesDialog 直接 setValue）。
+                const bool hasScoped = m_settings.contains(legacyScoped);
+                const bool hasBare = scope == context::SettingsScope::App && m_settings.contains(key);
+                if (!hasScoped && !hasBare)
+                    continue;
+                const QVariant v = hasScoped ? m_settings.value(legacyScoped) : m_settings.value(key);
+                m_settings.setScopedValue(scope, storageKey(key), v);
+            }
+    }
 
     // 声明 scope → 参与合并的层位掩码（bit0=user bit1=workspace bit2=document），
     // 对位 VSCode ConfigurationScope 的 target 语义：application/machine 只认 user，
@@ -751,11 +924,15 @@ private:
             m_settings.removeScoped(scope, sk);
         else
             m_settings.setScopedValue(scope, sk, value.toVariant());
+        // 通知装配层做命令侧联动（如主题）；配置服务本身不解释 key 语义。
+        if (m_valueChanged && scope == context::SettingsScope::App)
+            m_valueChanged(key, effectiveValue(key));
     }
 
     ctx::SettingsStore &m_settings;               // 借用：app 唯一持久化出口
     registry::ToolboxHub &m_toolbox;              // 借用：contributes.configuration 声明面
     QList<registry::ConfigurationSpec> m_builtin; // core.settings 自带（永不 unmount）
+    ValueChangedHook m_valueChanged;              // 写后联动（装配层注入，配置服务不解释 key）
     mutable QList<wb::IConfigurationService::Diagnostic> m_patternViolations;
 };
 

@@ -77,8 +77,9 @@ void PlotWorkspace::registerCanvasActions()
                                     QString mode = params.value(QStringLiteral("mode")).toString();
                                     if (mode.isEmpty())
                                         mode = m_appCtx.settings()
-                                                   .value(QStringLiteral("plot.time.format"),
-                                                          QStringLiteral("relative"))
+                                                   .scopedValue(nextpilot::plotscope::context::SettingsScope::App,
+                                                                QStringLiteral("plot.time.format"),
+                                                                QStringLiteral("relative"))
                                                    .toString();
                                     // 遍历**所有页**的 cell：非当前页的 cells 存在 Page 里，
                                     // 只扫 m_cells 会让切页后的画布沿用旧刻度（用户会当成"设置没生效"）。

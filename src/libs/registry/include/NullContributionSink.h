@@ -46,7 +46,6 @@ public:
         for (const auto &d : pack.docs) checkId(d.id, "doc");
         for (const auto &e : pack.examples) checkId(e.id, "example");
         for (const auto &r : pack.reports) checkId(r.id, "report");
-        for (const auto &s : pack.settingsPages) checkId(s.id, "settingsPage");
         for (const auto &t : pack.themeTokens) checkId(t.id, "themeToken");
 
         // 视图标题/条目上下文：必须指明归属视图与命令（否则壳无法呈现）。

@@ -1520,15 +1520,17 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
 // 设置对话框唯一实现：ribbon「文件→设置」(经 preferences.open 意图)、
 // 源列表「数据设置…」、源右键菜单三处都到这里。
 //
-// 本面板**不自己建对话框**：只发 preferences.open 意图 + section="data"，
-// 由外壳注册的系统级 handler 弹全局偏好对话框并定位到「数据」页。这样：
+// 本面板**不自己建对话框**：只发 preferences.open 意图，section="core.data" 是
+// ConfigurationSpec.id（分组稳定 id），由 openSettings 映射成设置编辑器的该组聚焦
+// （按 id 精确匹配 spec，非本面板直接操作 UI）。
+// 这样：
 //   · 面板不 include 外壳头文件（模块视图不反向依赖 shell）；
 //   · 落盘、主题、时间轴派发都在外壳一处，三处入口不会走散。
 void DataManagerPanel::openSettingsDialog()
 {
     Intent intent;
     intent.op = QStringLiteral("preferences.open");
-    intent.params[QStringLiteral("section")] = QStringLiteral("data");
+    intent.params[QStringLiteral("section")] = QStringLiteral("core.data");
     const auto r = m_executor.execute(intent);
     if (!r)
         QMessageBox::warning(this, QStringLiteral("设置"),

@@ -6,6 +6,6 @@
       "template": "tests/fixture/demo_sequential.psproto", "sample": "AA 0C 00 01 00", "tab": 1 },
     { "op": "dialog", "name": "transform", "cap": "derived", "shot": "transform-editor.png" },
     { "op": "dialog", "name": "filter", "shot": "script-filter-editor.png" },
-    { "op": "dialog", "name": "settings", "shot": "settings-dialog.png" }
+    { "op": "dialog", "name": "settings", "shot": "settings-editor.png" }
   ]
 }

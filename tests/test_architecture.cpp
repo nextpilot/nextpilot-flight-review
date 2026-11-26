@@ -1067,7 +1067,7 @@ using namespace nextpilot::plotscope::context;
         fprintf(stdout, "[ok] pack.blf / pack.apbin 可按包原子卸载，格式能力同步消失\n");
     }
 
-    // 8) c3 四个贡献点（ViewTitleAction / ItemContext / SettingsPage / ThemeToken）
+    // 8) c3 三个贡献点（ViewTitleAction / ItemContext / ThemeToken）
     {
         Pack pack;
         pack.id = QStringLiteral("pack.c3-test");
@@ -1086,16 +1086,11 @@ using namespace nextpilot::plotscope::context;
         c1.when = QStringLiteral("item.multiSelect");
         c1.domain = QStringLiteral("data"); // 键空间归属（字符串），不是包的领域枚举
         c1.order = 1;
-        SettingsPageSpec sp;
-        sp.id = QStringLiteral("settings.plot");
-        sp.title = QStringLiteral("绘图");
-        sp.order = 5;
         ThemeTokenSpec tk;
         tk.id = QStringLiteral("plot.cursor");
         tk.fallback = QStringLiteral("#ff00ff");
         pack.viewTitleActions << t1 << t0;
         pack.itemContexts << c1;
-        pack.settingsPages << sp;
         pack.themeTokens << tk;
         // Pack 含 unique_ptr 解析器，只能移动：mount 之后 pack 不再使用。
         CHECK(toolbox.mount(std::move(pack)));
@@ -1110,14 +1105,12 @@ using namespace nextpilot::plotscope::context;
         CHECK(items[0].provider == QStringLiteral("pack.c3-test"));
         CHECK(toolbox.themeFallback(QStringLiteral("plot.cursor")) == QStringLiteral("#ff00ff"));
         CHECK(toolbox.themeFallback(QStringLiteral("nope")).isEmpty());
-        CHECK(toolbox.settingsPagesSorted().size() == 1);
         // 原子卸载：四张表同时清空，不牵连其它包
         CHECK(toolbox.unmount(QStringLiteral("pack.c3-test")));
         CHECK(toolbox.titleActionsFor(QStringLiteral("plot.workspace")).isEmpty());
         CHECK(toolbox.itemContextsFor(QStringLiteral("data.table")).isEmpty());
-        CHECK(toolbox.settingsPagesSorted().isEmpty());
         CHECK(toolbox.themeTokensAll().isEmpty());
-        fprintf(stdout, "[ok] c3 四个贡献点：随包原子装卸、按视图裁剪、order 排序、令牌兜底色可查\n");
+        fprintf(stdout, "[ok] c3 贡献点：随包原子装卸、按视图裁剪、令牌兜底色可查\n");
     }
 
     // === N5-N7 / D10-D12 三项架构裁定落地 ===

@@ -310,7 +310,10 @@ Result<IntentResult> DataCommandsHandler::exportCsv(const Intent &intent)
         const Table *t = ds->table(targetTable);
         return t ? t->rows : 0;
     }();
-    int maxPoints = m_app.settings().value(QStringLiteral("export.csv.maxPoints"), 0).toInt();
+    int maxPoints =
+        m_app.settings()
+            .scopedValue(nextpilot::plotscope::context::SettingsScope::App, QStringLiteral("export.csv.maxPoints"), 0)
+            .toInt();
     if (maxPoints < 0)
         maxPoints = 0; // 负值视为"没设"，不当成 0 点
     // 取数上限：抽稀要"末点保留"，不能直接交给 Rust 的等步长 cap（它会丢掉尾巴）。
@@ -399,7 +402,9 @@ Result<IntentResult> DataCommandsHandler::exportSnapshot(const Intent &intent)
     const bool allTables = wanted.isEmpty();
 
     const int maxPoints =
-        m_app.settings().value(QStringLiteral("export.csv.maxPoints"), 0).toInt();
+        m_app.settings()
+            .scopedValue(nextpilot::plotscope::context::SettingsScope::App, QStringLiteral("export.csv.maxPoints"), 0)
+            .toInt();
 
     // 每张表先算成"表头 + 行"，xlsx/csv 两种落盘共用这一份，避免两条路径漂移。
     struct SnapshotTable
@@ -2320,8 +2325,11 @@ Result<IntentResult> DataCommandsHandler::derive(const Intent &intent)
     int cap = kMaxDerivedPoints;
     if (intent.params.contains(QStringLiteral("cap")))
         cap = intent.params.value(QStringLiteral("cap")).toInt();
-    else if (m_app.settings().contains(QStringLiteral("derive.maxPoints")))
-        cap = m_app.settings().value(QStringLiteral("derive.maxPoints")).toInt();
+    else if (m_app.settings().contains(m_app.settings().scopedKey(nextpilot::plotscope::context::SettingsScope::App,
+                                                                  QStringLiteral("derive.maxPoints"))))
+        cap = m_app.settings()
+                  .scopedValue(nextpilot::plotscope::context::SettingsScope::App, QStringLiteral("derive.maxPoints"))
+                  .toInt();
     if (cap < 0)
         cap = kMaxDerivedPoints;
     if (cap == 0)

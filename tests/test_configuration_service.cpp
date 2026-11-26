@@ -1,7 +1,7 @@
 // IConfigurationService headless 单测：
 //   1) 分层覆盖合并（document ← workspace ← user ← default）+ scope 决定参与层
 //   2) reset 单键复位（其余键不受影响）
-//   3) owner unmount 后 effectiveValue 回落（Undefined）+ 残留诊断（不删用户数据）
+//   3) owner unmount 后 effectiveValue 回落（Undefined）+ 用户数据不删；诊断只覆盖旧 config/ 命名空间
 //   4) null 是合法值；pattern 非法值不写入 + 诊断
 // 只链 ps_assembly（其头文件内联 adapter）+ Qt6::Core；不碰壳、不碰 GUI。
 // 持久化只走 SettingsStore（内存态）；QSettings 在自有代码必须为 0。
@@ -91,9 +91,8 @@ int main(int argc, char **argv)
         CHECK(ins.defaultValue.toDouble() == 2.0);
         CHECK(ins.effective.toDouble() == 9.0);
     }
-    // 持久化只走 SettingsStore：值确实落在了约定键空间（config/<点号键>）。
-    CHECK(settings.contains(
-        settings.scopedKey(context::SettingsScope::Document, QStringLiteral("config/plot.lineWidth"))));
+    // 持久化只走 SettingsStore：值落在声明键原文（无 config/ 影子命名空间）。
+    CHECK(settings.contains(settings.scopedKey(context::SettingsScope::Document, QStringLiteral("plot.lineWidth"))));
 
     // ===== 判据 2：reset 单键复位（其余键不受影响）=====
     svc.setUserValue(QStringLiteral("plot.accent"), QJsonValue(QStringLiteral("red")));
@@ -112,7 +111,7 @@ int main(int argc, char **argv)
     svc.setDocumentValue(QStringLiteral("plot.lineWidth"), QJsonValue(QJsonValue::Undefined));
     CHECK(svc.effectiveValue(QStringLiteral("plot.lineWidth")).toDouble() == 2.0);
 
-    // ===== 判据 3：owner unmount 后属性消失、effectiveValue 回落 + 残留诊断 =====
+    // ===== 判据 3：owner unmount 后属性消失、effectiveValue 回落 + 用户数据不删 =====
     svc.setUserValue(QStringLiteral("plot.accent"), QJsonValue(QStringLiteral("red")));
     CHECK(toolbox.unmountContribution(QStringLiteral("plot")));
     // 声明面消失。
@@ -122,14 +121,12 @@ int main(int argc, char **argv)
         CHECK(!ins.declared);
         CHECK(ins.declaredOwner.isEmpty());
         CHECK(ins.effective.type() == QJsonValue::Undefined); // 回落（无默认值可回）
-        // 用户数据不删：残留值仍在 SettingsStore。
-        CHECK(settings.contains(settings.scopedKey(context::SettingsScope::App, QStringLiteral("config/plot.accent"))));
+        // 用户数据不删：残留值仍在键原文空间（无 config/ 影子键）。
+        CHECK(settings.contains(settings.scopedKey(context::SettingsScope::App, QStringLiteral("plot.accent"))));
     }
-    // 残留诊断（未声明但有残留值的键恰好一个：plot.accent；lineWidth 已 reset）。
+    // 诊断只覆盖旧 config/ 命名空间：键原文残留与运行时键同空间，不按前缀误报。
     const auto diags = svc.diagnostics();
-    CHECK(diags.size() == 1);
-    CHECK(hasDiagFor(diags, QStringLiteral("plot.accent"), QStringLiteral("残留")));
-    CHECK(hasDiagFor(diags, QStringLiteral("plot.accent"), QStringLiteral("不生效")));
+    CHECK(diags.isEmpty());
 
     // remount 后声明恢复：默认值重新可回；user 层残留值（"red"）保留，
     // 声明恢复后 effective 取残留值（保留用户数据，不静默清掉）。
@@ -141,11 +138,17 @@ int main(int argc, char **argv)
     CHECK(svc.effectiveValue(QStringLiteral("plot.accent")).toString() == QStringLiteral("red"));
     CHECK(svc.diagnostics().isEmpty());
 
-    // ===== 未声明键写入 → 诊断 =====
+    // ===== 未声明键写入键原文空间：不诊断（无法与运行时键区分）=====
     svc.setUserValue(QStringLiteral("ghost.key"), QJsonValue(1.0));
     CHECK(svc.effectiveValue(QStringLiteral("ghost.key")).type() == QJsonValue::Undefined);
-    CHECK(hasDiagFor(svc.diagnostics(), QStringLiteral("ghost.key"), QStringLiteral("残留")));
+    CHECK(svc.diagnostics().isEmpty());
     svc.reset(QStringLiteral("ghost.key"));
+    CHECK(svc.diagnostics().isEmpty());
+
+    // ===== 旧 config/ 命名空间里的未声明键 → 诊断"旧 config/"（保留不删）=====
+    settings.setScopedValue(context::SettingsScope::App, QStringLiteral("config/ghost.legacy"), QJsonValue(1.0));
+    CHECK(hasDiagFor(svc.diagnostics(), QStringLiteral("ghost.legacy"), QStringLiteral("旧 config/")));
+    settings.removeScoped(context::SettingsScope::App, QStringLiteral("config/ghost.legacy"));
     CHECK(svc.diagnostics().isEmpty());
 
     // ===== scope 决定参与合并的层（对位 VSCode ConfigurationScope target 语义）=====
@@ -227,6 +230,55 @@ int main(int argc, char **argv)
         CHECK(hasDiagFor(svc.diagnostics(), QStringLiteral("p.id"), QStringLiteral("pattern")));
         svc.reset(QStringLiteral("p.id"));
         CHECK(toolbox.unmountContribution(QStringLiteral("p")));
+    }
+
+    // ===== 改进项1：分组 id 跨 owner 唯一——重名出诊断，后到者 id 清空（属性仍可见）=====
+    {
+        CHECK(toolbox.mountContribution(doc(R"({
+            "configuration": [{"id":"grp.dup","title":"先到","order":1,
+                "properties":{"dup.first":{"type":"string","default":"a"}}}]
+        })",
+                                            QStringLiteral("dupFirst"))));
+        CHECK(toolbox.mountContribution(doc(R"({
+            "configuration": [{"id":"grp.dup","title":"后到","order":2,
+                "properties":{"dup.second":{"type":"string","default":"b"}}}]
+        })",
+                                            QStringLiteral("dupSecond"))));
+        // 后到者 id 冲突被诊断（含双方 owner）。
+        bool dupDiag = false;
+        for (const auto &d : toolbox.contributionDiagnostics())
+            dupDiag |= d.keyPath == QStringLiteral("configuration.grp.dup") && d.message.contains(QStringLiteral("dupFirst"));
+        CHECK(dupDiag);
+        // 两份属性都在（内容不丢），但后到组 id 被清空，聚焦只命中先到者。
+        auto cfgs = svc.configurations();
+        int idCount = 0;
+        for (const auto &c : cfgs)
+            if (c.id == QStringLiteral("grp.dup"))
+                ++idCount;
+        CHECK(idCount == 1);
+        CHECK(toolbox.unmountContribution(QStringLiteral("dupSecond")));
+        CHECK(toolbox.unmountContribution(QStringLiteral("dupFirst")));
+    }
+
+    // ===== 改进项2：late-mount owner 的旧 config/<key> 惰性补迁（构造后才挂载）=====
+    {
+        // svc 早已构造；此时预置旧命名空间值，再挂载声明该键的 owner。
+        settings.removeScoped(context::SettingsScope::App, QStringLiteral("config/late.key"));
+        settings.removeScoped(context::SettingsScope::App, QStringLiteral("late.key"));
+        settings.setScopedValue(context::SettingsScope::App, QStringLiteral("config/late.key"),
+                                QJsonValue(QStringLiteral("legacy-value")));
+        CHECK(toolbox.mountContribution(doc(R"({
+            "configuration": [{"id":"grp.late","title":"晚到","order":1,
+                "properties":{"late.key":{"type":"string","default":"default"}}}]
+        })",
+                                            QStringLiteral("lateOwner"))));
+        // 构造期迁移看不到 lateOwner；读取声明面/求值时惰性补迁应生效。
+        CHECK(svc.effectiveValue(QStringLiteral("late.key")).toString() == QStringLiteral("legacy-value"));
+        CHECK(settings.scopedValue(context::SettingsScope::App, QStringLiteral("late.key")).toString() ==
+              QStringLiteral("legacy-value"));
+        CHECK(toolbox.unmountContribution(QStringLiteral("lateOwner")));
+        settings.removeScoped(context::SettingsScope::App, QStringLiteral("config/late.key"));
+        settings.removeScoped(context::SettingsScope::App, QStringLiteral("late.key"));
     }
 
     if (g_failed == 0)

@@ -409,13 +409,10 @@ void MainWindow::build(RuntimeHost &host)
                      });
     m_theme->applyCurrent(); // 把 settings 里的初始值落到全局 QSS 与 ribbon
 
-    // 2.2) 「文件 → 设置」的落地 = 全局偏好对话框（App 作用域，落盘）。
-    //   偏好界面是 GUI 专属能力，注册成**系统级 handler**（与 theme.* 同法），
-    //   模块层（modules/settings）只管存取、不认识 QWidget：
-    //   · ribbon 与脚本都发 preferences.open 意图，同一条执行路径；
-    //   · headless 没有这个 handler → "没有模块能处理意图"，不假装成功。
-    //   · 生命周期随窗口：模态对话框在 handler 内现构造现销毁。
-    m_preferencesHandler = new PreferencesIntentHandler(m_appCtx, host, this);
+    // 2.2) 「文件 → 设置」= 工作台内置 Settings editor 页签（非模态对话框）。
+    //   preferences.open 处理器只转派到 workbench.action.openSettings，
+    //   最终执行体唯一（IEditorService::openEditor）；壳不碰编辑器服务、不造对话框。
+    m_preferencesHandler = new PreferencesIntentHandler(host, this);
     host.registerSystemHandler(QStringLiteral("@system/preferences"), m_preferencesHandler);
 
     // 3) 装模块（GUI 模式：会调用 onAttach，模块可自带界面入口）
@@ -947,14 +944,14 @@ void MainWindow::restoreSessionSnapshot()
         return;
     }
 
-    // 档位（app/startup.recovery，默认 layout）：
+    // 档位（startup.recovery，落盘 app/startup.recovery，默认 layout）：
     //   off    什么都不恢复；
     //   layout 只还原源条目与画布，不读数据——启动不被大文件拖住；
     //   full   layout + 真正摄取（data.workspace.restore）。
     // 流式源在任何档位都只保留条目：连接要用户显式放行。
     const QString mode = m_appCtx.settings()
-                             .value(QStringLiteral("app/startup.recovery"),
-                                    QStringLiteral("layout"))
+                             .scopedValue(nextpilot::plotscope::context::SettingsScope::App,
+                                          QStringLiteral("startup.recovery"), QStringLiteral("layout"))
                              .toString();
     if (mode == QStringLiteral("off"))
         return;

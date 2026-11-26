@@ -64,9 +64,7 @@ add_library(ps_gui OBJECT
     # 导入对话框已迁至 modules/data/gui（D18a）：外壳按 id 经 DialogLauncherHub 触发。
     # 协议编辑器/检查器对话框已迁至 modules/protocol/gui（D18a）：
     # 外壳零业务对话框，只通过意图触发；ps_gui 不再编译任何协议 UI。
-    # 全局偏好设置（App 作用域，跨工作区持久）：外壳级系统能力，不属于任何功能模块。
-    shell/PreferencesDialog.cpp
-    shell/PreferencesDialog.h
+    # 设置入口（preferences.open）：只转派到工作台内置 Settings editor，不提供界面。
     shell/PreferencesIntentHandler.cpp
     shell/PreferencesIntentHandler.h
     # 报告导出已迁至 modules/report/gui（D18a）：装配层注册 viewAction，外壳零业务 include。

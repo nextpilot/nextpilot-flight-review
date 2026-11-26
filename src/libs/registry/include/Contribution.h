@@ -16,13 +16,9 @@
 #include "Domain.h"
 #include "Region.h"
 
-#include <functional>
-
 #include <QList>
 #include <QString>
 #include <QStringList>
-
-class QWidget;
 
 namespace nextpilot::plotscope::registry
 {
@@ -145,21 +141,7 @@ struct ItemContextSpec
     Domain packDomain = Domain::General;
 };
 
-// 3) 设置页（VS Code 的 `configuration`）：模块贡献自己的设置页，不写在外壳。
-//    create 由模块的呈现层实现（壳只给 parent），因为只有模块知道自己有哪些设置项。
-struct SettingsPageSpec
-{
-    QString id;     // 页标识（唯一）
-    QString title;  // 页标题（设置对话框左栏）
-    QString icon;   // 图标名（可选）
-    int order = 0;
-    std::function<QWidget *(QWidget *parent)> create;
-
-    QString provider;                 // mount() 自动写入
-    Domain domain = Domain::General;
-};
-
-// 4) 主题语义色（VS Code 的 `colors`）：模块声明的语义色，壳解析成实际画笔/调色板。
+// 3) 主题语义色（VS Code 的 `colors`）：模块声明的语义色，壳解析成实际画笔/调色板。
 //    只给"语义名 + 兜底色"，具体色值由主题决定——模块不该硬编码 RGB。
 struct ThemeTokenSpec
 {

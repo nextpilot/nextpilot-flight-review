@@ -24,7 +24,9 @@
 #include <QWidget>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QSet>
 #include <QString>
+#include <QStringList>
 
 #include <cstdio>
 
@@ -185,7 +187,7 @@ int main(int argc, char *argv[])
     CHECK(ext.contributedCustomEditors().size() == 1);
     CHECK(ext.contributedCustomEditors().at(0).item.viewType == QLatin1String("web"));
     // e2e：manifest configuration 解析进同一张贡献表（属性数/默认值/scope）。
-    // 注：core.settings 先于本 owner 挂载，「通用」组在表头，按 owner 查。
+    // 注：core.settings 先于本 owner 挂载，旧对话框的设置项已迁进它的四个分组，按 owner 查。
     {
         const auto *helloCfg = [&ext]() -> const ToolboxHub::OwnedConfiguration * {
             for (const auto &c : ext.contributedConfigurations())
@@ -194,7 +196,31 @@ int main(int argc, char *argv[])
             return nullptr;
         }();
         CHECK(helloCfg != nullptr);
-        CHECK(ext.contributedConfigurations().size() == 2); // hello + core.settings 通用
+        int coreCfgGroups = 0;
+        QStringList coreCfgIds;
+        QSet<QString> coreCfgKeys;
+        for (const auto &c : ext.contributedConfigurations())
+        {
+            if (c.owner != QLatin1String("core.settings"))
+                continue;
+            ++coreCfgGroups;
+            coreCfgIds.append(c.item.id);
+            for (const auto &p : c.item.properties)
+                coreCfgKeys.insert(p.key);
+        }
+        // hello 1 组 + core.settings 5 组（外观/通用/时间轴/数据/导出，原对话框设置项已迁入）。
+        CHECK(ext.contributedConfigurations().size() == 6);
+        CHECK(coreCfgGroups == 5);
+        CHECK(coreCfgIds.contains(QStringLiteral("core.appearance")));
+        CHECK(coreCfgIds.contains(QStringLiteral("core.general")));
+        CHECK(coreCfgIds.contains(QStringLiteral("core.timeline")));
+        CHECK(coreCfgIds.contains(QStringLiteral("core.data")));
+        CHECK(coreCfgIds.contains(QStringLiteral("core.export")));
+        // 迁移的五条键必须在声明面可达（旧 PreferencesDialog 曾承载、删壳不能丢）。
+        for (const QString &k :
+             {QStringLiteral("theme"), QStringLiteral("startup.recovery"), QStringLiteral("export.csv.maxPoints"),
+              QStringLiteral("derive.maxPoints"), QStringLiteral("plot.time.format")})
+            CHECK(coreCfgKeys.contains(k));
         if (helloCfg)
         {
             CHECK(helloCfg->item.title == QStringLiteral("示例设置"));
@@ -403,7 +429,7 @@ int main(int argc, char *argv[])
     CHECK(!static_cast<bool>(other));
 
     // 卸载 owner：命令从命令表整批撤，不留悬空。
-    // 先造一个用户层残留值，验证 unmount 后组消失、残留诊断。
+    // 先造一个用户层残留值，验证 unmount 后组消失、用户数据保留。
     {
         using nextpilot::plotscope::workbench::IConfigurationService;
         auto *cfgSvc = services->getService<IConfigurationService>(QStringLiteral("configuration.readback"));
@@ -417,7 +443,7 @@ int main(int argc, char *argv[])
     // core.settings 的内置命令不随扩展卸载（owner 是工作台自带）。
     CHECK(commands.contains(QStringLiteral("workbench.action.openSettings")));
     CHECK(activation.boundCommandCount() == 1);
-    // unmount 后配置组消失、值残留不生效 + 诊断（不删用户数据）。
+    // unmount 后配置组消失、键原文残留不生效；诊断只覆盖旧 config/ 命名空间（不删用户数据）。
     {
         using nextpilot::plotscope::workbench::IConfigurationService;
         auto *cfgSvc = services->getService<IConfigurationService>(QStringLiteral("configuration.readback"));
@@ -431,13 +457,23 @@ int main(int argc, char *argv[])
             const auto ins = cfgSvc->inspect(QStringLiteral("hello.verbose"));
             CHECK(!ins.declared);
             CHECK(ins.effective.type() == QJsonValue::Undefined); // 残留不生效
-            bool residualDiag = false;
-            for (const auto &d : cfgSvc->diagnostics())
-                residualDiag |= d.key == QLatin1String("hello.verbose") && d.message.contains(QStringLiteral("残留"));
-            CHECK(residualDiag);
-            // 用户数据不删：SettingsStore 里仍在。
+            // 值写在键原文空间：用户数据保留、但不按前缀误报为残留诊断。
             CHECK(application.context().settings().contains(application.context().settings().scopedKey(
-                nextpilot::plotscope::context::SettingsScope::App, QStringLiteral("config/hello.verbose"))));
+                nextpilot::plotscope::context::SettingsScope::App, QStringLiteral("hello.verbose"))));
+            bool keySpaceDiag = false;
+            for (const auto &d : cfgSvc->diagnostics())
+                keySpaceDiag |= d.key == QLatin1String("hello.verbose");
+            CHECK(!keySpaceDiag);
+            // 旧 config/ 命名空间里的未声明键仍报"旧 config/"诊断。
+            application.context().settings().setScopedValue(nextpilot::plotscope::context::SettingsScope::App,
+                                                            QStringLiteral("config/hello.legacy"), 1);
+            bool legacyDiag = false;
+            for (const auto &d : cfgSvc->diagnostics())
+                legacyDiag |=
+                    d.key == QLatin1String("hello.legacy") && d.message.contains(QStringLiteral("旧 config/"));
+            CHECK(legacyDiag);
+            application.context().settings().removeScoped(nextpilot::plotscope::context::SettingsScope::App,
+                                                          QStringLiteral("config/hello.legacy"));
         }
     }
     // 视图声明也整批撤回（侧栏容器/视图/标题动作/colors/status 全消失）。

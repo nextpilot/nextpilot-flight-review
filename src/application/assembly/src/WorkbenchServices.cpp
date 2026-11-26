@@ -1,4 +1,5 @@
 #include "WorkbenchServices.h"
+#include "SettingsEditorWidget.h"
 
 namespace nextpilot::plotscope::assembly {
 
@@ -23,6 +24,32 @@ foundation::Result<intent::IntentResult> WorkbenchCommandHandler::execute(const 
     QWidget *page = m_editors.openEditor(BuiltinSettingsEditorProvider::viewType(), ref, m_appCtx, m_executor, nullptr);
     if (page)
         m_lastOpened = page; // 页签能回答自己的 ResourceRef（e2e 断言）
+
+    // section = ConfigurationSpec.id（既有入口契约，如 DataManagerPanel 的 "core.data"）：
+    // 打开页签后按 id 精确聚焦到对应分组。空值 = 首屏。
+    // 无命中时由 Settings editor 退回全屏并出诊断——不静默吞参数。
+    m_sectionFocusDiagnostic.clear();
+    const QString section = intent.params.value(QStringLiteral("section")).toString();
+    if (!section.isEmpty())
+    {
+        if (!page)
+        {
+            // 编辑器根本没打开，不能误诊成"分组名写错"——区分真实根因。
+            m_sectionFocusDiagnostic =
+                QStringLiteral("设置编辑器未能打开（viewType=%1）")
+                    .arg(BuiltinSettingsEditorProvider::viewType());
+        }
+        else if (auto *settings = qobject_cast<SettingsEditorWidget *>(page))
+        {
+            settings->focusSection(section);
+            m_sectionFocusDiagnostic = settings->focusDiagnostic();
+        }
+        else
+        {
+            m_sectionFocusDiagnostic = QStringLiteral("未找到设置分组「%1」，已显示全部").arg(section);
+        }
+    }
+
     intent::IntentResult out;
     out.payload = intent.op;
     return foundation::Result<intent::IntentResult>(out);
@@ -52,8 +79,18 @@ WorkbenchServices::WorkbenchServices(nextpilot::plotscope::context::AppContext &
       m_scriptCaps(appCtx.interactions(), appCtx, hostRef, &recorder, [&hostRef]() { return hostRef.registeredOps(); }),
       m_panelsService(appCtx), m_formatHints(appCtx), m_themeService(appCtx, hostRef),
       m_slotsService(hostRef.uiSlotsMutable()), m_viewsService(m_viewRegistry), m_editorsService(m_viewRegistry),
-      m_configurationService(appCtx.settings(), appCtx.toolbox()), m_settingsEditor(m_configurationService),
-      m_contribInstaller(appCtx, m_slotsService, m_viewRegistry)
+      m_configurationService(appCtx.settings(), appCtx.toolbox(), {},
+                             [&hostRef](const QString &key, const QJsonValue &value) {
+                                 // 主题项：设置页写 theme（落盘 app/theme）后，转发 theme.set 让 ThemeManager 经
+                                 // 既有 themeChanged 路径换肤；ThemeManager 仍读完整键 app/theme，不新增写入通道。
+                                 if (key != QLatin1String("theme") || !value.isString())
+                                     return;
+                                 intent::Intent t;
+                                 t.op = QStringLiteral("theme.set");
+                                 t.params[QStringLiteral("theme")] = value.toString();
+                                 hostRef.execute(t);
+                             }),
+      m_settingsEditor(m_configurationService), m_contribInstaller(appCtx, m_slotsService, m_viewRegistry)
 {
     // 壳内置 text 最小编辑器：装配层声明 viewType="text"
     // 并注册 provider——零扩展也能打开/编辑/保存。owner="core.text" 是装配层自数据，

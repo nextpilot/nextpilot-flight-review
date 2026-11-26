@@ -132,9 +132,6 @@ bool ToolboxHub::mount(Pack pack)
     for (const ItemContextSpec &c : pack.itemContexts)
         if (!checkId(c.commandId + QLatin1Char('@') + c.viewId) || itemContexts.contains(c.commandId + QLatin1Char('@') + c.viewId))
             return false;
-    for (const SettingsPageSpec &p : pack.settingsPages)
-        if (!checkId(p.id) || settingsPages.contains(p.id))
-            return false;
     for (const ThemeTokenSpec &t : pack.themeTokens)
         if (!checkId(t.id) || themeTokens.contains(t.id))
             return false;
@@ -198,11 +195,6 @@ bool ToolboxHub::mount(Pack pack)
         c.packDomain = domain;
         itemContexts.insert(c.commandId + QLatin1Char('@') + c.viewId, c);
     }
-    for (SettingsPageSpec &p : pack.settingsPages)
-    {
-        stamp(p);
-        settingsPages.insert(p.id, p);
-    }
     for (ThemeTokenSpec &t : pack.themeTokens)
     {
         stamp(t);
@@ -241,7 +233,6 @@ bool ToolboxHub::unmount(const QString &packId)
     dropByProvider(reports);
     dropByProvider(viewTitleActions);
     dropByProvider(itemContexts);
-    dropByProvider(settingsPages);
     dropByProvider(themeTokens);
     m_parsers.erase(std::remove_if(m_parsers.begin(), m_parsers.end(),
                                    [&packId](const auto &p) {
@@ -275,15 +266,6 @@ QList<ItemContextSpec> ToolboxHub::itemContextsFor(const QString &viewId) const
             out.append(c);
     std::stable_sort(out.begin(), out.end(), [](const ItemContextSpec &a, const ItemContextSpec &b) {
         return a.order != b.order ? a.order < b.order : a.commandId < b.commandId;
-    });
-    return out;
-}
-
-QList<SettingsPageSpec> ToolboxHub::settingsPagesSorted() const
-{
-    QList<SettingsPageSpec> out = settingsPages.values();
-    std::stable_sort(out.begin(), out.end(), [](const SettingsPageSpec &a, const SettingsPageSpec &b) {
-        return a.order != b.order ? a.order < b.order : a.id < b.id;
     });
     return out;
 }
@@ -511,6 +493,21 @@ bool ToolboxHub::mountContribution(const ContributesDoc &doc)
         }
         if (kept.properties.isEmpty())
             continue;
+        // 分组 id 跨 owner 唯一：focusSection 按 id 精确匹配，重名会命中首个、行为不确定。
+        // 冲突时保留属性可见，但清空后到者的 id（不参与聚焦），并出诊断（先到者保留）。
+        if (!kept.id.isEmpty())
+        {
+            if (m_contribConfigIds.contains(kept.id))
+            {
+                recordContributionIssue(doc.owner, QStringLiteral("configuration.") + kept.id,
+                                        QStringLiteral("owner %2 的配置分组 id 已被 owner %1 声明，"
+                                                       "跳过聚焦（先到者保留）")
+                                            .arg(m_contribConfigIds.value(kept.id), doc.owner));
+                kept.id.clear();
+            }
+            else
+                m_contribConfigIds.insert(kept.id, doc.owner);
+        }
         for (const auto &prop : kept.properties)
             m_contribConfigKeys.insert(prop.key, doc.owner);
         m_contribConfigurations.append(OwnedConfiguration{kept, doc.owner});
@@ -561,6 +558,13 @@ bool ToolboxHub::unmountContribution(const QString &owner)
     {
         if (it.value() == owner)
             it = m_contribConfigKeys.erase(it);
+        else
+            ++it;
+    }
+    for (auto it = m_contribConfigIds.begin(); it != m_contribConfigIds.end();)
+    {
+        if (it.value() == owner)
+            it = m_contribConfigIds.erase(it);
         else
             ++it;
     }

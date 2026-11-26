@@ -91,7 +91,7 @@ appCtx.states().registerEntry(std::move(entry));
 | 运行中                 | 各控件自己改内存状态，不主动落盘                  |
 | 退出（`closeEvent`）   | `states().collect()` → 原子写快照                 |
 
-启动恢复分三档（`app/startup.recovery`，默认 `layout`）：
+启动恢复分三档（声明键 `startup.recovery`，落盘 `app/startup.recovery`，默认 `layout`）：
 
 - `off`：不恢复。
 - `layout`：回填源条目 + 重建画布，**不读数据**。曲线留空态并挂入 pending binder（晚到绑定，对标 PJ4 PendingDisplayBinder）：数据源一登记（`sourceAdded`/`datasetAdded` 信号）就按 `datasetOrigin` 自动接回曲线、回放存盘视口。每个 pending 条目在 `SourceHub` 上持有按 origin 计数的 demand 引用（`demandOrigin/releaseOrigin`）——源被移除后需求仍在，同 origin 的源再次登记即自动接回；恢复前由 `preflightDocumentSpec` 报告 origin/channel 可满足性。

@@ -114,12 +114,13 @@ struct ContributedCustomEditor
     QString owner;         // 声明者归属（parse 不填；ViewRegistry.declare 时写）
 };
 
-// contributes.configuration[] —— 设置属性声明（替换 SettingsPageSpec）。
+// contributes.configuration[] —— 设置属性声明（设置 UI 归工作台 Settings editor）。
 // key 是全局扁平点号键（如 "plot.lineWidth"）；scope 缺省 window（VSCode ConfigurationScope
 // 六值域）；字段白名单 §4.1，禁 tab/section/horizontal 布局节点——排版归工作台（§5）。
 struct ConfigurationProperty
 {
-    QString key;  // 全局唯一点号键（parser 内去重，跨 owner 由 ToolboxHub mount 诊断）
+    QString key;  // settings 存储键原文（点号键或 app/ 前缀键皆可；parser 内去重，
+                  // 跨 owner 由 ToolboxHub mount 诊断）
     QString type; // boolean | number | string | object | array（enum 用 enumValues 表达）
     QJsonValue defaultValue;
     QStringList enumValues;
@@ -140,6 +141,7 @@ struct ConfigurationProperty
 // 一组设置（VSCode contributes.configuration 的一个条目）：设置目录按 (order, title) 排。
 struct ConfigurationSpec
 {
+    QString id; // 稳定分组 id（如 core.data），供 openSettings(section) 精确聚焦；无 VSCode 对位
     QString title;
     QString iconId;
     int order = 0;

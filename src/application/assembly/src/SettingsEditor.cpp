@@ -125,6 +125,62 @@ void SettingsEditorWidget::refresh()
     rebuildJson();
 }
 
+bool SettingsEditorWidget::focusSection(const QString &section)
+{
+    const QString group = section.trimmed();
+    if (group.isEmpty())
+    {
+        m_focusCategory.clear();
+        m_focusDiagnostic.clear();
+        rebuild();
+        return false;
+    }
+
+    // section 是 ConfigurationSpec.id（稳定分组 id，如 core.data），不是 category
+    // 显示标题——按 id 精确匹配 spec，命中后聚焦该组（用其属性 category 过滤行）。
+    bool hit = false;
+    QString matchedCategory;
+    QString matchedTitle;
+    for (const auto &cfg : m_svc.configurations())
+    {
+        if (cfg.id.compare(group, Qt::CaseInsensitive) != 0)
+            continue;
+        hit = true;
+        matchedTitle = cfg.title.isEmpty() ? cfg.id : cfg.title;
+        // 该组属性的 category（设置目录分组标题）即过滤键；无 category 时用 title。
+        for (const auto &prop : cfg.properties)
+        {
+            if (!prop.category.isEmpty())
+            {
+                matchedCategory = prop.category;
+                break;
+            }
+        }
+        if (matchedCategory.isEmpty())
+            matchedCategory = matchedTitle;
+        break;
+    }
+
+    if (hit)
+    {
+        m_focusCategory = matchedCategory;
+        // 聚焦时清掉搜索框，避免旧的 key 子串把分组内的项也滤掉；目录回「全部」。
+        m_search->clear();
+        m_toc->setCurrentRow(0);
+        m_focusDiagnostic = QStringLiteral("已聚焦分组：%1").arg(matchedTitle);
+    }
+    else
+    {
+        // 无命中：退回全屏列表，并给出诊断——绝不静默吞掉 section。
+        m_focusCategory.clear();
+        m_search->clear();
+        m_toc->setCurrentRow(0);
+        m_focusDiagnostic = QStringLiteral("未找到设置分组「%1」，已显示全部").arg(group);
+    }
+    rebuild();
+    return hit;
+}
+
 bool SettingsEditorWidget::isModified(const QString &key) const
 {
     const auto ins = m_svc.inspect(key);
@@ -163,6 +219,9 @@ bool SettingsEditorWidget::matchesFilter(const ConfigurationProperty &prop) cons
         if (ownerCfg && ownerCfg->title != m_toc->item(toc)->text())
             return false;
     }
+    // 分组聚焦（section → category）：命中后只显示该分组的属性。
+    if (!m_focusCategory.isEmpty() && prop.category != m_focusCategory)
+        return false;
     // 搜索：key + description 子串（不区分大小写）。
     const QString needle = m_search->text().trimmed();
     if (!needle.isEmpty())

@@ -378,7 +378,8 @@ PlotWorkspace::Cell PlotWorkspace::makeCell(QWidget *parentForStack)
                      [this](const QString &, bool) { notifyHistoryMutation(); });
     // 时间轴刻度按设置初始化：新格沿用当前全局偏好。
     canvas->setTimeFormatMode(m_appCtx.settings()
-                                  .value(QStringLiteral("plot.time.format"), QStringLiteral("relative"))
+                                  .scopedValue(nextpilot::plotscope::context::SettingsScope::App,
+                                               QStringLiteral("plot.time.format"), QStringLiteral("relative"))
                                   .toString());
 
     Cell cell;

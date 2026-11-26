@@ -49,6 +49,12 @@ public:
     void setSettingValue(const QString &key, const QJsonValue &value);
     // 显式刷新（服务在控件外被改后重建行与 JSON；行内 reset 按钮同样走它）。
     void refresh();
+    // 按 ConfigurationSpec.id 精确聚焦（对位 VSCode openSettings(query) 的 @category 定位）：
+    // 命中 spec.id → 只显示该组属性（记录其 category 过滤），清搜索框避免叠加过滤；
+    // 无命中 → 退回全屏并出诊断，不静默吞参数。返回值 = 是否命中（供调用方/测试断言）。
+    bool focusSection(const QString &section);
+    // 最近一次聚焦的状态（空 = 未聚焦；否则为诊断串，命中和未命中都有可读反馈）。
+    QString focusDiagnostic() const { return m_focusDiagnostic; }
     // 本页签对应的资源（§3.0.12：中央区页签必须能回答"打开的是哪个 ResourceRef"）。
     nextpilot::plotscope::registry::ResourceRef resourceRef() const { return m_ref; }
     // 层级提示：默认 / user / workspace / document。
@@ -80,6 +86,8 @@ private:
     QList<Row> m_rows;
     bool m_jsonMode = false;
     nextpilot::plotscope::registry::ResourceRef m_ref; // createEditor 传入的资源
+    QString m_focusCategory;                           // 非空 = 按 spec.id 聚焦命中后的 category（只显示该组）
+    QString m_focusDiagnostic;                         // 最近一次 focusSection 的反馈
 };
 
 } // namespace nextpilot::plotscope::assembly

@@ -37,12 +37,15 @@ public:
 
     // 命令执行后创建的编辑器页（e2e 断言"页签能回答 ResourceRef"用）。
     QWidget *lastOpenedEditor() const { return m_lastOpened.data(); }
+    // 最近一次 openSettings 的分组聚焦诊断（section 参数映射结果，空 = 未传 section）。
+    const QString &sectionFocusDiagnostic() const { return m_sectionFocusDiagnostic; }
 
 private:
     wb::IEditorService &m_editors;
     nextpilot::plotscope::context::AppContext &m_appCtx;
     intent::IIntentExecutor &m_executor;
     QPointer<QWidget> m_lastOpened;
+    QString m_sectionFocusDiagnostic;
 };
 
 // 一次性把整套服务装配好：构造 adapter → registerSingleton → 暴露 services 给宿主。
