@@ -19,7 +19,10 @@ bool InteractionHub::dispatchViewAction(const QString &id, const QVariantMap &pa
     const auto it = m_viewActions.constFind(id);
     if (it == m_viewActions.constEnd())
         return false;
-    out = it.value()(params);
+    // 先拷贝再调用：handler 执行期间可能注册新 action（面板构造期就 insert），
+    // 重散列会把被引用的函数对象搬走并释放，引用调用会踩空。
+    const ViewActionHandler handler = it.value();
+    out = handler(params);
     return true;
 }
 
