@@ -21,6 +21,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 
 using namespace nextpilot::plotscope::app;
 using namespace nextpilot::plotscope::foundation;
@@ -758,15 +759,21 @@ int main(int argc, char *argv[])
         const QString key13 = QStringLiteral("0|trace|sig");
         auto *fp13 = canvas->plotForTest();
         CHECK(fp13 != nullptr);
-        int visEmits13 = 0;
-        QString visKey13;
-        bool visVal13 = false;
-        QObject::connect(canvas, &AxesView::seriesVisibilityChanged,
-                         [&](const QString &k, bool v) {
-                             ++visEmits13;
-                             visKey13 = k;
-                             visVal13 = v;
-                         });
+        // 探针必须放堆上、由 lambda 按值捕获。连接挂在 canvas 上、寿命远长于本块，
+        // 按引用捕获局部量会在块结束后变成悬垂栈引用：后续任何 setSeriesVisible 触发
+        // 这个信号都会读已销毁的栈槽（ASan: stack-use-after-scope；clang -O3 下必崩）。
+        struct VisibilityProbe
+        {
+            int emits = 0;
+            QString key;
+            bool val = false;
+        };
+        auto probe13 = std::make_shared<VisibilityProbe>();
+        QObject::connect(canvas, &AxesView::seriesVisibilityChanged, [probe13](const QString &k, bool v) {
+            ++probe13->emits;
+            probe13->key = k;
+            probe13->val = v;
+        });
 
         // 一致性：store（单一事实源）与 fastplot Line 必须同值。
         auto consistent13 = [&]() {
@@ -778,34 +785,34 @@ int main(int argc, char *argv[])
 
         // 路径①（右键菜单 Interaction:424 / 属性面板 PropertyProviders:198 /
         //         曲线动作 SeriesActions:114 → setSeriesVisible）：
-        visEmits13 = 0;
+        probe13->emits = 0;
         CHECK(canvas->setSeriesVisible(key13, false));
         CHECK(consistent13() == false);
-        CHECK(visEmits13 == 1); // 恰好一次广播
-        CHECK(visKey13 == key13 && visVal13 == false);
+        CHECK(probe13->emits == 1); // 恰好一次广播
+        CHECK(probe13->key == key13 && probe13->val == false);
 
         // 同值重复置：无广播、返回 true
         CHECK(canvas->setSeriesVisible(key13, false));
-        CHECK(visEmits13 == 1);
+        CHECK(probe13->emits == 1);
 
         // 路径②（图例行点击 / 拖拽 Interaction:244 → Axes::toggleLegendItem）：
         // Line 先被 Axes 切换，回声信号收敛进 setSeriesVisible 同步 store。
-        visEmits13 = 0;
+        probe13->emits = 0;
         fp13->toggleLegendItem(0);
         CHECK(consistent13() == true);
-        CHECK(visEmits13 == 1 && visVal13 == true);
+        CHECK(probe13->emits == 1 && probe13->val == true);
 
         // 路径③（出口内部同步用的 set 版 Axes::setLegendItemVisible）：
-        visEmits13 = 0;
+        probe13->emits = 0;
         fp13->setLegendItemVisible(0, false);
         CHECK(consistent13() == false);
-        CHECK(visEmits13 == 1);
+        CHECK(probe13->emits == 1);
 
         // 路径④（toggleSeriesVisible：仍经 toggleLegendItem 收敛，不漂移）
-        visEmits13 = 0;
+        probe13->emits = 0;
         CHECK(canvas->toggleSeriesVisible(key13));
         CHECK(consistent13() == true);
-        CHECK(visEmits13 == 1);
+        CHECK(probe13->emits == 1);
 
         // 五路径无漂移兜底：无论从哪条进，store/Line/广播三方恒一致。
         for (int round = 0; round < 2; ++round)
