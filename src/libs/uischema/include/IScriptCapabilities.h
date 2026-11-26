@@ -70,6 +70,8 @@ public:
     // 并写结构化消息流。按名给出，adapter 纯转发，避免模块 TU 出现 host.app()。
     using ViewActionHandler = std::function<Result<QVariant>(const QVariantMap &params)>;
     virtual void registerViewAction(const QString &id, ViewActionHandler handler) = 0;
+    // 注销：模块卸载/面板销毁时调用，命中返回 true。
+    virtual bool unregisterViewAction(const QString &id) = 0;
     virtual bool dispatchViewAction(const QString &id, const QVariantMap &params, Result<QVariant> &out) const = 0;
     virtual void appendMessage(const QString &level, const QString &source, const QString &text,
                                const QString &locator = QString()) = 0;

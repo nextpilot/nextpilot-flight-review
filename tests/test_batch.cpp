@@ -168,6 +168,15 @@ int main(int argc, char **argv)
     CHECK(progressCount == 3);
     fprintf(stdout, "[ok] 2.4.2 进度广播：progress 触发次数 == 文件数\n");
 
+    // ---- view action 注销：命中 true、注销后 dispatch false、重复注销安全 ----
+    CHECK(application.context().interactions().unregisterViewAction(QStringLiteral("data.batch.progress")));
+    Result<QVariant> afterRemove{QVariant()};
+    CHECK(!application.context().interactions().dispatchViewAction(QStringLiteral("data.batch.progress"), QVariantMap(),
+                                                                   afterRemove));
+    CHECK(!application.context().interactions().unregisterViewAction(QStringLiteral("data.batch.progress")));
+    CHECK(progressCount == 3);
+    fprintf(stdout, "[ok] 注销后 dispatch 返回 false，重复注销安全\n");
+
     // ---- 2.4.2：取消 —— 分片边界生效（5 文件每文件 ~40ms，0ms 定时器插取消）----
     CHECK(writeCsv(d + QStringLiteral("/c1.csv"), 10));
     CHECK(writeCsv(d + QStringLiteral("/c2.csv"), 20));

@@ -17,6 +17,9 @@ class IMessageParser;
 namespace nextpilot::plotscope::host {
 class RuntimeHost; // onAttach 的旧状态栏订阅用（A2b 迁；A1b 恒为空指针）
 }
+namespace nextpilot::plotscope::uischema {
+class IScriptCapabilities; // initialize 注册 view action 后留存，onDetach 注销
+}
 
 // 数据模块：管理"打开了哪些数据集"，不认识任何具体格式。
 // 格式解析由扩展完成，data 模块只消费仓库里的 Dataset。
@@ -33,6 +36,8 @@ public:
 
     // GUI 环境下请求自己的界面部件（headless 时宿主不调用）。
     void onAttach(nextpilot::plotscope::host::IUiContext &ui) override;
+    // 卸载：注销本模块注册的 view action，避免留下指向已销毁实例的闭包。
+    void onDetach() override;
     nextpilot::plotscope::registry::ModuleContributions contributes() const override;
 
     // 纯数据派生：按已装载的格式驱动生成"来源"画廊条目——每个驱动一条"文件格式"，
@@ -49,5 +54,6 @@ private:
     // 运行时经 m_ui 按需创建中央页签面板（GUI 环境才有值）。
     nextpilot::plotscope::host::IUiContext *m_ui = nullptr;
     nextpilot::plotscope::host::RuntimeHost *m_host = nullptr;
+    nextpilot::plotscope::uischema::IScriptCapabilities *m_caps = nullptr; // initialize 留存，onDetach 用
     QVector<QPair<QString, QString>> m_driverMetas; // initialize 缓存的格式驱动 {id, displayName}
 };

@@ -13,6 +13,14 @@ void InteractionHub::registerViewAction(const QString &id, ViewActionHandler han
     }
 }
 
+bool InteractionHub::unregisterViewAction(const QString &id)
+{
+    if (!m_viewActions.remove(id))
+        return false;
+    Q_EMIT objectRemoved(id);
+    return true;
+}
+
 bool InteractionHub::dispatchViewAction(const QString &id, const QVariantMap &params,
                                              Result<QVariant> &out) const
 {

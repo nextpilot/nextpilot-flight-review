@@ -110,6 +110,8 @@ bool DataTablePanel::openDataset(int datasetId, const QString &table)
     return true;
 }
 
+DataTablePanel::~DataTablePanel() { m_app.interactions().unregisterViewAction(QLatin1String(kActShow)); }
+
 void DataTablePanel::attachViewActions()
 {
     nextpilot::plotscope::context::InteractionHub &reg = m_app.interactions();

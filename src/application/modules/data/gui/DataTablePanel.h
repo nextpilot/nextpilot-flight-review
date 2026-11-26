@@ -40,6 +40,8 @@ public:
     explicit DataTablePanel(nextpilot::plotscope::context::AppContext &appCtx,
                             nextpilot::plotscope::intent::IIntentExecutor &executor,
                             QWidget *parent = nullptr);
+    // 析构注销 data.table.show：面板关闭后不再对外保留 action。
+    ~DataTablePanel() override;
 
     // --- 诊断/测试用 ---
     QString shownTable() const { return m_tableName; }

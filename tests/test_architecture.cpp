@@ -1183,6 +1183,33 @@ using namespace nextpilot::plotscope::context;
         fprintf(stdout, "[ok] D18a：协议对话框归 modules/protocol/gui，外壳零业务对话框\n");
     }
 
+    // view action 注销闭环：独立 App 实例，卸载 data 模块后 data.table.open 不再可派发，
+    // 重新激活后恢复（headless 无 UI，handler 命中但以 Unsupported 拒绝）。
+    {
+        App isolated;
+        CHECK(isolated.startup(true).isEmpty());
+        CHECK(isolated.host().isActive(QStringLiteral("mod.data")));
+
+        const int before = isolated.context().interactions().count();
+        Result<QVariant> live{QVariant()};
+        CHECK(isolated.context().interactions().dispatchViewAction(QStringLiteral("data.table.open"), QVariantMap(),
+                                                                   live));
+        CHECK(!live.ok());
+
+        CHECK(isolated.host().deactivate(QStringLiteral("mod.data")));
+        CHECK(isolated.context().interactions().count() == before - 1);
+        Result<QVariant> gone{QVariant()};
+        CHECK(!isolated.context().interactions().dispatchViewAction(QStringLiteral("data.table.open"), QVariantMap(),
+                                                                    gone));
+
+        CHECK(isolated.host().activate().isEmpty());
+        CHECK(isolated.context().interactions().count() == before);
+        Result<QVariant> back{QVariant()};
+        CHECK(isolated.context().interactions().dispatchViewAction(QStringLiteral("data.table.open"), QVariantMap(),
+                                                                   back));
+        fprintf(stdout, "[ok] 卸载 data 模块后 data.table.open 注销，重新激活后恢复\n");
+    }
+
     fprintf(stdout, "\n全部架构契约测试通过\n");
     return 0;
 }

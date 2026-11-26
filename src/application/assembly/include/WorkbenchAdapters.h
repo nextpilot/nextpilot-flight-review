@@ -321,6 +321,7 @@ public:
     {
         m_hub.registerViewAction(id, std::move(handler));
     }
+    bool unregisterViewAction(const QString &id) override { return m_hub.unregisterViewAction(id); }
     bool dispatchViewAction(const QString &id, const QVariantMap &params,
                             foundation::Result<QVariant> &out) const override
     {

@@ -107,6 +107,7 @@ void DataModule::initialize(InstantiationService &services)
     // GUI 侧仍经 dispatchViewAction 消费，A2b 才迁 command）。此前误迁成 registerCommand
     // 导致 GUI 层 DataManagerPanel / 测试按 dispatchViewAction 取不到（998 回归）。
     // 模块只经 caps 注册，不碰 AppContext/interactionHub。
+    m_caps = caps;
     caps->registerViewAction(
         QStringLiteral("data.table.open"), [this, caps](const QVariantMap &params) -> Result<QVariant> {
             if (!m_ui)
@@ -123,6 +124,12 @@ void DataModule::initialize(InstantiationService &services)
             caps->dispatchViewAction(QStringLiteral("data.table.show"), params, out);
             return out;
         });
+}
+
+void DataModule::onDetach()
+{
+    if (m_caps)
+        m_caps->unregisterViewAction(QStringLiteral("data.table.open"));
 }
 
 namespace {
