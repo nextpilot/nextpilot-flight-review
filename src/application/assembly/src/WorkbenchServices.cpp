@@ -1,5 +1,8 @@
 #include "WorkbenchServices.h"
 #include "SettingsEditorWidget.h"
+#include "ErrorCodes.h"
+
+#include <QDebug>
 
 namespace nextpilot::plotscope::assembly {
 
@@ -22,8 +25,15 @@ foundation::Result<intent::IntentResult> WorkbenchCommandHandler::execute(const 
     // 执行体 = 打开内置 settings 编辑器（普通 editor 页签，无模态对话框）。
     registry::ResourceRef ref{QStringLiteral("settings:"), QStringLiteral("application/json"), QStringLiteral("设置")};
     QWidget *page = m_editors.openEditor(BuiltinSettingsEditorProvider::viewType(), ref, m_appCtx, m_executor, nullptr);
-    if (page)
-        m_lastOpened = page; // 页签能回答自己的 ResourceRef（e2e 断言）
+
+    // 编辑器不可用 → 返回错误码，不静默 success（Result 错误传播检测）：
+    // 打不开时调用方必须能经 Result.ok() 感知失败，而不是拿到成功结果却无页签。
+    if (!page)
+        return foundation::fail(
+            foundation::err::NoView,
+            QStringLiteral("设置编辑器未能打开（viewType=%1）").arg(BuiltinSettingsEditorProvider::viewType()));
+
+    m_lastOpened = page; // 页签能回答自己的 ResourceRef（e2e 断言）
 
     // section = ConfigurationSpec.id（既有入口契约，如 DataManagerPanel 的 "core.data"）：
     // 打开页签后按 id 精确聚焦到对应分组。空值 = 首屏。
@@ -32,14 +42,7 @@ foundation::Result<intent::IntentResult> WorkbenchCommandHandler::execute(const 
     const QString section = intent.params.value(QStringLiteral("section")).toString();
     if (!section.isEmpty())
     {
-        if (!page)
-        {
-            // 编辑器根本没打开，不能误诊成"分组名写错"——区分真实根因。
-            m_sectionFocusDiagnostic =
-                QStringLiteral("设置编辑器未能打开（viewType=%1）")
-                    .arg(BuiltinSettingsEditorProvider::viewType());
-        }
-        else if (auto *settings = qobject_cast<SettingsEditorWidget *>(page))
+        if (auto *settings = qobject_cast<SettingsEditorWidget *>(page))
         {
             settings->focusSection(section);
             m_sectionFocusDiagnostic = settings->focusDiagnostic();
@@ -88,7 +91,10 @@ WorkbenchServices::WorkbenchServices(nextpilot::plotscope::context::AppContext &
                                  intent::Intent t;
                                  t.op = QStringLiteral("theme.set");
                                  t.params[QStringLiteral("theme")] = value.toString();
-                                 hostRef.execute(t);
+                                 const auto themeResult = hostRef.execute(t);
+                                 if (!themeResult.ok())
+                                     qWarning() << QStringLiteral("ValueChangedHook: theme.set 失败: %1 %2")
+                                                       .arg(themeResult.error().code, themeResult.error().message);
                              }),
       m_settingsEditor(m_configurationService), m_contribInstaller(appCtx, m_slotsService, m_viewRegistry)
 {

@@ -14,6 +14,7 @@
 
 #include "App.h"
 #include "WorkbenchAdapters.h" // SlotsServiceAdapter（隔离窗口场景手工包装）
+#include "WorkbenchServices.h" // WorkbenchCommandHandler：openSettings 负向测试直接构造
 
 #include "DataManagerPanel.h"
 #include "DataTablePanel.h"
@@ -330,6 +331,45 @@ int main(int argc, char *argv[])
                 modalPrefs = true;
         CHECK(!modalPrefs);
         OK("设置入口：preferences.open 打开 settings2 页签（resourceRef=settings:），无模态对话框");
+    }
+
+    // --- 0a2b) 编辑器不可用 → openSettings 返回错误码（负向，Result 错误传播检测）---
+    {
+        // 注入 openEditor 恒返回 nullptr 的假服务，验证失败经 Result 返回、不静默 success。
+        // 0a2/0a3a/0a3b 已覆盖正常打开的成功路径；此处专打打不开的失败路径。
+        class FailingEditorService final : public nextpilot::plotscope::workbench::IEditorService
+        {
+        public:
+            QList<nextpilot::plotscope::registry::ContributedCustomEditor> customEditors() const override { return {}; }
+            QString editorViewTypeFor(const nextpilot::plotscope::registry::ResourceRef &) const override
+            {
+                return {};
+            }
+            nextpilot::plotscope::registry::IEditorProvider *providerFor(const QString &) const override
+            {
+                return nullptr;
+            }
+            QWidget *openEditor(const QString &, const nextpilot::plotscope::registry::ResourceRef &,
+                                nextpilot::plotscope::context::AppContext &,
+                                nextpilot::plotscope::intent::IIntentExecutor &, QWidget *) override
+            {
+                return nullptr; // 编辑器不可用
+            }
+        };
+
+        FailingEditorService failingEditors;
+        nextpilot::plotscope::assembly::WorkbenchCommandHandler failingHandler(
+            failingEditors, application.context(), application.host());
+        Intent openIntent;
+        openIntent.op = QStringLiteral("workbench.action.openSettings");
+        openIntent.params[QStringLiteral("section")] = QStringLiteral("core.data"); // 带 section 也不误诊为分组错
+        const auto failed = failingHandler.execute(openIntent);
+
+        CHECK(!failed.ok());                                                       // 必须失败
+        CHECK(failed.error().code == QStringLiteral("enoview"));                   // 稳定错误码
+        CHECK(failed.error().message.contains(QStringLiteral("未能打开")));         // 真实根因
+        CHECK(failingHandler.sectionFocusDiagnostic().isEmpty());                   // 不再写误导的分组诊断
+        OK("编辑器不可用：openSettings 返回 Result 错误码(enoview)，不静默 success");
     }
 
     // --- 0a3a) section 正向：preferences.open + section=core.data 必须命中分组且只显示该组属性 ---
