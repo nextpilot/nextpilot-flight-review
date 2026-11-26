@@ -1,41 +1,22 @@
 #!/usr/bin/env sh
-# 提交前把暂存区的 C++ 变更行格式化（只改变更行，见仓库根 .clang-format 头注释）。
+# 提交前格式化暂存区，三类各管一段：
+#   - C/C++     只格式变更行（clang-format，见仓库根 .clang-format 头注释）
+#   - Markdown  prettier
+#   - Python    ruff（format + check --fix）
 #
 # 每个 clone 启用一次：
 #   git config core.hooksPath .githooks
 #
-# 跳过（不建议；CI 的 format 门禁仍会拦）：
+# 跳过（不建议；CI 门禁仍会拦）：
 #   git commit --no-verify
 #
-# 为什么放在提交前：格式规则是"只对变更行生效"，此时修正成本最低。等到 lint 的
-# format job 变红再来回改，代价是整片 PR 卡住（A1b 就是这样红掉了 38 个文件）。
-# hook 只做修复，不做阻断：找不到工具时打印提示后放行，判定权留给 CI。
+# hook 只做修复，不做阻断：工具缺失时打印提示后放行，判定权留给 CI。
+# 具体逻辑在 tools/format.sh，避免 hook 与 CI 各写一套规则。
 
 set -u
 
-files=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(cpp|cc|cxx|h|hpp)$' || true)
-if [ -z "$files" ]; then
-  exit 0
-fi
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+[ -x "$ROOT/tools/format.sh" ] || exit 0
 
-CF=${CLANG_FORMAT:-$(command -v clang-format || true)}
-GCF=${GIT_CLANG_FORMAT:-$(command -v git-clang-format || true)}
-
-if [ -z "$CF" ] || [ -z "$GCF" ]; then
-  echo "pre-commit: 未找到 clang-format / git-clang-format，跳过自动格式化（CI 仍会检查）" >&2
-  exit 0
-fi
-
-# 版本要对齐 CI 的 23.1.5：版本不一致会导致"本地已格式化、CI 仍报 diff"的来回拉扯。
-case "$("$CF" --version 2>/dev/null)" in
-  *"23."*) ;;
-  *) echo "pre-commit: 警告：clang-format 不是 23.x（CI 用 23.1.5），格式可能仍被 CI 判为不合规" >&2 ;;
-esac
-
-# git clang-format 就地修改工作区，返回码 1 表示"有改动"，不是失败。
-"$GCF" --binary "$CF" --staged >/dev/null 2>&1 || true
-
-# 只重新暂存刚被格式化的这些文件，避免把其它未暂存改动一并加入索引。
-set -- $files
-git add -- "$@"
+(cd "$ROOT" && tools/format.sh --staged) || true
 exit 0

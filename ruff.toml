@@ -1,0 +1,24 @@
+# Python 代码风格与静态检查的唯一配置。
+#
+# 工具是 ruff：一个二进制同时做 format 与 lint，不需要 black + flake8 + isort 三件套。
+# 版本钉在 tools/requirements.txt，本地与 CI 必须一致，否则"本地已格式化、CI 仍报 diff"。
+#
+# 门禁口径与 C++/Markdown 一致：首次全量，之后只对改动文件做检查。
+
+line-length = 120
+target-version = "py310"
+extend-exclude = ["src/3rdparty"]
+
+[lint]
+# 保守起步：只保留高置信度、不会与既有风格打架的规则。
+#   E4/E7/E9  pycodestyle 真错误（导入位置、语句结构、语法级）
+#   F         pyflakes（未使用导入/变量、重复定义、未定义名）
+#   I         import 排序
+#   UP        pyupgrade（过时写法，如 % 格式化、老式 super()）
+#   B         bugbear（可变默认参数、循环内闭包捕获等真陷阱）
+select = ["E4", "E7", "E9", "F", "I", "UP", "B"]
+
+[format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"

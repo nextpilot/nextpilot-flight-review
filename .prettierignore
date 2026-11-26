@@ -1,0 +1,13 @@
+# prettier 的排除清单。
+#
+# 第三方源码保持上游原样（与 .clang-format-ignore 的口径一致）：
+src/3rdparty/
+
+# 构建产物与依赖缓存目录（正常情况下不在版本库里，防止误跑全量时被扫进来）：
+build/
+build-*/
+deps/
+dist/
+
+# 自动生成的清单/报告，格式由生成器决定：
+*.generated.md

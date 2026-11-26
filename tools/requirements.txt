@@ -13,3 +13,7 @@ aqtinstall==3.3.0
 # clang-format / git-clang-format / clang-format-diff.py（venv/bin 已在 PATH），
 # `cmake --build build --target format` 与 .githooks/pre-commit 直接可用。
 clang-format==23.1.5
+
+# Python 代码格式化与静态检查（format + check 一个工具，见仓库根 ruff.toml）。
+# 版本必须与 .github/workflows/lint.yml 里读取的值一致——CI 直接从这里取，改这里即可改 CI。
+ruff==0.14.6

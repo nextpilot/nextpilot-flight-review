@@ -1,0 +1,25 @@
+{
+  // markdownlint 的规则集。定位是"只查真正会坏掉的东西"，风格由 prettier 管。
+  //
+  // 两条与 prettier 冲突、必须显式处理的规则：
+   //   MD013 行长  —— prettier 用 proseWrap: preserve 保留人工折行，中文文档按 80 列
+   //                  判长只会产出几百条噪音。
+  //   MD060 表格列样式 —— 默认要求 `|x|y|` 紧凑风格，而 prettier 输出 `| x | y |`。
+  //                  两个工具不能各管一半，这里跟 prettier 走 leading_and_trailing。
+  //
+  // 其余规则保持默认（真问题：标题跳级、代码块缺语言、表格列数不匹配、空链接等）。
+  "config": {
+    "default": true,
+    "MD013": false,
+    "MD060": { "style": "leading_and_trailing" }
+  },
+  "globs": [
+    "**/*.md",
+    "!src/3rdparty/**",
+    "!build/**",
+    "!build-*/**",
+    "!deps/**",
+    "!dist/**",
+    "!node_modules/**"
+  ]
+}

@@ -132,6 +132,91 @@ jobs:
           PYTHONPATH="$CLANG_FORMAT_PY" python3 -m clang_format.git_clang_format \
             --binary "$CLANG_FORMAT_BIN" --diff "$BASE" -- "${FILES[@]}"
 
+  markdown:
+    # Changed-files-only markdown gate: prettier (layout) + markdownlint-cli2 (structure).
+    #
+    # prettier is the only formatter. markdownlint's default MD060 expects `|x|y|`
+    # tables while prettier emits `| x | y |`, so .markdownlint-cli2.jsonc pins MD060
+    # to leading_and_trailing and the two never fight. MD013 is off: this tree is
+    # Chinese prose, an 80-column budget produces nothing but noise.
+    #
+    # Versions are pinned here and in tools/format.sh on purpose: formatter output
+    # drifts between releases, and a skew shows up as "clean locally, red in CI".
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    env:
+      PRETTIER_VERSION: 3.10.1
+      MARKDOWNLINT_VERSION: 0.19.1
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Resolve base
+        id: base
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            B="origin/${{ github.base_ref }}"
+          else
+            B="${{ github.event.before }}"
+            git cat-file -e "${B}^{commit}" 2>/dev/null || B="$(git rev-parse HEAD~1)"
+          fi
+          echo "base=$B" >> "$GITHUB_OUTPUT"
+
+      - name: prettier --check (changed markdown)
+        run: tools/format.sh --check "${{ steps.base.outputs.base }}" --only md
+
+      - name: markdownlint (changed markdown)
+        run: |
+          set -euo pipefail
+          B="${{ steps.base.outputs.base }}"
+          mapfile -t FILES < <(git -c core.quotePath=false diff --name-only --diff-filter=d \
+            "$B...HEAD" -- '*.md' | grep -v '^src/3rdparty/' || true)
+          if [ "${#FILES[@]}" -eq 0 ]; then echo "no markdown changes"; exit 0; fi
+          printf '%s\n' "${FILES[@]}"
+          npx --yes "markdownlint-cli2@${MARKDOWNLINT_VERSION}" "${FILES[@]}"
+
+  python:
+    # Changed-files-only python gate: ruff format --check + ruff check.
+    #
+    # ruff does both jobs (no black + flake8 + isort). The version is read from
+    # tools/requirements.txt so CI and the developer venv cannot drift apart.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install ruff (pinned in tools/requirements.txt)
+        run: |
+          set -euo pipefail
+          V="$(sed -n 's/^ruff==//p' tools/requirements.txt)"
+          if [ -z "$V" ]; then echo "::error::ruff is not pinned in tools/requirements.txt"; exit 1; fi
+          python3 -m pip install --user "ruff==$V"
+          "$HOME/.local/bin/ruff" --version
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Resolve base
+        id: base
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            B="origin/${{ github.base_ref }}"
+          else
+            B="${{ github.event.before }}"
+            git cat-file -e "${B}^{commit}" 2>/dev/null || B="$(git rev-parse HEAD~1)"
+          fi
+          echo "base=$B" >> "$GITHUB_OUTPUT"
+
+      - name: ruff (changed python)
+        run: tools/format.sh --check "${{ steps.base.outputs.base }}" --only py
+
   tidy:
     # Changed-files-only clang-tidy pass — the companion to `format`. Formatting catches
     # layout; this catches defects layout cannot see: use-after-move, uninitialised

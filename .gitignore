@@ -40,3 +40,7 @@ fastplot_*.png
 
 # Linux 打包中间产物（AppDir / AppImage 由 pack-*.sh 现场生成）
 /dist/
+
+# Python 字节码缓存（跑 tools/*.py 与测试夹具脚本会生成）
+__pycache__/
+*.py[cod]
