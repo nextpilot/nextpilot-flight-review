@@ -130,6 +130,30 @@ jobs:
           PS_REQUIRE_PY_NUMPY: '1' 
         run: ctest --test-dir build -j"$(nproc)" --output-on-failure
 
+      - name: Smoke test - GUI starts (offscreen)
+        # ctest 覆盖不到「GUI 能不能真的起窗」：编译通过、单测全绿，进程仍可能因为平台
+        # 插件缺失或启动路径断裂而一启动就崩。
+        #
+        # 判定口径是「起来且不崩」，不是「必须挂住」：本地实测 offscreen 下它起窗后会
+        # 正常自退（rc=0），而打包环境里同样的二进制会一直挂住（rc=124）。两种都不是失败，
+        # 真正的失败是段错误（139）、abort（134）或 Qt 报找不到平台插件。
+        run: |
+          set +e
+          LOG="$RUNNER_TEMP/gui-smoke.log"
+          QT_QPA_PLATFORM=offscreen timeout 10 build/src/application/assembly/plotscope-gui \
+            > "$LOG" 2>&1
+          rc=$?
+          set -e
+          cat "$LOG"
+          if grep -qiE 'could not (find|load) the Qt platform plugin|Segmentation fault|Aborted' "$LOG"; then
+            echo "::error::plotscope-gui failed to start (see log above)"
+            exit 1
+          fi
+          case "$rc" in
+            0|124|143) echo "GUI offscreen smoke test passed (rc=$rc, no crash)" ;;
+            *) echo "::error::plotscope-gui exited abnormally (rc=$rc)"; exit 1 ;;
+          esac
+
       - name: Print ctest failure summary (always, for diagnostics)
         if: always()
         run: |
@@ -145,6 +169,148 @@ jobs:
           name: ctest-logs-${{ matrix.build_type }}
           path: build/Testing/Temporary/
           if-no-files-found: ignore
+
+  # Second compiler on Linux. GCC and Clang disagree on a lot that matters for portability:
+  # -W flag acceptance, implicit conversion diagnostics, and GNU extensions that GCC tolerates
+  # silently. Only Clang catches that class at PR time; macOS uses AppleClang, so a Linux
+  # Clang leg also de-risks the macOS gate.
+  #
+  # Release only, not the Release/Debug pair: the compiler portability signal does not
+  # depend on optimisation level, and doubling an already long leg buys nothing.
+  test-clang:
+    name: test (Release, clang)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Verify version (versions.env is the single source of truth)
+        shell: bash
+        run: |
+          set -euo pipefail
+          source versions.env
+          echo "PS_QT_VER=${PS_QT_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install build dependencies (including clang)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build build-essential clang curl file \
+            libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
+            libxkbcommon-x11-0 libfontconfig1 libdbus-1-3 \
+            python3 python3-numpy
+          clang --version
+          clang++ --version
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.93.0
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.PS_QT_VER }}
+          modules: 'qtcharts'
+
+      - name: Python 桥依赖（numpy）
+        run: |
+          python3 -m pip install --user numpy
+          python3 -c "import sys, numpy; print('python:', sys.executable, 'numpy:', numpy.__version__)"
+
+      - name: Set up ccache
+        # Separate key: ccache objects are compiler-specific, sharing them with the GCC
+        # legs would just waste the cache budget on guaranteed misses.
+        uses: hendrikmuhs/ccache-action@v1
+        with:
+          key: linux-ci-test-clang
+
+      - name: Configure CMake (clang)
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
+            -DPS_BUILD_TESTS=ON \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+
+      - name: Build targets (all, including tests)
+        run: cmake --build build -j"$(nproc)"
+
+      - name: Run CTest (offscreen)
+        env:
+          QT_QPA_PLATFORM: offscreen
+          PS_REQUIRE_PY_NUMPY: '1'
+        run: ctest --test-dir build -j"$(nproc)" --output-on-failure
+
+      - name: Print ctest failure summary (always, for diagnostics)
+        if: always()
+        run: tail -n 200 build/Testing/Temporary/LastTest.log || true
+
+  # Configure-only matrix. The gate above always configures with tests ON and ccache ON,
+  # and packaging configures with tests OFF — the rest of the option space was never
+  # exercised. That is exactly where IKY124 lived: an INTERFACE-only target declaring
+  # STATIC properties fails at *configure* time, never reaching compilation, so no build
+  # job would ever see it. Configure is cheap (seconds), so this covers the matrix without
+  # duplicating hours of compilation.
+  config-matrix:
+    name: configure (${{ matrix.label }})
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: tests-off, ccache-off
+            opts: -DPS_BUILD_TESTS=OFF -DPS_USE_CCACHE=OFF
+          - label: tests-on, ccache-off
+            opts: -DPS_BUILD_TESTS=ON -DPS_USE_CCACHE=OFF
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          submodules: recursive
+
+      - name: Verify version (versions.env is the single source of truth)
+        shell: bash
+        run: |
+          set -euo pipefail
+          source versions.env
+          echo "PS_QT_VER=${PS_QT_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build build-essential curl file \
+            libgl1-mesa-dev libegl1-mesa-dev libxkbcommon-dev \
+            libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 \
+            libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 \
+            libxkbcommon-x11-0 libfontconfig1 libdbus-1-3
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@1.93.0
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.PS_QT_VER }}
+          modules: 'qtcharts'
+
+      - name: Configure CMake (${{ matrix.label }})
+        run: |
+          # No build step on purpose (see the job comment): configure-time failures are the
+          # target, and building every permutation would double the workflow runtime.
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
+            ${{ matrix.opts }}
+          echo "configure OK: ${{ matrix.label }}"
 
   # Cross-platform compile gates.
   #
@@ -167,6 +333,10 @@ jobs:
       # 缓存从来没存上、每次都是全量编译（ci #25 证据）。目录由下面的显式 actions/cache
       # 负责保存/恢复，不再依赖 action 内部猜测的默认路径。
       SCCACHE_DIR: ${{ github.workspace }}/.sccache
+      # 临时诊断（IKY116）：sccache 把全部请求判为 "multiple input files"，executed 0、
+      # 命中 0。要看清它到底收到什么命令行，只能开 debug 日志。定位后这两行删除。
+      SCCACHE_LOG: debug
+      SCCACHE_ERROR_LOG: ${{ github.workspace }}/sccache-error.log
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -228,6 +398,15 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=sccache `
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
+      - name: Diagnose sccache input parsing (temporary)
+        # 临时诊断（IKY116）：打印一条 ninja 真正会执行的编译命令行。sccache 的输入文件
+        # 判定就是照着这串参数做的，命令里若有两个「非 flag」token 就会报
+        # "multiple input files" 并整条拒绝（当前 364/364 全拒）。
+        shell: pwsh
+        run: |
+          $cmd = & ninja -C build -t commands 2>&1 | Select-String 'cl\.exe' | Select-Object -First 1
+          if ($cmd) { $cmd.Line } else { "no cl.exe command found" }
+
       - name: Build all targets (compile-only gate)
         shell: pwsh
         # All targets, not just the two shipped executables: the point is maximum
@@ -268,6 +447,20 @@ jobs:
               "::error::$ctx"
             }
             exit 1
+          }
+
+      - name: Show sccache debug log (temporary)
+        # 临时诊断（IKY116）：即便编译成功 sccache 也在拒每一条请求，所以这里无条件打印。
+        if: always()
+        shell: pwsh
+        run: |
+          $p = "$env:SCCACHE_ERROR_LOG"
+          if (Test-Path $p) {
+            Get-Content $p |
+              Select-String -Pattern 'multiple input|Command line|Compiling|parse' -Context 0,2 |
+              Select-Object -First 40
+          } else {
+            "no sccache debug log at $p"
           }
 
   macos-compile:
