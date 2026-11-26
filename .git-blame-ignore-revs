@@ -1,0 +1,12 @@
+# 格式化提交登记：git blame 默认跳过这些提交，避免整树重排淹没真实改动。
+#
+# 每个 clone 启用一次：
+#   git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# 只登记“纯格式 / 写法统一”的整树提交；内容修复不进这里。
+
+# [style] markdown 全量 prettier 格式化 + lint 结构问题修复
+02644fbb4e20811005035ce3e2e9c9f12f8b84b2
+
+# [style] python 全量 ruff 格式化 + 静态检查修复
+98622debad2d5e7d19511eade195f5d1938338d8
