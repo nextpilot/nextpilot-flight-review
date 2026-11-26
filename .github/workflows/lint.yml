@@ -116,6 +116,10 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE="origin/${{ github.base_ref }}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            # 手动触发没有 base_ref：以 main 为准，校验整条分支的改动。
+            # 否则会退到 HEAD~1，只比最后一个提交，往往空跑。
+            BASE="origin/main"
           else
             BASE="${{ github.event.before }}"
             # Force-push can leave an unreachable "before"; fall back to the parent.
@@ -162,6 +166,8 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             B="origin/${{ github.base_ref }}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            B="origin/main"
           else
             B="${{ github.event.before }}"
             git cat-file -e "${B}^{commit}" 2>/dev/null || B="$(git rev-parse HEAD~1)"
@@ -208,6 +214,8 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             B="origin/${{ github.base_ref }}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            B="origin/main"
           else
             B="${{ github.event.before }}"
             git cat-file -e "${B}^{commit}" 2>/dev/null || B="$(git rev-parse HEAD~1)"
@@ -243,6 +251,8 @@ jobs:
           set -euo pipefail
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             BASE="origin/${{ github.base_ref }}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            BASE="origin/main"
           else
             BASE="${{ github.event.before }}"
             git cat-file -e "${BASE}^{commit}" 2>/dev/null || BASE="$(git rev-parse HEAD~1)"

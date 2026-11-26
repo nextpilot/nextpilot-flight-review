@@ -6,7 +6,7 @@
 # 只登记“纯格式 / 写法统一”的整树提交；内容修复不进这里。
 
 # [style] markdown 全量 prettier 格式化 + lint 结构问题修复
-02644fbb4e20811005035ce3e2e9c9f12f8b84b2
+fa733d41d6d9d83057d787d16015950111d36778
 
 # [style] python 全量 ruff 格式化 + 静态检查修复
-98622debad2d5e7d19511eade195f5d1938338d8
+ed97e5d467aabadfddaf351b61d2e840cd5564b7
