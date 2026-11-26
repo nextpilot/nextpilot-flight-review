@@ -11,13 +11,15 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
 # 依赖方向：呈现层 -> core（面板工厂表在 core，纯数据）。
 #   不依赖 ps_gui —— 否则扩展就要依赖整个 GUI 层，依赖方向就反了。
 #
-# OBJECT 库：保证 PS_REGISTER_PANEL 的自注册 TU 一定参与链接
-# （静态库中未被引用的目标文件会被链接器丢弃，自注册会静默失效）。
+# OBJECT 库：保证装配 TU 一定参与链接（静态库中未被引用的目标文件会被
+# 链接器丢弃）。A2c：面板自注册已退场，装配统一在 AutomotiveViewFactories。
 add_library(ps_toolbox_automotive_gui OBJECT
+    AutomotiveViewFactories.cpp
+    AutomotiveViewFactories.h
     CanBrowserPanel.cpp
     CanBrowserPanel.h
 )
 target_include_directories(ps_toolbox_automotive_gui PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
-target_link_libraries(ps_toolbox_automotive_gui PUBLIC ps_context Qt6::Widgets Qt6::Gui Qt6::Core)
+target_link_libraries(ps_toolbox_automotive_gui PUBLIC ps_context ps_registry ps_instantiation Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ps_toolbox_automotive_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17
                                                   POSITION_INDEPENDENT_CODE ON)

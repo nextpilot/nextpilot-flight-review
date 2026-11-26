@@ -4,7 +4,6 @@
 #include "ErrorCodes.h"
 #include "IIntentExecutor.h"
 #include "InteractionHub.h"
-#include "PanelFactoryHub.h"
 #include "Result.h"
 
 #include <QFileDialog>
@@ -41,12 +40,14 @@ QString metricsToText(const QVariant &metrics)
     return parts.join(QLatin1String("  "));
 }
 
-// 工厂函数（PS_REGISTER_PANEL_T 要求具名函数指针）
+} // namespace
+
+// 工厂函数（A2c 归位：具名函数外链，ScriptViewFactories 经 registerEditorProvider
+// 登记——原 PS_REGISTER_PANEL_T 具名指针 / 自注册已退场）
 QWidget *createBatchSummaryPanel(AppContext &app, IIntentExecutor &ex, QWidget *parent)
 {
     return new BatchSummaryPanel(app, ex, parent);
 }
-} // namespace
 
 BatchSummaryPanel::BatchSummaryPanel(AppContext &appCtx, IIntentExecutor &executor,
                                      QWidget *parent)
@@ -188,7 +189,5 @@ QTreeWidgetItem *BatchSummaryPanel::upsertRow(const QString &file)
 
 } // namespace nextpilot::plotscope::script
 
-// 自注册中央区面板（标题即页签文本；与脚本编辑器/数据表格同机制，外壳零改动）
-PS_REGISTER_PANEL_TI("batch-summary", batchSummary,
-                    nextpilot::plotscope::script::createBatchSummaryPanel, "批量汇总",
-                    "grid")
+// A2c：PS_REGISTER_PANEL_TI 自注册已删——script.batchSummary 由 ScriptViewFactories
+// 装配（editor 声明 + provider 登记，owner "script"）。工厂函数本体保留。

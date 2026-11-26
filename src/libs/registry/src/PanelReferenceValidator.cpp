@@ -13,9 +13,10 @@ PanelReferenceIssue makeIssue(const QString &source, const QString &type)
     PanelReferenceIssue issue;
     issue.source = source;
     issue.type = type;
-    issue.message = QStringLiteral("面板类型 \"%1\" 未在工厂表注册（来源: %2）；"
-                                   "可用类型见 PanelFactoryHub::types()，工厂由视图层 "
-                                   "PS_REGISTER_PANEL / PS_REGISTER_PANEL_T 自注册。")
+    issue.message = QStringLiteral("面板引用 \"%1\" 未命中任何声明面（来源: %2）；"
+                                   "三命中面 = 工厂表 PanelFactoryHub::types() ∪ views 声明 "
+                                   "IViewsService::viewForId ∪ customEditors 声明 "
+                                   "IEditorService::customEditors()。")
                         .arg(type, source);
     return issue;
 }
@@ -23,21 +24,24 @@ PanelReferenceIssue makeIssue(const QString &source, const QString &type)
 
 QList<PanelReferenceIssue> validatePanelReferences(const ToolboxHub &toolbox, const UiSlotHub &slotHub,
                                                    const QList<ProductPanelPlacement> &placements,
-                                                   const QStringList &knownViewIds)
+                                                   const QStringList &knownViewIds,
+                                                   const QStringList &customEditorViewTypes)
 {
-    return validatePanelReferences(toolbox.panels.values(), slotHub, placements, knownViewIds);
+    return validatePanelReferences(toolbox.panels.values(), slotHub, placements, knownViewIds, customEditorViewTypes);
 }
 
 QList<PanelReferenceIssue> validatePanelReferences(const QList<PanelSpec> &panels,
                                                    const QList<ActivitySpec> &activities,
                                                    const QList<ProductPanelPlacement> &placements,
-                                                   const QStringList &knownViewIds)
+                                                   const QStringList &knownViewIds,
+                                                   const QStringList &customEditorViewTypes)
 {
     QList<PanelReferenceIssue> issues;
     const QStringList known = PanelFactoryHub::types();
 
-    auto check = [&issues, &known, &knownViewIds](const QString &source, const QString &type) {
-        if (type.isEmpty() || known.contains(type) || knownViewIds.contains(type))
+    auto check = [&issues, &known, &knownViewIds, &customEditorViewTypes](const QString &source, const QString &type) {
+        if (type.isEmpty() || known.contains(type) || knownViewIds.contains(type) ||
+            customEditorViewTypes.contains(type))
             return;
         issues.append(makeIssue(source, type));
     };
@@ -60,13 +64,15 @@ QList<PanelReferenceIssue> validatePanelReferences(const QList<PanelSpec> &panel
 
 QList<PanelReferenceIssue> validatePanelReferences(const QList<PanelSpec> &panels, const UiSlotHub &slotHub,
                                                    const QList<ProductPanelPlacement> &placements,
-                                                   const QStringList &knownViewIds)
+                                                   const QStringList &knownViewIds,
+                                                   const QStringList &customEditorViewTypes)
 {
     QList<PanelReferenceIssue> issues;
     const QStringList known = PanelFactoryHub::types();
 
-    auto check = [&issues, &known, &knownViewIds](const QString &source, const QString &type) {
-        if (type.isEmpty() || known.contains(type) || knownViewIds.contains(type))
+    auto check = [&issues, &known, &knownViewIds, &customEditorViewTypes](const QString &source, const QString &type) {
+        if (type.isEmpty() || known.contains(type) || knownViewIds.contains(type) ||
+            customEditorViewTypes.contains(type))
             return;
         issues.append(makeIssue(source, type));
     };

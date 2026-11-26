@@ -170,8 +170,11 @@ void ScriptModule::initialize(InstantiationService &services)
                 return fail(err::Unsupported, QStringLiteral("批量处理不可用"));
             if (!m_ui)
                 return fail(err::Unsupported, QStringLiteral("批量汇总需要 GUI 环境"));
-            if (!m_ui->requestPanel(nextpilot::plotscope::registry::Region::Editor,
-                                    QStringLiteral("batch-summary")))
+            if (!m_ui->openEditor(
+                    QStringLiteral("script.batchSummary"),
+                    nextpilot::plotscope::registry::ResourceRef{QStringLiteral("script://batch/summary"),
+                                                                QStringLiteral("application/x-script-batch-summary"),
+                                                                QStringLiteral("批量汇总")}))
                 return fail(err::Unsupported, QStringLiteral("批量汇总面板不可用"));
             QVariantMap picked = params;
             if (!picked.contains(QStringLiteral("dir")))
@@ -403,14 +406,18 @@ void ScriptModule::registerWorkbenchActions(nextpilot::plotscope::uischema::IScr
 
     // script.workbench.open / .new：确保编辑器面板存在（按需创建进中央区页签），
     // 再转发给编辑器面板打开/新建文档。headless 下 m_ui 为空，明确报错。
+    // A2c：script.editor editor 化——ref=script://editor 单例（同 ref 复用 =
+    // 聚焦语义），声明/注册见 ScriptViewFactories。
     auto ensureEditor = [this](Result<QVariant> &out) -> bool {
         if (!m_ui)
         {
             out = fail(err::Unsupported, QStringLiteral("脚本编辑器需要 GUI 环境"));
             return false;
         }
-        return m_ui->requestPanel(nextpilot::plotscope::registry::Region::Editor,
-                                  QStringLiteral("script-editor")) != nullptr;
+        return m_ui->openEditor(QStringLiteral("script.editor"),
+                                nextpilot::plotscope::registry::ResourceRef{
+                                    QStringLiteral("script://editor"), QStringLiteral("application/x-script-editor"),
+                                    QStringLiteral("脚本编辑器")}) != nullptr;
     };
     nextpilot::plotscope::context::InteractionHub *reg = &caps.interactionsHub();
     caps.interactionsHub().registerViewAction(QStringLiteral("script.workbench.open"),
@@ -474,10 +481,9 @@ void ScriptModule::registerWorkbenchActions(nextpilot::plotscope::uischema::IScr
                     Result<QVariant> out{QVariant()};
                     dbgReg->dispatchViewAction(QStringLiteral("script.debug.update"), up, out);
                     // 暂停时把调试面板顶到前台（re-request 复用 = 聚焦语义）；
-                    // 否则 SecondarySidebar 上并列的属性页签会挡住变量/调用栈。
+                    // 否则右栏并列的页签会挡住变量/调用栈。
                     if (m_ui)
-                        m_ui->requestPanel(nextpilot::plotscope::registry::Region::SecondarySidebar,
-                                           QStringLiteral("script-debug"));
+                        m_ui->openView(QStringLiteral("script.debug"));
                     // 行号 → 编辑器（暂停行高亮跳转；update 的处理器归调试面板，不冲突）
                     QVariantMap pp;
                     pp.insert(QStringLiteral("name"), name);
@@ -546,14 +552,12 @@ void ScriptModule::registerWorkbenchActions(nextpilot::plotscope::uischema::IScr
                                                   return out;
                                               });
 
-    // script.workbench.console：确保控制台面板存在（常驻 Region::Panel，请求即置前）。
+    // script.workbench.console：确保控制台面板存在（常驻底部页签，请求即置前）。
     caps.interactionsHub().registerViewAction(
         QStringLiteral("script.workbench.console"), [this](const QVariantMap &) -> Result<QVariant> {
             if (!m_ui)
                 return fail(err::Unsupported, QStringLiteral("脚本控制台需要 GUI 环境"));
-            return Result<QVariant>(
-                QVariant(m_ui->requestPanel(nextpilot::plotscope::registry::Region::Panel,
-                                            QStringLiteral("script-console")) != nullptr));
+            return Result<QVariant>(QVariant(m_ui->openView(QStringLiteral("script.console")) != nullptr));
         });
 }
 
@@ -589,8 +593,8 @@ ModuleContributions ScriptModule::contributes() const
     scriptActivity.icon = QStringLiteral("script");
     scriptActivity.order = 1;
     scriptActivity.ribbonPage = QStringLiteral("ribbon.page.script");
-    scriptActivity.panelTypes = {QStringLiteral("script-files")};
-    scriptActivity.centralEditor = QStringLiteral("script-editor");
+    scriptActivity.panelTypes = {QStringLiteral("script.files")};   // A2c：script-files 归位 view id
+    scriptActivity.centralEditor = QStringLiteral("script.editor"); // A2c：script-editor editor 化
     scriptActivity.centralRef = nextpilot::plotscope::registry::ResourceRef{QStringLiteral("script://editor"),
                                                                             QString(), QStringLiteral("脚本编辑器")};
     c.activities.append(scriptActivity);
@@ -644,13 +648,11 @@ void ScriptModule::onAttach(IUiContext &ui)
     // A8b-M2：声明已迁至 contributes()，宿主统一灌回；onAttach 只保留运行时服务。
     // 编辑器按需创建需要 GUI 上下文（headless 恒空）。
     m_ui = &ui;
-    // 三个侧边停靠面板随 attach 挂上。
-    ui.requestPanel(nextpilot::plotscope::registry::Region::PrimarySidebar,
-                    QStringLiteral("script-files"));
-    ui.requestPanel(nextpilot::plotscope::registry::Region::Panel,
-                    QStringLiteral("script-console"));
-    ui.requestPanel(nextpilot::plotscope::registry::Region::SecondarySidebar,
-                    QStringLiteral("script-debug"));
+    // A2c：三个停靠面板随 attach 打开——走 openView（落区由 viewsContainers[].area
+    // 决定：script.files→sidebar / script.console→bottom / script.debug→auxiliary）。
+    ui.openView(QStringLiteral("script.files"));
+    ui.openView(QStringLiteral("script.console"));
+    ui.openView(QStringLiteral("script.debug"));
 }
 
 #include "ScriptModule.moc"

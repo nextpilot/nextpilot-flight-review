@@ -4,7 +4,6 @@
 
 #include "LiveConnectDialog.h"
 
-#include "PanelFactoryHub.h"
 #include "ThemeManager.h"
 #include "ChannelMime.h"
 
@@ -1580,7 +1579,7 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
                                                    .arg(dsId.toInt())
                                                    .arg(table.toString(), column.toString()));
     for (const nextpilot::plotscope::registry::ItemContextSpec &spec :
-         m_appCtx.toolbox().itemContextsFor(QStringLiteral("dataset-tree")))
+         m_appCtx.toolbox().itemContextsFor(QStringLiteral("data.datasetTree")))
     {
         if (spec.domain.isEmpty())
             continue; // 没写键空间归属就没法求值 item.*，宁可不显示
@@ -1996,7 +1995,9 @@ QWidget *createDatasetTreePanel(AppContext &appCtx, IIntentExecutor &exec, QWidg
     return new DataManagerPanel(appCtx, exec, parent);
 }
 
-// 视图层自注册：模块只声明类型字符串 "dataset-tree"，外壳据此装配本面板。
-PS_REGISTER_PANEL_TI("dataset-tree", datasetTree, createDatasetTreePanel, "数据源", "datasource")
+// 旧工厂表注册（PS_REGISTER_PANEL_TI "dataset-tree"）已删（A2b 笔2b 第③步）：
+// 本视图由 DataViewFactories 经 ViewRegistry::registerViewProvider 登记
+// （viewId "data.datasetTree"、owner "data"；views 声明在 DataModule::initialize，
+// 壳不替 data 声明——§7 打回线 1）。
 
 } // namespace nextpilot::plotscope::gui

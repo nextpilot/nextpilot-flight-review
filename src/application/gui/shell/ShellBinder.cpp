@@ -5,7 +5,10 @@
 
 #include "PanelFactoryHub.h"
 #include "PanelReferenceValidator.h"
+#include "ContributionParser.h"
+#include "IEditorService.h"
 #include "IPanelsService.h"
+#include "theme/IconRegistry.h" // A2c：缩略图查表（绘制器已归位 modules/plot/gui）
 
 #include "Intent.h"
 
@@ -24,7 +27,6 @@
 #include "SARibbonGalleryGroup.h"
 #include "SARibbonPanel.h"
 
-#include "PlotThumbnails.h"
 #include "DockWidgetTab.h"
 #include "SARibbonToolButton.h"
 
@@ -51,7 +53,6 @@ using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::intent;
 using namespace nextpilot::plotscope::uischema;
 using namespace nextpilot::plotscope::registry;
-using namespace nextpilot::plotscope::parser;
 
 namespace nextpilot::plotscope::gui
 {
@@ -267,11 +268,13 @@ void ShellBinder::rebuildActivityBar()
 void ShellBinder::setPanelReferenceContext(
     const nextpilot::plotscope::workbench::IPanelsService *panels,
     const QList<nextpilot::plotscope::registry::ProductPanelPlacement> &placements,
-    nextpilot::plotscope::workbench::IViewsService *viewsService)
+    nextpilot::plotscope::workbench::IViewsService *viewsService,
+    nextpilot::plotscope::workbench::IEditorService *editorService)
 {
     m_panelsService = panels;
     m_placements = placements;
     m_viewsRefService = viewsService;
+    m_editorRefService = editorService;
 }
 
 QStringList ShellBinder::missingPanelTypes() const
@@ -309,17 +312,39 @@ QStringList ShellBinder::missingPanelTypes() const
                     knownViewIds << central;
             }
         }
-        const auto issues =
-            validatePanelReferences(m_panelsService->panels(), slotActivities, m_placements, knownViewIds);
+        // editor 命中面（A2b 笔2b 第③步顺延必修）：customEditors 声明的 viewType
+        // 经 IEditorService::customEditors() 取回——centralEditor（plot.workspace /
+        // script-editor 等 editor 化点）命中自此不再靠工厂表侥幸。壳只查接口。
+        QStringList customEditorViewTypes;
+        if (m_editorRefService)
+        {
+            for (const nextpilot::plotscope::registry::ContributedCustomEditor &ce :
+                 m_editorRefService->customEditors())
+                if (!ce.viewType.isEmpty())
+                    customEditorViewTypes << ce.viewType;
+        }
+        // views 全量声明面（A2c）：领域包面板描述（provider=pack.*）的 id 也须命中
+        // views 声明——不再依赖"恰好被 placements/activity 引用过"才可见。
+        // IViewsService 无全量列举，按可停靠 area 三查合并（与落区映射同集）。
+        if (m_viewsRefService)
+        {
+            for (const char *area : {"sidebar", "auxiliary", "bottom"})
+                for (const nextpilot::plotscope::registry::ContributedViewContainer &c :
+                     m_viewsRefService->containersIn(QLatin1String(area)))
+                    for (const nextpilot::plotscope::registry::ContributedView &v :
+                         m_viewsRefService->viewsInContainer(c.id))
+                        if (!v.id.isEmpty())
+                            knownViewIds << v.id;
+        }
+        const auto issues = validatePanelReferences(m_panelsService->panels(), slotActivities, m_placements,
+                                                    knownViewIds, customEditorViewTypes);
         for (const PanelReferenceIssue &issue : issues)
             missing << QStringLiteral("%1:%2").arg(issue.source, issue.type);
         return missing;
     }
-
-    for (const ActivitySpec &spec : m_slots ? m_slots->activities() : QList<ActivitySpec>{})
-        for (const QString &type : spec.panelTypes)
-            if (!PanelFactoryHub::find(type))
-                missing << QStringLiteral("%1:%2").arg(spec.id, type);
+    // A2c：旧工厂 fallback 分支已删（工厂表 12→0 退场，find 调用点归零；三命中面
+    // 校验器本体与退化路径一并归 A2d 删）。m_panelsService 未注入（极简装配）
+    // 时视为零校验面。
     return missing;
 }
 
@@ -676,18 +701,10 @@ void ShellBinder::rebuildRibbon()
                 if (!whenVisible(ua.when))
                     continue;
 
-                // 缩略图：优先按 visual 画（图型/格式），否则退回图标名。
-                // 布局组的大按钮用"分格缩略图"（visual="layout:RxC"），其余按图型/格式画。
-                QIcon ico;
-                if (ua.visual.startsWith(QStringLiteral("layout:")))
-                {
-                    const QStringList rc = ua.visual.mid(7).split(QLatin1Char('x'));
-                    ico = PlotThumbnails::layout(rc.value(0).toInt(), rc.value(1).toInt());
-                }
-                else if (!ua.visual.isEmpty())
-                {
-                    ico = PlotThumbnails::plot(ua.visual);
-                }
+                // 图标解析（A2c 呈现侧三件）：先查 IconRegistry（"plot/<kind>" 缩略图，
+                // plot 呈现层装配时注册）；未命中退回主题图标名。壳不持有绘制器，
+                // 不再 include PlotThumbnails（已归位 modules/plot/gui）。
+                QIcon ico = gui::IconRegistry::instance().icon(ua.icon);
                 if (ico.isNull() && !ua.icon.isEmpty())
                     ico = iconFor(ua.icon);
 

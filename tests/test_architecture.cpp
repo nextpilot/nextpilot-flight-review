@@ -395,7 +395,7 @@ int main(int argc, char **argv)
                 if (fmt)
                 {
                     CHECK(fmt->label == d->displayName());
-                    CHECK(fmt->visual == d->id());
+                    CHECK(fmt->icon == QStringLiteral("plot/") + d->id()); // A2c：visual 并入 icon
                     CHECK(fmt->slotId == QStringLiteral("ribbon.group.data.sources"));
                     CHECK(fmt->galleryGroup == QStringLiteral("文件格式"));
                     CHECK(fmt->intentOp == QStringLiteral("data.load"));
@@ -453,7 +453,7 @@ int main(int argc, char **argv)
 
         // 领域面板的**描述**是纯数据，headless（CLI）也能查到——
         // 实现（QWidget 工厂）只在 GUI 侧注册，两者用 id 关联。
-        const PanelSpec *canPanel = toolbox.panels.find(QStringLiteral("car.can-browser"));
+        const PanelSpec *canPanel = toolbox.panels.find(QStringLiteral("automotive.canBrowser"));
         CHECK(canPanel != nullptr);
         CHECK(canPanel->domain == Domain::Automotive);
 

@@ -9,9 +9,9 @@
 //   于是形态归**扩展包**：描述在 AutomotivePack（纯数据，headless 可见），
 //   实现在这里（GUI 侧）。
 //
-// 它与通用视图共用同一张工厂表（PanelFactoryHub，在 core），
-// 所以模块调用 requestPanel(Region::SecondarySidebar, "car.can-browser") 就能拿到它，
-// 不必知道它是领域面板还是通用面板。
+// 它与通用视图走同一套 views 声明 + provider 装配（A2c：AutomotiveViewFactories，
+// owner "automotive"），壳只经 IViewsService::openView("automotive.canBrowser")
+// 打开它——不必知道它是领域面板还是通用面板。
 
 #include "CanBrowserPanel.h"
 
@@ -86,6 +86,6 @@ QWidget *createCanBrowserPanel(nextpilot::plotscope::context::AppContext &appCtx
 
 } // namespace nextpilot::plotscope::ext::automotive
 
-// 注册进**同一张**工厂表：领域面板与通用面板共用，模块不区分。
-PS_REGISTER_PANEL_I("car.can-browser", canBrowserPanel,
-                    ::nextpilot::plotscope::ext::automotive::createCanBrowserPanel, "can_bus")
+// A2c：PS_REGISTER_PANEL_I 自注册已删——automotive.canBrowser 由
+// AutomotiveViewFactories 装配（views 声明 + provider 登记，owner "automotive"）。
+// ⚠️ 无 VSCode 对位：领域面板形态归领域包，差异登记 docs/develop/vscode-alignment.md。

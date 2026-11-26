@@ -2,8 +2,9 @@
 
 // DataTablePanel：数据表格查看面板。
 //
-// 形态：中央区页签（Region::Editor），**按需创建**——数据树右键"查看数据表格"
-// 才占中央区，与画布平级互不挤占（与脚本编辑器同一模式）。
+// 形态：中央区编辑器页签（A2b 笔2b 第③步 editor 化：viewType "data.table" +
+// IEditorProvider，ref 由 DataModule 构造），**按需创建**——数据树右键"查看数据
+// 表格"才占中央区，与画布平级互不挤占（与脚本编辑器同一模式）。
 //
 // 通道（视图协作零新机制，全走 InteractionHub viewAction）：
 //   data.table.open  {datasetId, table}   模块层入口：按需创建本面板再转发 show
@@ -44,6 +45,11 @@ public:
     QString shownTable() const { return m_tableName; }
     int shownDatasetId() const { return m_datasetId; }
     QString statsText() const;
+
+    // 绑定数据集表（A2b 笔2b 第③步导出）：data.table.open 动作与 editor provider
+    // （data.table，ResourceRef → dataset://<id>/<table>）共用的唯一绑定路径。
+    // 数据集/表不存在返回 false（诊断在动作通道，provider 侧静默复用缓存面板）。
+    bool openDataset(int datasetId, const QString &table);
 
 private:
     void attachViewActions();

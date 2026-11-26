@@ -13,6 +13,8 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
 # OBJECT 库：保证 PS_REGISTER_PANEL 的自注册 TU 一定参与链接
 # （静态库中未被引用的目标文件会被链接器丢弃，自注册会静默失效）。
 add_library(ps_module_data_gui OBJECT
+    DataViewFactories.cpp
+    DataViewFactories.h
     DataManagerPanel.cpp
     DataManagerPanel.h
     LiveConnectDialog.cpp
@@ -27,5 +29,5 @@ target_include_directories(ps_module_data_gui PUBLIC
 )
 # 主题是横向 GUI 基础设施（状态点等取色走它），单独成库，谁需要谁链——
 # 不必为此链接整个外壳库 ps_gui。
-target_link_libraries(ps_module_data_gui PUBLIC ps_context ps_registry ps_parser ps_uischema ps_uischema_widgets ps_data_tablemodel ps_gui_theme ps_widgets Qt6::Widgets Qt6::Gui Qt6::Core)
+target_link_libraries(ps_module_data_gui PUBLIC ps_context ps_registry ps_instantiation ps_parser ps_uischema ps_uischema_widgets ps_data_tablemodel ps_gui_theme ps_widgets Qt6::Widgets Qt6::Gui Qt6::Core)
 set_target_properties(ps_module_data_gui PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

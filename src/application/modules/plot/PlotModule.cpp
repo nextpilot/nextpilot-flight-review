@@ -16,7 +16,9 @@
 #include "SettingsStore.h"
 #include "SourceHub.h"
 #include "Transform.h"
+#include "InteractionHub.h"
 
+#include <QHash>
 #include <QJsonDocument>
 #include <QJsonObject>
 
@@ -676,6 +678,7 @@ void PlotModule::initialize(InstantiationService &services)
     if (!ws || !caps || !cmds)
         return;
     m_handler = new Handler(ws->dataset(), ws->sources(), *ws, ws->derived(), *caps, this);
+    m_caps = caps; // onAttach 登记 plot.instrument.open 用（A2c）
     // 编排调用走命令；asCommandHandler 把 IIntentHandler 适配成 ICommands::Handler。
     auto reg = [cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
         cmds->registerCommand(id, nextpilot::plotscope::workbench::asCommandHandler(h, id));
@@ -732,6 +735,10 @@ ModuleContributions PlotModule::contributes() const
     plotActivity.icon = QStringLiteral("plot_refresh");
     plotActivity.order = 3;
     plotActivity.ribbonPage = QStringLiteral("ribbon.page.plot");
+    // A2c：plot.properties 归位左栏（views 声明 area=sidebar）——activity 归属
+    // 与 data.datasetTree 同款：panelTypes 声明。centralEditor/centralRef 由壳
+    // 经 openEditor 透传（ref owner 构造，壳不解析）。
+    plotActivity.panelTypes = {QStringLiteral("plot.properties")};
     plotActivity.centralEditor = QStringLiteral("plot.workspace");
     plotActivity.centralRef = nextpilot::plotscope::registry::ResourceRef{QStringLiteral("plot://workspace"), QString(),
                                                                           QStringLiteral("绘图工作区")};
@@ -760,23 +767,29 @@ ModuleContributions PlotModule::contributes() const
     const QString tool   = QStringLiteral("ribbon.group.plot.tool");
     const QString act    = QStringLiteral("ribbon.group.plot.action");
     const QString type   = QStringLiteral("ribbon.group.plot.type");
-    auto add = [&c](const QString &id, const QString &label, const QString &slot,
-                    const QString &icon, int order, const QString &data = QString(),
-                    bool large = false, bool checkable = false,
-                    const QString &intentOp = QString(), const QString &visual = QString(),
+    auto add = [&c](const QString &id, const QString &label, const QString &slot, const QString &icon, int order,
+                    const QString &data = QString(), bool large = false, bool checkable = false,
+                    const QString &intentOp = QString(), const QString &thumbnail = QString(),
                     const QString &galleryGroup = QString()) {
         UiAction a;
         a.id = id;
         a.label = label;
         a.slotId = slot;
-        a.icon = icon;
         a.order = order;
         a.data = data;
         a.large = large;
         a.checkable = checkable;
         a.intentOp = intentOp;
-        a.visual = visual;
         a.galleryGroup = galleryGroup;
+        // A2c 呈现侧：缩略图并入 icon（值域 plot/<kind>），单一字段。
+        // thumbnail="timeseries" → icon="plot/timeseries"；thumbnail="layout:2x1" →
+        // icon="plot/layout.2x1"。QIcon 由 PlotThumbnails::registerIcons 在装配时
+        // 注册进 IconRegistry，壳只按 id 查表。
+        if (!thumbnail.isEmpty())
+            a.icon = thumbnail.startsWith(QStringLiteral("layout:")) ? QStringLiteral("plot/layout.") + thumbnail.mid(7)
+                                                                     : QStringLiteral("plot/") + thumbnail;
+        else
+            a.icon = icon;
         c.actions.append(a);
     };
 
@@ -864,9 +877,48 @@ ModuleContributions PlotModule::contributes() const
 void PlotModule::onAttach(IUiContext &ui)
 {
     // A8b-M2：声明已迁至 contributes()，宿主统一灌回；onAttach 只保留运行时服务。
-    // 申请中央画布工作区（实现由绘图视图层自注册）。
-    ui.requestPanel(nextpilot::plotscope::registry::Region::Editor,
-                    QStringLiteral("plot.workspace"));
+    // A2c：中央画布工作区 editor 化——openEditor + ResourceRef（uri 语义归 plot：
+    // plot://workspace 单例，同 ref 复用同一页签；声明/注册见 PlotViewFactories）。
+    m_ui = &ui;
+    nextpilot::plotscope::registry::ResourceRef wsRef;
+    wsRef.uri = QStringLiteral("plot://workspace");
+    wsRef.mime = QStringLiteral("application/x-plot-workspace");
+    wsRef.title = QStringLiteral("绘图工作区");
+    ui.openEditor(QStringLiteral("plot.workspace"), wsRef);
+
+    // plot.instrument.open：Ribbon 图库（plot.type.<kind>）切到专用仪表视图的
+    // 归位入口。壳只按动作 id 派发；gallery kind → 仪表 kind 的映射是 plot 业务，
+    // 随 editor 化从壳兜底表挪进本模块（A2c：壳不按 id 特判业务视图）。
+    if (m_caps)
+    {
+        nextpilot::plotscope::context::InteractionHub *hub = &m_caps->interactionsHub();
+        hub->registerViewAction(QStringLiteral("plot.instrument.open"),
+                                [this](const QVariantMap &params) -> Result<QVariant> {
+                                    const QString kind = params.value(QStringLiteral("kind")).toString();
+                                    static const QHash<QString, QString> kInstrumentKind = {
+                                        {QStringLiteral("gauge"), QStringLiteral("gauge")},
+                                        {QStringLiteral("compass"), QStringLiteral("compass")},
+                                        {QStringLiteral("horizon"), QStringLiteral("attitude")},
+                                        {QStringLiteral("traj3d"), QStringLiteral("traj3d")},
+                                        {QStringLiteral("map"), QStringLiteral("track")},
+                                        // 柱状/直方/频谱：fastplot 专用 Instrument widget，与仪表同视图。
+                                        {QStringLiteral("bar"), QStringLiteral("bar")},
+                                        {QStringLiteral("histogram"), QStringLiteral("histogram")},
+                                        {QStringLiteral("fft"), QStringLiteral("fft")},
+                                    };
+                                    const QString instrKind = kInstrumentKind.value(kind);
+                                    if (instrKind.isEmpty())
+                                        return fail(err::Unsupported, QStringLiteral("图型待接入"));
+                                    if (!m_ui)
+                                        return fail(err::Unsupported, QStringLiteral("仪表视图需要 GUI 环境"));
+                                    nextpilot::plotscope::registry::ResourceRef ref;
+                                    ref.uri = QStringLiteral("plot://instrument/") + instrKind;
+                                    ref.mime = QStringLiteral("application/x-plot-instrument");
+                                    ref.title = QStringLiteral("#") + instrKind;
+                                    QWidget *w = m_ui->openEditor(QStringLiteral("plot.instrument"), ref);
+                                    return Result<QVariant>(QVariant(w != nullptr));
+                                });
+    }
 }
 
 #include "PlotModule.moc"

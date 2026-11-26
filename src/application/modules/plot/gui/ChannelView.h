@@ -87,8 +87,4 @@ private:
     double m_winT1 = 0.0;
 };
 
-// 绘图视图的工厂：创建画布 + 通道视图，并让视图订阅共享的"活动通道"。
-QWidget *createAxesView(nextpilot::plotscope::context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor &executor,
-                          QWidget *parent);
-
 } // namespace nextpilot::plotscope::gui

@@ -3,6 +3,10 @@
 #include "ExtensionActivationService.h"
 #include "BuiltinViewProviders.h"  // gui 侧：壳内置工作台视图 provider 注册半（复审必修 2）
 #include "BuiltinWorkbenchViews.h" // 装配层：壳内置工作台视图声明半（owner core.workbench，纯数据）
+#include "DataViewFactories.h"     // data 模块视图装配（③）：datasetTree view + data.table editor
+#include "PlotViewFactories.h"     // plot 模块视图装配（A2c）：plot.properties view + instrument/workspace editor
+#include "ScriptViewFactories.h"   // script 模块视图装配（A2c）：files/console/debug view + editor/batchSummary editor
+#include "AutomotiveViewFactories.h" // automotive 领域视图装配（A2c）：canBrowser view
 #ifdef PS_HAS_REPORT_GUI
 #include "ReportExporter.h" // 装配层：注册 report.export viewAction（业务在 report 模块）
 #endif
@@ -62,6 +66,17 @@ nextpilot::plotscope::registry::ProductSpec plotscopeProductSpec()
     return nextpilot::plotscope::registry::plotScopeProductSpec();
 }
 }
+
+namespace {
+// 装配失败诊断（第③步必带：provider/声明注册失败不许静默）：AppContext 结构化
+// error 通道 + stderr，同一处出口；失败不 abort——build 内缺失面会走校验器补报。
+void reportAssemblyFailure(nextpilot::plotscope::context::AppContext &appCtx, const char *what)
+{
+    appCtx.appendMessage(QStringLiteral("error"), QStringLiteral("builtin-views"),
+                         QStringLiteral("启动期视图装配失败: %1").arg(what));
+    fprintf(stderr, "[builtin-views] 启动期视图装配失败: %s\n", what);
+}
+} // namespace
 
 int main(int argc, char *argv[])
 {
@@ -144,9 +159,24 @@ int main(int argc, char *argv[])
     nextpilot::plotscope::app::App application(settingsPath);
     // 壳内置工作台视图（A2b 笔2b 第②步返工）：先声明（assembly，纯数据）、
     // 后注册 provider（gui 侧）——两半都**先于** window.build：build 内
-    // defaultPanels 走 views 声明与 provider。
-    nextpilot::plotscope::assembly::declareBuiltinWorkbenchViews(application.host().services());
-    nextpilot::plotscope::gui::installBuiltinWorkbenchViewProviders(application.host().services());
+    // defaultPanels 走 views 声明与 provider。第③步必带：任一注册失败写启动期
+    // error 诊断（AppContext + stderr），不许静默。
+    if (!nextpilot::plotscope::assembly::declareBuiltinWorkbenchViews(application.host().services()))
+        reportAssemblyFailure(application.context(), "declareBuiltinWorkbenchViews");
+    if (!nextpilot::plotscope::gui::installBuiltinWorkbenchViewProviders(application.host().services()))
+        reportAssemblyFailure(application.context(), "installBuiltinWorkbenchViewProviders");
+    if (!nextpilot::plotscope::data::installDataViewFactories(application.host().services(), &application.context(),
+                                                              &application.host()))
+        reportAssemblyFailure(application.context(), "installDataViewFactories");
+    if (!nextpilot::plotscope::plot::installPlotViewFactories(application.host().services(), &application.context(),
+                                                              &application.host()))
+        reportAssemblyFailure(application.context(), "installPlotViewFactories");
+    if (!nextpilot::plotscope::script::installScriptViewFactories(application.host().services(), &application.context(),
+                                                                  &application.host()))
+        reportAssemblyFailure(application.context(), "installScriptViewFactories");
+    if (!nextpilot::plotscope::ext::automotive::installAutomotiveViewFactories(
+            application.host().services(), &application.context(), &application.host()))
+        reportAssemblyFailure(application.context(), "installAutomotiveViewFactories");
     nextpilot::plotscope::gui::MainWindow window(application.context(), productSpec);
     window.build(application.host());
 

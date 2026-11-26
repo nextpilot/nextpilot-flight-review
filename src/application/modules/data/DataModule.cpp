@@ -6,13 +6,16 @@
 #include "ErrorCodes.h"
 #include "Events.h"
 #include "Contribution.h"
+#include "ContributionParser.h"
 #include "IWorkbenchContribution.h"
 #include "InstantiationService.h"
 #include "IWorkspace.h"
 #include "ICommands.h"
 #include "IScriptCapabilities.h"
+#include "ResourceRef.h"
 #include "RuntimeHost.h"
 #include "Result.h"
+#include "ViewRegistry.h"
 
 #include <QList>
 #include <QPointer>
@@ -93,9 +96,11 @@ void DataModule::initialize(InstantiationService &services)
             self->m_ui->updateStatus(QStringLiteral("data.loading.progress"), text);
     });
     // 数据表格查看器：树右键"查看数据表格" → data.table.open
-    // → 按需创建中央页签面板（不与画布争位）→ 转发 data.table.show 绑定数据。
-    // 面板实现由视图层自注册（DataTablePanel.cpp 的 PS_REGISTER_PANEL_T），
-    // 模块只发字符串 id，不依赖 Qt Widgets，headless 构建保持纯净。
+    // → openEditor("data.table", ref) 按需开中央页签（A2b 笔2b 第③步：editor 化，
+    //   ref 由本模块构造——scheme dataset://、uri dataset://<id>/<table>、标题
+    //   #id/table；壳只消费不解析，同一 ref 复用同页签、不同 ref 各开一页签）。
+    // provider 由 DataViewFactories 登记（owner "data"）；data.table.show 动作
+    // 仍是面板的绑定通道（动作注册在 DataTablePanel::attachViewActions）。
     // 注册在 initialize（host 可用）；m_ui 在 onAttach 才有——
     // 动作是运行时触发的，届时 GUI 已 attach。
     // 视图动作：A1b 保持 view action 注册（IScriptCapabilities 既有接口，§1.2.1 注释：
@@ -106,9 +111,14 @@ void DataModule::initialize(InstantiationService &services)
         QStringLiteral("data.table.open"), [this, caps](const QVariantMap &params) -> Result<QVariant> {
             if (!m_ui)
                 return fail(err::Unsupported, QStringLiteral("数据表格需要 GUI 环境"));
-            if (!m_ui->requestPanel(nextpilot::plotscope::registry::Region::Editor,
-                                    QStringLiteral("data.table")))
-                return fail(err::Unsupported, QStringLiteral("数据表格面板不可用"));
+            nextpilot::plotscope::registry::ResourceRef ref;
+            const int dsId = params.value(QStringLiteral("datasetId")).toInt();
+            const QString table = params.value(QStringLiteral("table")).toString();
+            ref.uri = QStringLiteral("dataset://%1/%2").arg(dsId).arg(table);
+            ref.mime = QStringLiteral("application/x-dataset-table");
+            ref.title = QStringLiteral("#%1/%2").arg(dsId).arg(table);
+            if (!m_ui->openEditor(QStringLiteral("data.table"), ref))
+                return fail(err::Unsupported, QStringLiteral("数据表格编辑器不可用"));
             Result<QVariant> out{QVariant()};
             caps->dispatchViewAction(QStringLiteral("data.table.show"), params, out);
             return out;
@@ -130,9 +140,8 @@ QList<UiAction> buildSourceGalleryActions(const QVector<QPair<QString, QString>>
         fmt.id = QStringLiteral("data.source.") + id;
         fmt.label = displayName;
         fmt.slotId = QStringLiteral("ribbon.group.data.sources");
-        fmt.visual = id;
+        fmt.icon = QStringLiteral("plot/") + id; // A2c：缩略图并入 icon（值域 plot/<kind>）
         fmt.galleryGroup = QStringLiteral("文件格式");
-        fmt.icon = QStringLiteral("file_open");
         fmt.intentOp = QStringLiteral("data.load");
         fmt.order = fmtOrder++;
         actions.append(fmt);
@@ -144,9 +153,8 @@ QList<UiAction> buildSourceGalleryActions(const QVector<QPair<QString, QString>>
             fav.id = QStringLiteral("data.source.common.") + id;
             fav.label = displayName;
             fav.slotId = fmt.slotId;
-            fav.visual = id;
+            fav.icon = QStringLiteral("plot/") + id; // A2c：缩略图并入 icon
             fav.galleryGroup = QStringLiteral("常用");
-            fav.icon = QStringLiteral("file_open");
             fav.intentOp = QStringLiteral("data.load");
             fav.order = common++;
             actions.append(fav);
@@ -233,7 +241,10 @@ ModuleContributions DataModule::contributes() const
     dataActivity.icon = QStringLiteral("datasource");
     dataActivity.order = 0;
     dataActivity.ribbonPage = QStringLiteral("ribbon.page.data");
-    dataActivity.panelTypes = {QStringLiteral("dataset-tree")};
+    // A2b 笔2b 第③步：值随 views 声明改名（viewId "data.datasetTree"）——
+    // 校验器三命中面（工厂 ∪ views ∪ customEditors）从此值起走声明命中，
+    // 工厂表不再有 "dataset-tree"。
+    dataActivity.panelTypes = {QStringLiteral("data.datasetTree")};
     c.activities.append(dataActivity);
 
     // 开始页"常用"组：打开 / 最近。
@@ -340,9 +351,10 @@ void DataModule::onAttach(IUiContext &ui)
                          });
     }
 
-    // 数据集树面板（运行时服务）。
-    ui.requestPanel(nextpilot::plotscope::registry::Region::PrimarySidebar,
-                    QStringLiteral("dataset-tree"));
+    // 数据集树视图（运行时服务）：A2b 笔2b 第③步——声明与 provider 都归本模块
+    // （viewId "data.datasetTree"、owner "data"、容器 area sidebar），落区由
+    // viewsContainers[].area 决定，模块面不再出现区域枚举（归零）。
+    ui.openView(QStringLiteral("data.datasetTree"));
 }
 
 #include "DataModule.moc"

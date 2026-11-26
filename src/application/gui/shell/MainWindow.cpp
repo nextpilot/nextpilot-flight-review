@@ -10,7 +10,7 @@
 #include "PreferencesIntentHandler.h"
 #include "DialogLauncherHub.h"
 #include "ShellBinder.h"
-#include "theme/PlotThumbnails.h"
+#include "theme/IconRegistry.h" // A2c：缩略图绘制器归位 modules/plot/gui，壳只查 IconRegistry
 #include "ThemeManager.h"
 
 #include "AppContext.h"
@@ -60,11 +60,9 @@
 #include <QTabWidget>
 
 using namespace nextpilot::plotscope::foundation;
-using namespace nextpilot::plotscope::dataset;
 using namespace nextpilot::plotscope::intent;
 using namespace nextpilot::plotscope::uischema;
 using namespace nextpilot::plotscope::registry;
-using namespace nextpilot::plotscope::parser;
 using namespace nextpilot::plotscope::context;
 using namespace nextpilot::plotscope::host;
 namespace gui = nextpilot::plotscope::gui;
@@ -246,39 +244,38 @@ void MainWindow::declareStandardSlots()
     // 数据页常用组的快速打开/最近由 DataModule 贡献；协议检查器/编辑器归 ProtocolModule；
     // 运行脚本归 ScriptModule。壳不再预置业务页动作。
 
-    // --- 视图页：面板开关（**每个 dock 页签一个按钮**，点击出现/再点消失）---
-    // 动作 id = "view.toggleDock." + 面板类型 id（稳定 pageKey，不随标题改动失效）；
-    // 标签与页签标题一致。曾按区做整组开关，按钮名称与实际效果不符（历史缺陷）。
-    static const struct
-    {
-        const char *type;
-        const char *label;
-        const char *icon;
-    } kDockPageActions[] = {
-        {"dataset-tree", "数据源", "datasource"}, // 左栏（③步迁 data.datasetTree）
-        {"script-files", "脚本文件", "script"},   // 左栏（⑤步迁 script.files）
-        {"property-panel", "属性",
-         "property"}, // 右栏（工厂表留至笔 4 随 modules/plot 迁 plot.properties，届时同步改 pageKey + isLeftPage）
-        {"script-debug", "调试", "script_debug"},                // 右栏（⑤步迁 script.debug）
-        {"script-console", "终端", "terminal"},                  // 底部（⑤步迁 script.console）
-        {"workbench.panel.output", "输出", "output"},            // 底部（②步已迁 views 声明）
-        {"workbench.panel.markers", "问题", "problems"},         // 底部（②步已迁 views 声明）
-        {"workbench.panel.repl", "调试控制台", "debug_console"}, // 底部（②步已迁 views 声明）
-        {"diagnostics", "诊断", "diagnostics"},                  // 底部（②步已迁 views 声明；归并页签）
-    };
-    for (int i = 0; i < (int)(sizeof(kDockPageActions) / sizeof(kDockPageActions[0])); ++i)
-    {
-        addSkeleton(QStringLiteral("view.toggleDock.") + QLatin1String(kDockPageActions[i].type),
-                    // label 是 UTF-8 中文，必须用 fromUtf8；QLatin1String 会按 Latin-1
-                    // 逐字节解析，把中文显示成 æ°æ®æº 之类的乱码（历史缺陷）。
-                    QString::fromUtf8(kDockPageActions[i].label),
-                    QStringLiteral("ribbon.group.view.panels"), QString(),
-                    QLatin1String(kDockPageActions[i].icon), QString(), i);
-    }
-
-
+    // --- 视图页：面板开关（每个已声明的 dock 视图一个按钮）---
+    // 壳不再持有业务 viewId 字面量：动作在 `declareViewToggleSlots()`（activate 之后、
+    // rebuildRibbon 之前）按 IViewsService 的声明动态注册。这里只留一句说明。
     // 来源画廊条目由 DataModule 按已装载的格式驱动元数据派生（sourceGalleryActions），
     // 壳不遍历驱动、不保留格式常量表；这里只保留点击后的对话框分发入口。
+}
+
+// 视图页开关动作：按 IViewsService 的声明动态注册，壳内不出现任何业务 viewId 字面量。
+// 动作 id = "view.toggleDock." + viewId；标签/图标取声明（名称空则回退 viewId）。
+// 调用时机：host.activate(...) 之后、rebuildRibbon() 之前——声明此时才齐。
+void MainWindow::declareViewToggleSlots()
+{
+    if (!m_viewsService || !m_slotsService)
+        return; // bare 壳 / 未装配：无视图声明可枚举，保持空
+
+    int order = 0;
+    for (const QString &area : {QStringLiteral("sidebar"), QStringLiteral("auxiliary"), QStringLiteral("bottom")})
+    {
+        for (const auto &container : m_viewsService->containersIn(area))
+        {
+            for (const auto &view : m_viewsService->viewsInContainer(container.id))
+            {
+                nextpilot::plotscope::registry::UiAction a;
+                a.id = QStringLiteral("view.toggleDock.") + view.id;
+                a.label = view.name.isEmpty() ? view.id : view.name;
+                a.slotId = QStringLiteral("ribbon.group.view.panels");
+                a.icon = view.icon;
+                a.order = order++;
+                m_slotsService->bindLocal(a.slotId, a, QStringLiteral("core.workbench"));
+            }
+        }
+    }
 }
 
 void MainWindow::build(RuntimeHost &host)
@@ -357,8 +354,10 @@ void MainWindow::build(RuntimeHost &host)
     m_binder->setActivityActivatedHandler([this](const ActivitySpec &spec) {
         // Activity 的侧栏切换由 ShellBinder 完成；这里只处理"要打开哪个中央面板"。
         // 第①步只做接口声明与字段改名；调用点迁移（→ openEditor/openView）随各 owner 步进行。
-        if (!spec.centralEditor.isEmpty() &&
-            m_context->requestPanel(nextpilot::plotscope::registry::Region::Editor, spec.centralEditor))
+        // A2c：centralEditor 走 openEditor——ResourceRef 由 owner 模块在
+        // ActivitySpec.centralRef 构造（如 plot://workspace），壳只透传不解析 uri；
+        // 同 ref 已开时 GuiContext 簿记置前复用。
+        if (!spec.centralEditor.isEmpty() && m_context->openEditor(spec.centralEditor, spec.centralRef))
         {
             // 请求成功即已置前；没有额外业务动作。
         }
@@ -433,6 +432,7 @@ void MainWindow::build(RuntimeHost &host)
     // A8b-M2 裁定 52442006 Step 3：灌回已搬装配层（activate 内经 IContributionsInstaller），
     // 灌回后由壳重建一次 ribbon 与 ActivityBar——原 GuiContext::installContributions 尾部的
     // rebuild 调用随之搬家，壳在装配完成点统一重建（幂等）。
+    declareViewToggleSlots(); // 视图页开关动作：按已声明视图动态注册（无业务字面量）
     m_binder->rebuildRibbon();
     m_binder->rebuildActivityBar();
 
@@ -441,7 +441,7 @@ void MainWindow::build(RuntimeHost &host)
     // views 声明（A2b 笔2b 第②步：gui 内置面板已迁 ViewRegistry）。binder 只收集，
     // 这里统一进 AppContext error 诊断 + stderr，同一问题不打两遍；不 abort。
     // 缺失列表由 test_gui 断言为空。
-    m_binder->setPanelReferenceContext(m_panelsService, m_spec.defaultPanels, m_viewsService);
+    m_binder->setPanelReferenceContext(m_panelsService, m_spec.defaultPanels, m_viewsService, m_editorService);
     m_panelReferenceIssues = m_binder->missingPanelTypes();
     for (const QString &entry : m_panelReferenceIssues)
     {
@@ -454,18 +454,16 @@ void MainWindow::build(RuntimeHost &host)
     refreshThemeTokens();
 
     // 3.0) 默认面板布局：清单来自产品 spec（完整产品 / 裸壳各一份）。
-    // A2b 笔2b 第②步返工（复审必修 3）：分流**前**先查声明——已迁 views 声明
-    // （owner 非空）才走 openView（落区由 viewsContainers[].area 决定）；未迁移
-    // 的 id（property-panel 留笔 4，data/script/toolbox 归③④⑤⑥）直接走旧工厂
-    // requestPanel，不先撞 openView 的"未声明"假警报（真缺失不被埋掉）。各
-    // owner 步迁移后 openView 分支自然扩容，回退分支⑦步删。
+    // A2c 收工：12 个业务面板注册点全部迁 views 声明（owner data/plot/script/
+    // automotive），壳内置 5 点早已迁（A2b 第②步）——defaultPanels 全走 openView，
+    // 落区由 viewsContainers[].area 决定，旧工厂 requestPanel 回退分支随之删除
+    // （壳侧调用点 0；requestPanel 接口本体与 PanelFactoryHub 类型留 A2d 删）。
+    // placement.region 字段保留至 A2d（类型本体不删）。
     for (const auto &placement : m_spec.defaultPanels)
     {
         if (placement.viewId.isEmpty())
             continue;
-        const bool declared = m_viewsService && !m_viewsService->viewForId(placement.viewId).owner.isEmpty();
-        QWidget *panel = declared ? m_context->openView(placement.viewId)
-                                  : m_context->requestPanel(placement.region, placement.viewId);
+        QWidget *panel = m_context->openView(placement.viewId);
         if (panel && placement.raiseAfter)
             m_binder->raisePanel(panel);
     }
@@ -631,34 +629,19 @@ void MainWindow::build(RuntimeHost &host)
                 handled = res.value().toMap().value(QStringLiteral("handled")).toBool();
             if (!handled)
             {
-                // 仪表/地图/3D：切中央视图到专用仪表视图（一路 gallery → 两种画布）。
-                // kind 映射到 InstrumentView 已有的能力；未接入的明确提示，不假装可用。
-                static const QHash<QString, QString> kInstrumentKind = {
-                    {QStringLiteral("gauge"), QStringLiteral("gauge")},
-                    {QStringLiteral("compass"), QStringLiteral("compass")},
-                    {QStringLiteral("horizon"), QStringLiteral("attitude")},
-                    {QStringLiteral("traj3d"), QStringLiteral("traj3d")},
-                    {QStringLiteral("map"), QStringLiteral("track")},
-                    // 柱状/直方/频谱：fastplot 专用 Instrument widget，与仪表同视图。
-                    {QStringLiteral("bar"), QStringLiteral("bar")},
-                    {QStringLiteral("histogram"), QStringLiteral("histogram")},
-                    {QStringLiteral("fft"), QStringLiteral("fft")},
-                };
-                const QString instrKind = kInstrumentKind.value(kind);
-                if (!instrKind.isEmpty() && m_context)
+                // 仪表/地图/3D：切到专用仪表视图（plot.instrument editor）。
+                // A2c 归位：gallery kind → 仪表 kind 的映射是 plot 业务，随 editor
+                // 化挪进 plot 模块（plot.instrument.open 处理器，PlotModule::onAttach）；
+                // 壳只派发动作 id + 原始 kind，不认识映射表，不构造 ref。
+                QVariantMap ip;
+                ip.insert(QStringLiteral("kind"), kind);
+                QVariant ivr;
+                Result<QVariant> ires(ivr);
+                if (m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.instrument.open"), ip, ires) &&
+                    ires && ires.value().toBool())
                 {
-                    QWidget *w = m_context->requestPanel(nextpilot::plotscope::registry::Region::Editor,
-                                                         QStringLiteral("plot.instrument"));
-                    if (w)
-                    {
-                        QVariantMap ip;
-                        ip.insert(QStringLiteral("kind"), instrKind);
-                        QVariant ivr;
-                        Result<QVariant> ires(ivr);
-                        m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.instrument.setKind"), ip, ires);
-                        statusBar()->showMessage(QStringLiteral("图型: %1").arg(kind));
-                        return;
-                    }
+                    statusBar()->showMessage(QStringLiteral("图型: %1").arg(kind));
+                    return;
                 }
                 statusBar()->showMessage(QStringLiteral("图型「%1」待接入").arg(kind));
                 return;
@@ -728,9 +711,12 @@ void MainWindow::build(RuntimeHost &host)
                 const int gr = g.value(QStringLiteral("rows")).toInt();
                 const int gc = g.value(QStringLiteral("cols")).toInt();
                 if (gr > 0 && gc > 0)
-                    m_binder->updateActionStyle(QStringLiteral("figure.grid"),
-                                                PlotThumbnails::layout(gr, gc),
-                                                QStringLiteral("%1×%2").arg(gr).arg(gc));
+                    // A2c：缩略图按注册 id 查 IconRegistry（"plot/layout.RxC"，1..8
+                    // 全组合已由 PlotThumbnails::registerIcons 注册）。
+                    m_binder->updateActionStyle(
+                        QStringLiteral("figure.grid"),
+                        gui::IconRegistry::instance().icon(QStringLiteral("plot/layout.%1x%2").arg(gr).arg(gc)),
+                        QStringLiteral("%1×%2").arg(gr).arg(gc));
             }
             if (!viewResult)
                 statusBar()->showMessage(QStringLiteral("动作失败: %1").arg(viewResult.error().message));
@@ -1040,9 +1026,9 @@ void MainWindow::showEvent(QShowEvent *event)
             // 初始面板显式指定为「数据源」：左栏两个页签谁先装配不该决定默认显示
             // （实测新增扩展包换了链接顺序后，启动落在「脚本文件」）。
             // 延时 300ms：ADS 的 tab 插入与布局收尾都在首帧之后，0ms 抢不过它。
-            const bool ok = m_binder->focusPanelByTitle(nextpilot::plotscope::registry::Region::PrimarySidebar,
-                                                        QStringLiteral("数据源"));
-            std::fprintf(stderr, "[dock] initial panel focus(data)=%d\n", ok ? 1 : 0);
+            // A2c：调试 fprintf 残留已删——裸壳启动 3 秒无 stderr（A2c 判据）。
+            m_binder->focusPanelByTitle(nextpilot::plotscope::registry::Region::PrimarySidebar,
+                                        QStringLiteral("数据源"));
         });
     }
     // 首次显示后才恢复会话：此时各面板（含画布工作区）已创建，条目的 restore 才有落点。

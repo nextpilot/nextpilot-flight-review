@@ -32,6 +32,7 @@ class CDockWidget;
 namespace nextpilot::plotscope::workbench
 {
 class IPanelsService;
+class IEditorService;
 }
 
 namespace nextpilot::plotscope::gui
@@ -111,11 +112,14 @@ public:
     // 注入面板引用校验所需的另外两源：包面板声明（经 IPanelsService，裁定
     // 52441633 §三——壳不直连扩展注册表）与产品默认布局；viewsService 可空，
     // 非空时校验加第二命中面：views 声明命中（A2b 笔2b 第②步——gui 内置面板
-    // 已迁 ViewRegistry、不再在工厂表的 id 由此放行；旧工厂路径⑦步删）。
+    // 已迁 ViewRegistry、不再在工厂表的 id 由此放行；旧工厂路径⑦步删）；
+    // editorService 可空，非空时加第三命中面：customEditors 声明的 viewType
+    // （A2b 笔2b 第③步顺延必修——centralEditor 命中不再靠工厂表侥幸）。
     // 由外壳在模块 onAttach 完成后注入；未注入时退化为只查 Activity panelTypes。
     void setPanelReferenceContext(const workbench::IPanelsService *panels,
                                   const QList<registry::ProductPanelPlacement> &placements,
-                                  workbench::IViewsService *viewsService = nullptr);
+                                  workbench::IViewsService *viewsService = nullptr,
+                                  workbench::IEditorService *editorService = nullptr);
 
     // --- Activity Bar / Side Bar ---
     // 启动期校验（验收 4）：声明侧引用的面板类型必须在面板工厂表命中。
@@ -304,6 +308,8 @@ private:
     QList<nextpilot::plotscope::registry::ProductPanelPlacement> m_placements;
     // views 命中面（A2b 笔2b 第②步）：非空时校验器把 views 声明也当命中来源。
     nextpilot::plotscope::workbench::IViewsService *m_viewsRefService = nullptr;
+    // 第三命中面（第③步顺延必修）：customEditors 声明 viewType（借用指针，生命周期归装配层）。
+    nextpilot::plotscope::workbench::IEditorService *m_editorRefService = nullptr;
     std::function<bool(const QString &)> m_whenEval;
     std::function<QList<QAction *>(QWidget *, const QString &)> m_viewTitleProvider;
     QHash<QString, QList<QAction *>> m_viewTitleActions;

@@ -6,6 +6,8 @@
 #include "App.h"
 #include "MainWindow.h"
 #include "InstrumentView.h"
+#include "PlotViewFactories.h"
+#include "IEditorService.h"
 #include "PanelFactoryHub.h"
 
 #include "DatasetHub.h"
@@ -324,13 +326,36 @@ int main(int argc, char *argv[])
         OK("柱状/直方/频谱：意图取数 + 专用 widget 出图（真实算法非折线）");
     }
 
-    // --- 8) 面板工厂自注册：plot.instrument 可按 id 取到 ---
-    CHECK(PanelFactoryHub::types().contains(QStringLiteral("plot.instrument")));
-    QWidget *panel = PanelFactoryHub::create(
-        QStringLiteral("plot.instrument"), application.context(), application.host(), nullptr);
+    // --- 8) editor provider：plot.instrument editor 化（A2c），经 ResourceRef 打开 ---
+    // 工厂表自注册已删；装配 plot 的 views/editor 声明 + provider 后走 IEditorService。
+    CHECK(nextpilot::plotscope::plot::installPlotViewFactories(application.host().services(),
+                                                               &application.context(), &application.host()));
+    auto *plotEditorSvc =
+        application.host().services()
+            ? application.host().services()->getService<nextpilot::plotscope::workbench::IEditorService>(
+                  QStringLiteral("editor.readback"))
+            : nullptr;
+    CHECK(plotEditorSvc != nullptr);
+    nextpilot::plotscope::registry::ResourceRef inkRef;
+    inkRef.uri = QStringLiteral("plot://instrument/gauge");
+    inkRef.mime = QStringLiteral("application/x-plot-instrument");
+    inkRef.title = QStringLiteral("#gauge");
+    QWidget *panel = plotEditorSvc->openEditor(QStringLiteral("plot.instrument"), inkRef, application.context(),
+                                               application.host(), nullptr);
     auto *factoryView = qobject_cast<InstrumentView *>(panel);
     CHECK(factoryView != nullptr);
-    OK("面板自注册：plot.instrument 进工厂表");
+    // 复用语义（§7 判据）：同 ref 复用同一实例；不同 ref（kind 不同）各开一页签。
+    QWidget *panelAgain = plotEditorSvc->openEditor(QStringLiteral("plot.instrument"), inkRef, application.context(),
+                                                    application.host(), nullptr);
+    CHECK(panelAgain == panel);
+    nextpilot::plotscope::registry::ResourceRef inkRef2;
+    inkRef2.uri = QStringLiteral("plot://instrument/compass");
+    inkRef2.mime = QStringLiteral("application/x-plot-instrument");
+    inkRef2.title = QStringLiteral("#compass");
+    QWidget *panel2 = plotEditorSvc->openEditor(QStringLiteral("plot.instrument"), inkRef2, application.context(),
+                                                application.host(), nullptr);
+    CHECK(panel2 != nullptr && panel2 != panel);
+    OK("editor 化：plot.instrument 经 ResourceRef 打开，同 ref 复用 / 异 ref 各开");
 
     // --- 8b) gallery 切换数据绑定：setKind view action 自动从活动通道喂数据 ---
     // 这是"点仪表盘 gallery 项后不应留空表盘"的回归钉子。

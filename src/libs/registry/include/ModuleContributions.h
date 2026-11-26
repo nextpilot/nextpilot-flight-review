@@ -4,7 +4,7 @@
 // 反转为"声明式 contributes() 数据"。本文件定义这份数据的无损承载结构。
 //
 // 字段直接复用 registry 既有纯数据类型（UiAction/ActivitySpec/ThemeTokenSpec/StatusSpec），
-// 不丢 UiAction 的 data/visual/shortcut/large/checkable/galleryGroup/intentOp 等呈现字段
+// 不丢 UiAction 的 data/icon/shortcut/large/checkable/galleryGroup/intentOp 等呈现字段
 // （裁定 §1：checkable 只存布尔，勾选态归 CommandRegistry；这里 only 存声明布尔）。
 // 数据无指针、headless 可查；owner = 模块 id，isBuiltin = true（裁定 §4）。
 //
@@ -55,7 +55,7 @@ struct ModuleContributions
 
     QList<RibbonPageDecl> ribbonPages;
     QList<RibbonGroupDecl> ribbonGroups;
-    QList<UiAction> actions;                 // 原 addAction（无损，含 gallery/visual/data 等）
+    QList<UiAction> actions;                 // 原 addAction（无损，含 gallery/icon/data 等）
     QList<ActivitySpec> activities;          // 原 Activity 声明
     QList<ThemeTokenSpec> themeTokens;       // 原主题 token 声明
     QList<StatusSpec> statuses;              // 原状态栏声明

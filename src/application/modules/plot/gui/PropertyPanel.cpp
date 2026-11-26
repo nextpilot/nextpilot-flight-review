@@ -3,7 +3,6 @@
 #include "AppContext.h"
 #include "IIntentExecutor.h"
 #include "Intent.h"
-#include "PanelFactoryHub.h"
 #include "PropertySchema.h"
 #include "Result.h"
 
@@ -14,19 +13,19 @@
 #include <QTreeWidgetItem>
 #include <QVBoxLayout>
 
+// A2c：呈现层归位——本文件从 gui/views 迁入 modules/plot/gui（owner "plot"）。
+// 声明与 provider 注册收进 PlotViewFactories（同 TU 时序不变式：声明先于注册），
+// 不再走 PS_REGISTER_PANEL 自注册。using namespace dataset|parser 归零（A2c
+// 判据：gui 面不整段引入 dataset/parser 命名空间），用到的符号显式限定。
 using namespace nextpilot::plotscope::foundation;
-using namespace nextpilot::plotscope::dataset;
 using namespace nextpilot::plotscope::intent;
 using namespace nextpilot::plotscope::uischema;
 using namespace nextpilot::plotscope::registry;
-using namespace nextpilot::plotscope::parser;
 using namespace nextpilot::plotscope::context;
 
-namespace nextpilot::plotscope::gui
-{
+namespace nextpilot::plotscope::gui {
 
-namespace
-{
+namespace {
 constexpr int kRoleObjectId = Qt::UserRole + 1;
 constexpr int kRoleKey = Qt::UserRole + 2;
 constexpr int kRoleEditable = Qt::UserRole + 3;
@@ -61,9 +60,7 @@ PropertyPanel::PropertyPanel(AppContext &appCtx, IIntentExecutor &executor, QWid
     m_empty->setObjectName(QStringLiteral("textDim"));
     lay->addWidget(m_empty, 1);
 
-    connect(&m_appCtx, &AppContext::selectionChanged, this, [this](const QJsonObject &) {
-        refreshFromSelection();
-    });
+    connect(&m_appCtx, &AppContext::selectionChanged, this, [this](const QJsonObject &) { refreshFromSelection(); });
     connect(m_tree, &QTreeWidget::itemChanged, this, &PropertyPanel::onItemChanged);
 
     refreshFromSelection();
@@ -157,10 +154,7 @@ void PropertyPanel::rebuild(const QJsonObject &schemaJson)
     m_rebuilding = false;
 }
 
-QString PropertyPanel::selLabelFallback() const
-{
-    return m_appCtx.selection().label;
-}
+QString PropertyPanel::selLabelFallback() const { return m_appCtx.selection().label; }
 
 void PropertyPanel::onItemChanged(QTreeWidgetItem *item, int column)
 {
@@ -193,15 +187,9 @@ void PropertyPanel::commitEdit(const QString &objectId, const QString &key, cons
     }
 }
 
-QString PropertyPanel::schemaTitle() const
-{
-    return m_header->text();
-}
+QString PropertyPanel::schemaTitle() const { return m_header->text(); }
 
-int PropertyPanel::objectCount() const
-{
-    return m_tree->topLevelItemCount();
-}
+int PropertyPanel::objectCount() const { return m_tree->topLevelItemCount(); }
 
 int PropertyPanel::rowCount() const
 {
@@ -211,20 +199,13 @@ int PropertyPanel::rowCount() const
     return n;
 }
 
-QString PropertyPanel::selectionKindText() const
-{
-    return selectionKindName(m_appCtx.selection().kind);
-}
+QString PropertyPanel::selectionKindText() const { return selectionKindName(m_appCtx.selection().kind); }
 
 QWidget *createPropertyPanel(AppContext &appCtx, IIntentExecutor &exec, QWidget *parent)
 {
     return new PropertyPanel(appCtx, exec, parent);
 }
 
-// 视图层自注册：模块只声明类型字符串 "property-panel"，外壳据此装配本面板。
-// A2b 笔2b 第②步返工（复审必修 1）：plot.properties 不得由 core.workbench
-// 声明（v3 §78"业务视图一律由模块自己声明"），property-panel 留工厂表、
-// 笔 4 随 modules/plot/gui 归位时再迁（届时按表 A 改名 plot.properties）。
-PS_REGISTER_PANEL_TI("property-panel", propertyPanel, createPropertyPanel, "属性", "property")
-
+// 工厂函数保留：PlotViewFactories 装配时经 registerViewProvider 登记（声明在
+// 同 TU，owner "plot"）——模块只声明 view id "plot.properties"，壳不认识本类。
 } // namespace nextpilot::plotscope::gui

@@ -28,7 +28,11 @@
 #include "ReportExporter.h" // 装配层：测试不走 gui_main，须显式注册 report.export viewAction
 #include "BuiltinWorkbenchViews.h" // 装配层：测试不走 gui_main，须显式装配壳内置工作台视图
 #include "BuiltinViewProviders.h"  // gui 侧：壳内置工作台视图 provider 注册半（复审必修 2）
-#include "views/PropertyPanel.h"
+#include "DataViewFactories.h"     // data 模块视图装配（③）：datasetTree view + data.table editor
+#include "PlotViewFactories.h"     // plot 模块视图装配（A2c）：plot.properties view + instrument/workspace editor
+#include "ScriptViewFactories.h"   // script 模块视图装配（A2c）：files/console/debug view + editor/batchSummary editor
+#include "AutomotiveViewFactories.h" // automotive 领域视图装配（A2c）：canBrowser view
+#include "PropertyPanel.h"          // A2c：PropertyPanel 归位 modules/plot/gui（PUBLIC include 随库可达）
 #include "ThemeManager.h"
 #include "ToolboxHub.h"
 #include "Contribution.h"
@@ -177,8 +181,17 @@ int main(int argc, char *argv[])
     QString g_derivedName;
     // A2b 笔2b 第②步返工（复审必修 2）：先声明（assembly）、后注册 provider
     // （gui 侧）——两半都先于 build，build 内 defaultPanels 走 views 声明与 provider。
-    nextpilot::plotscope::assembly::declareBuiltinWorkbenchViews(application.host().services());
-    nextpilot::plotscope::gui::installBuiltinWorkbenchViewProviders(application.host().services());
+    // 第③步：data 两点装配 + 任一注册失败出诊断（必带，不许静默）。
+    CHECK(nextpilot::plotscope::assembly::declareBuiltinWorkbenchViews(application.host().services()));
+    CHECK(nextpilot::plotscope::gui::installBuiltinWorkbenchViewProviders(application.host().services()));
+    CHECK(nextpilot::plotscope::data::installDataViewFactories(application.host().services(), &application.context(),
+                                                               &application.host()));
+    CHECK(nextpilot::plotscope::plot::installPlotViewFactories(application.host().services(), &application.context(),
+                                                               &application.host()));
+    CHECK(nextpilot::plotscope::script::installScriptViewFactories(application.host().services(),
+                                                                   &application.context(), &application.host()));
+    CHECK(nextpilot::plotscope::ext::automotive::installAutomotiveViewFactories(
+        application.host().services(), &application.context(), &application.host()));
     window.build(application.host());
     // 测试不走 gui_main，须在此显式装配 report.export viewAction（业务在 report 模块呈现层）。
     nextpilot::plotscope::gui::installReportExport(application.context());
@@ -573,14 +586,15 @@ int main(int argc, char *argv[])
 
     // --- 2a-2) 图库是纯数据声明（headless 可读），plot 类型 / parse 类型都在 ---
     {
-        // 图型库：12 种图型，按"常用/曲线/地图3D/仪表"分组，缩略图 visual 声明齐全。
+        // 图型库：12 种图型，按"常用/曲线/地图3D/仪表"分组，缩略图 icon 声明齐全
+        // （A2c：visual 字段并入 icon，值域 plot/<kind>）。
         const auto plotActs = slotReg.actionsIn(QStringLiteral("ribbon.group.plot.type"));
         CHECK(plotActs.size() == 12);
         QSet<QString> groups;
         for (const auto &entry : plotActs)
         {
             CHECK(!entry.action.galleryGroup.isEmpty()); // 都是 gallery 项
-            CHECK(!entry.action.visual.isEmpty());       // 都有缩略图种类
+            CHECK(entry.action.icon.startsWith(QStringLiteral("plot/"))); // 缩略图 id 入 icon
             groups.insert(entry.action.galleryGroup);
         }
         CHECK(groups.contains(QStringLiteral("常用")));
@@ -733,16 +747,68 @@ int main(int argc, char *argv[])
         OK("点击链路端到端：三个 data 按钮都按 intentOp 找到 handler（不是把 id 当 op）");
     }
 
-    // --- 3) 视图层自注册生效：部件工厂表由 views/ 各 TU 自行登记 ---
+    // --- 3) 视图装配生效：A2c 收工——12 个业务面板注册点全部退场 ---
     //
-    // 这里守一条**架构级不变量**：视图自注册依赖 OBJECT 库。
-    // 若 ps_gui 被改成 STATIC 库，未被引用的 TU 会被链接器丢弃、
-    // 静态初始化不执行，工厂表会**静默变空**——功能消失且无任何报错。
-    // 所以这里显式断言两个视图都已登记。
-    CHECK(!nextpilot::plotscope::registry::PanelFactoryHub::types().isEmpty());
-    CHECK(nextpilot::plotscope::registry::PanelFactoryHub::types().contains(QStringLiteral("dataset-tree")));
-    CHECK(nextpilot::plotscope::registry::PanelFactoryHub::types().contains(QStringLiteral("plot.axes")));
-    OK("视图层自注册生效：dataset-tree / plot-canvas 均已登记（OBJECT 库保证 TU 不被丢弃）");
+    // 原架构级不变量：视图自注册依赖 OBJECT 库（工厂表非空）。A2c 收工后
+    // PS_REGISTER_PANEL 全部退场，工厂表**预期为空**（类型本体留 A2d 删）；
+    // OBJECT 库不变量的守卫随之升级：views/editor provider 装配 TU（同为
+    // OBJECT 库）必须已生效——判据改为"12 个业务 id 全走 views/editor 声明
+    // 且 owner 归模块"，工厂表残留 id 全空。
+    for (const char *dead : {"dataset-tree", "plot.axes", "property-panel", "plot.instrument",
+                             "plot.workspace", "script-files", "script-editor", "script-console",
+                             "script-debug", "batch-summary", "car.can-browser", "data.table"})
+        CHECK(!nextpilot::plotscope::registry::PanelFactoryHub::types().contains(QLatin1String(dead)));
+    // A2c 判据：plot.properties 归位 owner plot。
+    auto *plotViewsSvc =
+        application.host().services()
+            ? application.host().services()->getService<nextpilot::plotscope::workbench::IViewsService>(
+                  QStringLiteral("views.readback"))
+            : nullptr;
+    CHECK(plotViewsSvc && plotViewsSvc->viewForId(QStringLiteral("plot.properties")).owner == QStringLiteral("plot"));
+
+    // A2c 补充（owner 断言覆盖面）：其余 view / editor 声明的归属也一并锁住，防后续改名
+    // 或迁移时 owner 静默丢失（判据见 IKY9P7 表 A 各行的「归属」列）。
+    {
+        struct OwnedView
+        {
+            const char *id;
+            const char *owner;
+        };
+        static const OwnedView kOwnedViews[] = {
+            {"script.files", "script"}, {"script.console", "script"}, {"script.debug", "script"}};
+        for (const OwnedView &ov : kOwnedViews)
+            CHECK(plotViewsSvc &&
+                  plotViewsSvc->viewForId(QString::fromLatin1(ov.id)).owner == QString::fromLatin1(ov.owner));
+
+        auto *editorsSvc =
+            application.host().services()
+                ? application.host().services()->getService<nextpilot::plotscope::workbench::IEditorService>(
+                      QStringLiteral("editor.readback"))
+                : nullptr;
+        CHECK(editorsSvc != nullptr);
+        if (editorsSvc)
+        {
+            struct OwnedEditor
+            {
+                const char *viewType;
+                const char *owner;
+            };
+            static const OwnedEditor kOwnedEditors[] = {{"data.table", "data"},
+                                                        {"plot.instrument", "plot"},
+                                                        {"plot.workspace", "plot"},
+                                                        {"script.editor", "script"},
+                                                        {"script.batchSummary", "script"}};
+            for (const OwnedEditor &oe : kOwnedEditors)
+            {
+                QString owner;
+                for (const auto &decl : editorsSvc->customEditors())
+                    if (decl.viewType == QString::fromLatin1(oe.viewType))
+                        owner = decl.owner;
+                CHECK(owner == QString::fromLatin1(oe.owner));
+            }
+        }
+    }
+    OK("视图装配生效：dataset-tree / plot 4 点全走 views 声明（owner data / plot），工厂表不再有业务面板");
 
     // --- 3b) 领域面板：形态随领域变时的解法 ---
     //
@@ -760,8 +826,17 @@ int main(int argc, char *argv[])
         const auto &toolbox = application.context().toolbox();
         CHECK(toolbox.panels.count() >= 1); // 汽车包的 CAN 报文面板
 
-        // 2) 实现：领域面板与通用面板共用同一张工厂表。
-        CHECK(nextpilot::plotscope::registry::PanelFactoryHub::types().contains(QStringLiteral("car.can-browser")));
+        // 2) 实现（A2c）：领域面板与通用面板同走 views 声明 + provider——
+        // automotive.canBrowser 不再在工厂表，owner "automotive"。
+        CHECK(!nextpilot::plotscope::registry::PanelFactoryHub::types().contains(
+            QStringLiteral("car.can-browser")));
+        auto *autoViewsSvc =
+            application.host().services()
+                ? application.host().services()->getService<nextpilot::plotscope::workbench::IViewsService>(
+                      QStringLiteral("views.readback"))
+                : nullptr;
+        CHECK(autoViewsSvc &&
+              autoViewsSvc->viewForId(QStringLiteral("automotive.canBrowser")).owner == QStringLiteral("automotive"));
 
         // 3) 领域过滤：汽车领域的清单里有它，通用领域不该混入。
         int automotive = 0;
@@ -769,53 +844,40 @@ int main(int argc, char *argv[])
             if (spec.domain == nextpilot::plotscope::registry::Domain::Automotive)
                 ++automotive;
         CHECK(automotive >= 1);
-        OK("领域面板：扩展包声明描述（headless 可见）+ 呈现层注册实现，共用同一张工厂表");
+        OK("领域面板：扩展包声明描述（headless 可见）+ 呈现层 views/provider 装配，壳经 IViewsService 消费");
     }
 
-    // --- 3c) 模块侧视角：模块不认识面板实现，也能查询清单并请求到面板 ---
+    // --- 3c) 模块侧视角：模块不认识面板实现，也能查询清单并打开视图 ---
     //
     // 这才是用户问题的落点：modules 需要某个 panel，但 panel 的形态随业务变、
     // gui/views 并不知道。模块只认**领域**，先问 availableDomainPanels(domain)，
-    // 再按 id 请求；面板从哪来、长什么样，全由扩展包决定。
+    // 再按 id 走 openView；面板从哪来、长什么样，全由扩展包决定。
     {
         auto *ui = window.context(); // 模块 onAttach 拿到的就是这个 IUiContext
         CHECK(ui != nullptr);
 
-        // 模块按领域查清单（不写死 id）。
-        const auto specs = ui->availableDomainPanels(Domain::Automotive);
-        const PanelSpec *canSpec = nullptr;
-        for (const PanelSpec &s : specs)
-            if (s.id == QStringLiteral("car.can-browser"))
-                canSpec = &s;
-        CHECK(canSpec != nullptr);
-        CHECK(canSpec->label == QStringLiteral("CAN 报文"));
-        CHECK(canSpec->area == Region::SecondarySidebar);
-
-        // 模块按清单里的 id 请求面板——它不知道这是领域面板还是通用面板，
-        // 两者走同一个 requestPanel 入口。
-        QWidget *canPanel = ui->requestPanel(canSpec->area, canSpec->id);
+        // A2c：availableDomainPanels 调用点归零（定义留 A2d）——领域面板描述改走
+        // views 声明（owner "automotive"），模块/壳都经 IViewsService 消费。
+        QWidget *canPanel = ui->openView(QStringLiteral("automotive.canBrowser"));
         CHECK(canPanel != nullptr);
-        // 属性面板留工厂表（返工必修 1：plot.properties 不得由 core.workbench
-        // 声明，笔 4 随 modules/plot/gui 归位再迁），落区仍 SecondarySidebar。
-        CHECK(binder->panelTitles(Region::SecondarySidebar).contains(QStringLiteral("属性")));
-        OK("模块侧闭环：按领域查清单 -> 按 id 请求面板成功；属性面板（工厂表）仍落右栏");
+        CHECK(binder->panelTitles(Region::SecondarySidebar).contains(QStringLiteral("CAN 报文")));
+        // A2c：属性面板已归位 plot.properties（owner plot，views 声明 area=sidebar），
+        // 落区以声明为准 → PrimarySidebar。
+        CHECK(binder->panelTitles(Region::PrimarySidebar).contains(QStringLiteral("属性")));
+        OK("模块侧闭环：按领域查清单 -> 按 id openView 打开成功；属性面板归位左栏（落区以声明为准）");
     }
 
-    // --- 3d) 属性面板：工厂表路径（返工必修 1：留笔 4 再迁）+ 统一 selection 联动 ---
+    // --- 3d) 属性面板：views 声明路径（A2c 归位）+ 统一 selection 联动 ---
     {
-        // 返工（必修 1）：plot.properties 不得由 core.workbench 声明——属性面板
-        // 回退 PS_REGISTER_PANEL（工厂表命中），落区仍 SecondarySidebar。
-        CHECK(binder->panelWidget(Region::SecondarySidebar) != nullptr);
-        // dock.right 可能并列多个页签（属性 + 脚本调试等，模块激活顺序不定），
-        // 按类型查找属性面板，不依赖注册先后。
+        // A2c：plot.properties 走 views 声明 + provider（owner plot），工厂表断言已删；
+        // 落区 sidebar（PrimarySidebar）——与数据源树同栏，dock 页签可关。
+        CHECK(binder->panelWidget(Region::PrimarySidebar) != nullptr);
         PropertyPanel *propPanel = nullptr;
-        for (QWidget *w : binder->panelWidgets(Region::SecondarySidebar))
+        for (QWidget *w : binder->panelWidgets(Region::PrimarySidebar))
         {
             if (!propPanel)
                 propPanel = qobject_cast<PropertyPanel *>(w);
         }
-        CHECK(nextpilot::plotscope::registry::PanelFactoryHub::types().contains(
-            QStringLiteral("property-panel"))); // 工厂表命中恢复
 
         // 统一 selection 联动：选中画布 -> 属性面板按 kind 找 provider 显示 schema。
         CHECK(propPanel != nullptr);
@@ -833,11 +895,13 @@ int main(int argc, char *argv[])
         // （pageKey）必须就是 dock 定位表里的键。曾因 pageKey 漂移（动作注册
         // plot.properties / dock 实际 property-panel）把开关弄成"点了弹尚未创建"，
         // CI 全绿但功能是哑的。这里真点动作验证显隐翻转（两端对齐 CI 才能抓漂移）。
-        const bool propVisibleBefore = binder->isDockPageVisible(QStringLiteral("property-panel"));
-        CHECK(binder->triggerAction(QStringLiteral("view.toggleDock.property-panel")));
-        CHECK(binder->isDockPageVisible(QStringLiteral("property-panel")) == !propVisibleBefore);
-        CHECK(binder->triggerAction(QStringLiteral("view.toggleDock.property-panel")));
-        CHECK(binder->isDockPageVisible(QStringLiteral("property-panel")) == propVisibleBefore);
+        // A2c：属性页签 toggle 契约延续——pageKey = plot.properties（viewId 即
+        // dock 定位键）。真点动作验证显隐翻转（哑开关复发此处必红）。
+        const bool propVisibleBefore = binder->isDockPageVisible(QStringLiteral("plot.properties"));
+        CHECK(binder->triggerAction(QStringLiteral("view.toggleDock.plot.properties")));
+        CHECK(binder->isDockPageVisible(QStringLiteral("plot.properties")) == !propVisibleBefore);
+        CHECK(binder->triggerAction(QStringLiteral("view.toggleDock.plot.properties")));
+        CHECK(binder->isDockPageVisible(QStringLiteral("plot.properties")) == propVisibleBefore);
         OK("属性页签 toggle：动作 id 与 dock pageKey 对齐，点击翻转显隐（不报尚未创建）");
     }
 
@@ -1086,24 +1150,26 @@ int main(int argc, char *argv[])
         CHECK(activityIds.contains(QStringLiteral("diagnostics")));
         CHECK(activityIds.contains(QStringLiteral("plot"))); // 绘图域 Activity（c4b 起归 PlotModule 声明）
 
-        // 返工必修 1：属性面板留工厂表落右栏，左栏 section 仍为 2（dataset-tree
-        // + script-files）；plot.properties 声明笔 4 随 plot 模块迁入后再加。
-        CHECK(binder->sideBarSectionCount() == 2);
-        CHECK(binder->sideBarSectionActivity(QStringLiteral("dataset-tree")) == QStringLiteral("data"));
-        CHECK(binder->sideBarSectionActivity(QStringLiteral("script-files")) == QStringLiteral("script"));
+        // A2c：plot.properties 归位进左栏（views 声明 area=sidebar，owner plot），
+        // 左栏 section = 3（dataset-tree + script.files + plot.properties）。
+        CHECK(binder->sideBarSectionCount() == 3);
+        CHECK(binder->sideBarSectionActivity(QStringLiteral("data.datasetTree")) == QStringLiteral("data"));
+        CHECK(binder->sideBarSectionActivity(QStringLiteral("script.files")) == QStringLiteral("script"));
+        CHECK(binder->sideBarSectionActivity(QStringLiteral("plot.properties")) == QStringLiteral("plot"));
 
         // Activity Bar 不再把左栏做成互斥页签：多个面板同属一个 section 栈。
         const QStringList leftTitles = binder->panelTitles(Region::PrimarySidebar);
         CHECK(leftTitles.contains(QStringLiteral("数据源")));
         CHECK(leftTitles.contains(QStringLiteral("脚本文件")));
-        CHECK(binder->panelWidgets(Region::PrimarySidebar).size() == 2);
+        CHECK(leftTitles.contains(QStringLiteral("属性")));
+        CHECK(binder->panelWidgets(Region::PrimarySidebar).size() == 3); // A2c：+plot.properties
 
         // 视图可挂到 Activity Bar：映射改到目标 Activity，视图仍在左槽。
-        CHECK(binder->pinViewToActivity(QStringLiteral("dataset-tree"), QStringLiteral("analysis")));
-        CHECK(binder->sideBarSectionActivity(QStringLiteral("dataset-tree")) == QStringLiteral("analysis"));
+        CHECK(binder->pinViewToActivity(QStringLiteral("data.datasetTree"), QStringLiteral("analysis")));
+        CHECK(binder->sideBarSectionActivity(QStringLiteral("data.datasetTree")) == QStringLiteral("analysis"));
         CHECK(binder->panelTitles(Region::PrimarySidebar).contains(QStringLiteral("数据源")));
-        CHECK(binder->pinViewToActivity(QStringLiteral("dataset-tree"), QStringLiteral("data")));
-        CHECK(binder->sideBarSectionActivity(QStringLiteral("dataset-tree")) == QStringLiteral("data"));
+        CHECK(binder->pinViewToActivity(QStringLiteral("data.datasetTree"), QStringLiteral("data")));
+        CHECK(binder->sideBarSectionActivity(QStringLiteral("data.datasetTree")) == QStringLiteral("data"));
 
         // 点击 Script：左栏切到脚本 section，Ribbon 同步脚本页，中央聚焦编辑器。
         auto *scriptButton = binder->activityBarWidget()->findChild<QToolButton *>(
@@ -1112,14 +1178,14 @@ int main(int argc, char *argv[])
         scriptButton->click();
         CHECK(binder->activeActivity() == QStringLiteral("script"));
         CHECK(binder->currentRibbonPageArea() == QStringLiteral("ribbon.page.script"));
-        CHECK(binder->isDockPageVisible(QStringLiteral("script-files")));
-        CHECK(!binder->isDockPageVisible(QStringLiteral("dataset-tree")));
+        CHECK(binder->isDockPageVisible(QStringLiteral("script.files")));
+        CHECK(!binder->isDockPageVisible(QStringLiteral("data.datasetTree")));
         CHECK(binder->centralWidgets().size() >= 2); // 画布 + 脚本编辑器
 
         // section 折叠与整栏显隐：Ctrl+B 只切左栏，不动 Activity Bar。
-        CHECK(binder->setSideBarSectionExpanded(QStringLiteral("script-files"), false));
-        CHECK(!binder->isSideBarSectionExpanded(QStringLiteral("script-files")));
-        CHECK(binder->setSideBarSectionExpanded(QStringLiteral("script-files"), true));
+        CHECK(binder->setSideBarSectionExpanded(QStringLiteral("script.files"), false));
+        CHECK(!binder->isSideBarSectionExpanded(QStringLiteral("script.files")));
+        CHECK(binder->setSideBarSectionExpanded(QStringLiteral("script.files"), true));
 
         const bool wasSideBarVisible = binder->sideBarVisible();
         binder->toggleSideBar();
@@ -1147,10 +1213,10 @@ int main(int argc, char *argv[])
         binder->setActivityOrder(activityIds);
 
         // 左栏 section 也能按 pageKey 显隐，且不产生独立浮动 dock。
-        CHECK(binder->setDockPageVisible(QStringLiteral("script-files"), false));
-        CHECK(!binder->isDockPageVisible(QStringLiteral("script-files")));
-        CHECK(binder->setDockPageVisible(QStringLiteral("script-files"), true));
-        CHECK(binder->isDockPageVisible(QStringLiteral("script-files")));
+        CHECK(binder->setDockPageVisible(QStringLiteral("script.files"), false));
+        CHECK(!binder->isDockPageVisible(QStringLiteral("script.files")));
+        CHECK(binder->setDockPageVisible(QStringLiteral("script.files"), true));
+        CHECK(binder->isDockPageVisible(QStringLiteral("script.files")));
         OK("Activity Bar：四入口 + 点击切 section/Ribbon + 折叠 + Ctrl+B + badge + 顺序配置");
     }
 
@@ -1311,11 +1377,31 @@ int main(int argc, char *argv[])
         CHECK(tablePanel != nullptr);
         CHECK(tablePanel->shownDatasetId() == loadedDsId);
         CHECK(tablePanel->shownTable() == firstTable);
-        // 再开一次：面板复用（不重复创建页签）。
+        // 再开一次：同一 ref 复用同页签（provider 缓存，不重复创建）。
         CHECK(application.context().interactions().dispatchViewAction(
             QStringLiteral("data.table.open"), p, out));
         CHECK(binder->centralWidgets().size() == before + 1);
-        OK("数据表格查看器：按需创建中央页签、绑定数据同步、复用不重复");
+
+        // A2b 笔2b 第③步判据：
+        //  a) 声明命中：data.datasetTree owner == "data"（模块自声明，壳不代声明）；
+        //  b) 不同 ref 各开一页签（复用语义归 provider：uri 相等才复用）。
+        auto *viewsSvc =
+            application.host().services()
+                ? application.host().services()->getService<nextpilot::plotscope::workbench::IViewsService>(
+                      QStringLiteral("views.readback"))
+                : nullptr;
+        CHECK(viewsSvc != nullptr);
+        CHECK(viewsSvc->viewForId(QStringLiteral("data.datasetTree")).owner == QStringLiteral("data"));
+
+        QVariantMap p2{p};
+        p2[QStringLiteral("table")] = loadedDs->tableNames().size() > 1
+                                          ? loadedDs->tableNames().at(1)
+                                          : loadedDs->tableNames().first() + QStringLiteral("~");
+        CHECK(application.context().interactions().dispatchViewAction(QStringLiteral("data.table.open"), p2, out));
+        CHECK(binder->centralWidgets().size() == before + 2); // 不同 ref：新页签
+        CHECK(application.context().interactions().dispatchViewAction(QStringLiteral("data.table.open"), p, out));
+        CHECK(binder->centralWidgets().size() == before + 2); // 同一 ref：仍复用
+        OK("数据表格查看器：openEditor 化（ref 由模块构造），同 ref 复用/异 ref 新开/声明 owner data");
     }
 
     // --- 5c-c) 报告导出（2.3.2/2.3.3）：view action 同路径 → QPdfWriter 管线 ---
@@ -3608,8 +3694,7 @@ int main(int argc, char *argv[])
         //     否则 findChild 会间歇性落空（同一二进制偶发失败）。
         for (int i = 0; i < 3; ++i)
             QCoreApplication::processEvents();
-        auto *panel = qobject_cast<DataManagerPanel *>(
-            window.findChild<QWidget *>(QStringLiteral("dataset-tree")));
+        auto *panel = qobject_cast<DataManagerPanel *>(window.findChild<QWidget *>(QStringLiteral("data.datasetTree")));
         if (!panel)
             for (QWidget *w : window.findChildren<QWidget *>())
                 if (auto *dp = qobject_cast<DataManagerPanel *>(w)) { panel = dp; break; }
@@ -3701,9 +3786,11 @@ int main(int argc, char *argv[])
             if (m.value(QStringLiteral("kind")).toString() == QStringLiteral("panel-factory"))
                 // Step 6：精确数（快照 2026-11-26；新增面板在此显式加行）。
                 // A2b 笔2b 第②步返工（必修 1）：输出/问题/调试控制台/诊断 4 点已迁
-                // ViewRegistry provider（owner core.workbench）；属性面板留工厂表
-                // （笔 4 迁），工厂表 16 → 12。
-                CHECK(m.value(QStringLiteral("count")).toInt() == 12);
+                // （owner core.workbench）；第③步：data 2 点迁 views/editor provider
+                // （owner data）；A2c：plot 4 点（owner plot）、script 5 点（owner
+                // script）、automotive 1 点（owner automotive）全数退场——
+                // 工厂表 16 → 0（节点恒在，count 实时读表；类型本体留 A2d 删）。
+                CHECK(m.value(QStringLiteral("count")).toInt() == 0);
         }
 
         // 打开诊断面板（首次按需创建），面板行数 == 树上节点数
@@ -3749,7 +3836,7 @@ int main(int argc, char *argv[])
         Pack pack;
         pack.id = QStringLiteral("pack.c3b-item");
         ItemContextSpec spec;
-        spec.viewId = QStringLiteral("dataset-tree");
+        spec.viewId = QStringLiteral("data.datasetTree");
         spec.commandId = QStringLiteral("figure.addAxes");
         spec.when = QStringLiteral("item.kind == 'column' && !item.multiSelect");
         spec.domain = QStringLiteral("data");
@@ -3757,7 +3844,7 @@ int main(int argc, char *argv[])
         pack.itemContexts << spec;
         auto &toolbox = application.context().toolbox();
         CHECK(toolbox.mount(std::move(pack)));
-        CHECK(toolbox.itemContextsFor(QStringLiteral("dataset-tree")).size() == 1);
+        CHECK(toolbox.itemContextsFor(QStringLiteral("data.datasetTree")).size() == 1);
         // item.* 只对本次求值可见：值一变表达式立刻失效，没有写进全局上下文
         QHash<QString, QVariant> itemCtx;
         itemCtx.insert(QStringLiteral("item.kind"), QStringLiteral("column"));
@@ -3768,7 +3855,7 @@ int main(int argc, char *argv[])
         // 命令接缝有拒绝语义：未注册的命令明确失败，而不是静默无反应
         CHECK(!application.context().invokeCommand(QStringLiteral("no.such.command")));
         CHECK(toolbox.unmount(QStringLiteral("pack.c3b-item")));
-        CHECK(toolbox.itemContextsFor(QStringLiteral("dataset-tree")).isEmpty());
+        CHECK(toolbox.itemContextsFor(QStringLiteral("data.datasetTree")).isEmpty());
         OK("条目右键声明：item.* 按 View 作用域求值，命令接缝未接通时明确拒绝");
     }
 
@@ -4024,9 +4111,9 @@ int main(int argc, char *argv[])
 
         // 每个视图各自是 dock 页签，标题就是视图名；不再有“侧栏”这种容器标题，
         // 也不会出现“数据”套“数据源”的重复层级。
-        CHECK(binder->dockPageTitle(QStringLiteral("dataset-tree")) == QStringLiteral("数据源"));
-        CHECK(binder->dockPageTitle(QStringLiteral("script-files")) == QStringLiteral("脚本文件"));
-        CHECK(binder->dockPageTitle(QStringLiteral("dataset-tree")) != QStringLiteral("侧栏"));
+        CHECK(binder->dockPageTitle(QStringLiteral("data.datasetTree")) == QStringLiteral("数据源"));
+        CHECK(binder->dockPageTitle(QStringLiteral("script.files")) == QStringLiteral("脚本文件"));
+        CHECK(binder->dockPageTitle(QStringLiteral("data.datasetTree")) != QStringLiteral("侧栏"));
         // 聚焦：每个面板都能定位到自己的 dock 页签（focusPanel 返回 true），
         // 且聚焦后 active 落在该面板所在页签上。
         const QList<QWidget *> leftPanels = binder->panelWidgets(Region::PrimarySidebar);

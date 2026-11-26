@@ -12,6 +12,12 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
 # OBJECT 库：保证 PS_REGISTER_PANEL 的自注册 TU 一定参与链接
 # （静态库中未被引用的目标文件会被链接器丢弃，自注册会静默失效）。
 add_library(ps_module_plot_gui OBJECT
+    PlotViewFactories.cpp
+    PlotViewFactories.h
+    PropertyPanel.cpp
+    PropertyPanel.h
+    PlotThumbnails.cpp
+    PlotThumbnails.h
     AxesView.cpp
     AxesView.h
     ChannelView.cpp
@@ -69,6 +75,7 @@ target_include_directories(ps_module_plot_gui PUBLIC
 # fastplot 是绘图库；ads 是停靠系统。不链 ps_gui / ps_shell（模块呈现层禁反向依赖外壳）。
 target_link_libraries(ps_module_plot_gui PUBLIC
     ps_context
+    ps_instantiation
     fastplot
     ads::ads
     ps_gui_theme

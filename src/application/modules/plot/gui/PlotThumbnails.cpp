@@ -1,4 +1,5 @@
 #include "PlotThumbnails.h"
+#include "IconRegistry.h"
 #include "ThemeManager.h"
 
 #include <QPainter>
@@ -7,15 +8,13 @@
 
 #include <cmath>
 
+namespace nextpilot::plotscope::gui {
+
 using namespace nextpilot::plotscope::gui;
 
-namespace
-{
+namespace {
 // 抄自老 PlottingRibbon::plotThumb：颜色经主题适配，深浅主题都可读。
-QColor ink(const QColor &c)
-{
-    return ThemeManager::adaptColor(c, ThemeManager::activeTheme());
-}
+QColor ink(const QColor &c) { return ThemeManager::adaptColor(c, ThemeManager::activeTheme()); }
 QColor panelBg()
 {
     // token 用 "panel"（ThemeManager 对未知 token 返回洋红 #FF00FF，误用即缩略图发紫）。
@@ -110,7 +109,10 @@ QIcon PlotThumbnails::plot(const QString &kind)
         {
             const double x = r.left() + r.width() * i / 40.0;
             const double y = r.center().y() - std::sin(i * 0.28) * 8.0;
-            if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
+            if (i == 0)
+                path.moveTo(x, y);
+            else
+                path.lineTo(x, y);
         }
         p.setPen(QPen(ink(QColor("#4ea1ff")), 1.6));
         p.drawPath(path);
@@ -182,7 +184,10 @@ QIcon PlotThumbnails::plot(const QString &kind)
             const double x = r.left() + r.width() * i / 32.0;
             const double env = std::exp(-i * 0.12);
             const double y = r.bottom() - 2 - std::fabs(std::sin(i * 0.55)) * 18.0 * env;
-            if (i == 0) path.moveTo(x, y); else path.lineTo(x, y);
+            if (i == 0)
+                path.moveTo(x, y);
+            else
+                path.lineTo(x, y);
         }
         p.setPen(QPen(ink(QColor("#39c5cf")), 1.4));
         p.drawPath(path);
@@ -249,3 +254,39 @@ QIcon PlotThumbnails::plot(const QString &kind)
     }
     return QIcon(pm);
 }
+
+void PlotThumbnails::registerIcons()
+{
+    // A2c：呈现侧三件之一——把全量缩略图按 "plot/<kind>" 注册进 IconRegistry。
+    // 幂等：IconRegistry 先到者为准，装配重入安全。
+    auto &reg = nextpilot::plotscope::gui::IconRegistry::instance();
+    static const char *kPlotKinds[] = {
+        "timeseries",
+        "xy",
+        "scatter",
+        "bar",
+        "histogram",
+        "fft",
+        "traj3d",
+        "map",
+        "surface3d",
+        "horizon",
+        "compass",
+        "gauge",
+        // 文件格式 / 实时源（文件卡：data 模块的 data.source.<id> 缩略图同表）。
+        "csv",
+        "ulog",
+        "custom-protocol",
+        "mavlink",
+        "nmea",
+        "stream",
+    };
+    for (const char *k : kPlotKinds)
+        reg.registerIcon(QStringLiteral("plot/") + QLatin1String(k), plot(QLatin1String(k)));
+    // 布局全组合 1..8×1..8（GridPickPopup 上限一致）："plot/layout.2x3" 等。
+    for (int r = 1; r <= 8; ++r)
+        for (int c = 1; c <= 8; ++c)
+            reg.registerIcon(QStringLiteral("plot/layout.%1x%2").arg(r).arg(c), layout(r, c));
+}
+
+} // namespace nextpilot::plotscope::gui

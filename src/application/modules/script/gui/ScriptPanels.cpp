@@ -3,7 +3,6 @@
 #include "AppContext.h"
 #include "IIntentExecutor.h"
 #include "InteractionHub.h"
-#include "PanelFactoryHub.h"
 #include "ThemeManager.h"
 #include "Result.h"
 #include "ErrorCodes.h"
@@ -1512,11 +1511,9 @@ void ScriptDebugPanel::onInsertApi(QListWidgetItem *item)
 }
 
 // ============================================================================
-// 工厂 + 自注册（视图层 TU 末尾一行，外壳零改动）
+// 工厂（A2c 归位）：具名函数（外链），ScriptViewFactories 经 registerViewProvider /
+// registerEditorProvider 登记——自注册已退场。
 // ============================================================================
-namespace
-{
-using PanelFactory = std::function<QWidget *(AppContext &, IIntentExecutor &, QWidget *)>;
 
 QWidget *createScriptFilesPanel(AppContext &app, IIntentExecutor &ex, QWidget *parent)
 {
@@ -1534,18 +1531,9 @@ QWidget *createScriptDebugPanel(AppContext &app, IIntentExecutor &ex, QWidget *p
 {
     return new ScriptDebugPanel(app, ex, parent);
 }
-} // namespace
 
 } // namespace nextpilot::plotscope::script
 
-// 自注册四个停靠面板（标题作停靠/中央页签的显示文本，图标按内容区分）
-PS_REGISTER_PANEL_TI("script-files", scriptFiles,
-                    nextpilot::plotscope::script::createScriptFilesPanel, "脚本文件", "script")
-PS_REGISTER_PANEL_TI("script-editor", scriptEditor,
-                    nextpilot::plotscope::script::createScriptEditorPanel, "编辑器", "script")
-// 「终端」而非「控制台」：它是交互式 REPL（能输入求值），与底部只读的
-// 「输出」「调试控制台」按 VS Code 的语义分开命名，避免三个面板都叫"控制台"。
-PS_REGISTER_PANEL_TI("script-console", scriptConsole,
-                    nextpilot::plotscope::script::createScriptConsolePanel, "终端", "terminal")
-PS_REGISTER_PANEL_TI("script-debug", scriptDebug,
-                    nextpilot::plotscope::script::createScriptDebugPanel, "调试", "script_debug")
+// A2c：PS_REGISTER_PANEL_TI 自注册已删——4 点由 ScriptViewFactories 装配
+// （views 声明 + provider 登记，owner "script"，声明先于注册同 TU 完成）。
+// 工厂函数本体保留，声明见 ScriptPanels.h 尾部。

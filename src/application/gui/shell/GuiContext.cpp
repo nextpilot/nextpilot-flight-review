@@ -14,11 +14,9 @@
 
 #include "ErrorCodes.h"
 using namespace nextpilot::plotscope::foundation;
-using namespace nextpilot::plotscope::dataset;
 using namespace nextpilot::plotscope::intent;
 using namespace nextpilot::plotscope::uischema;
 using namespace nextpilot::plotscope::registry;
-using namespace nextpilot::plotscope::parser;
 using namespace nextpilot::plotscope::context;
 using namespace nextpilot::plotscope::host;
 
@@ -210,6 +208,14 @@ QWidget *GuiContext::openEditor(const QString &viewType, const nextpilot::plotsc
     QWidget *widget = m_editorService->openEditor(viewType, ref, m_appCtx, executor(), parent);
     if (!widget)
         return nullptr;
+    // 已开置前（A2b 笔2b 第③步：同一 ref 复用同页签——ref 语义归 provider，同
+    // ref 返回同 widget；壳对已 dock 过的 widget 只置前，不再并新页签）。
+    if (QPointer<QWidget> existing = m_openEditors.value(widget); !existing.isNull())
+    {
+        if (m_binder)
+            m_binder->raisePanel(widget);
+        return widget;
+    }
     // 页签标题：ref.title（资源名）优先；空则回退编辑器声明的 displayName——
     // 壳只挑显示名，不解析 uri 语义。
     QString title = ref.title;
@@ -226,6 +232,7 @@ QWidget *GuiContext::openEditor(const QString &viewType, const nextpilot::plotsc
     }
     if (m_binder)
         m_binder->setCentralContent(widget, title);
+    m_openEditors.insert(widget, widget);
     return widget;
 }
 

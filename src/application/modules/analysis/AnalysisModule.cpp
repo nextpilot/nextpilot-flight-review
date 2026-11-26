@@ -237,8 +237,8 @@ private:
         a.slotId = QStringLiteral("ribbon.group.analysis.apps");
         a.intentOp = QStringLiteral("analysis.run");
         a.data = app;
-        a.icon = QStringLiteral("chart");
-        a.visual = QStringLiteral("timeseries");
+        // A2c 呈现侧：缩略图并入 icon（值域 plot/<kind>），由 IconRegistry 提供。
+        a.icon = QStringLiteral("plot/timeseries");
         a.galleryGroup = group;
         a.order = order;
         return a;
@@ -361,8 +361,8 @@ ModuleContributions AnalysisModule::contributes() const
         a.slotId = slotId;
         a.intentOp = QStringLiteral("analysis.run");
         a.data = app;
-        a.icon = QStringLiteral("chart");
-        a.visual = QStringLiteral("timeseries");
+        // A2c 呈现侧：缩略图并入 icon（值域 plot/<kind>），由 IconRegistry 提供。
+        a.icon = QStringLiteral("plot/timeseries");
         a.galleryGroup = group;
         a.order = order;
         c.actions.append(a);

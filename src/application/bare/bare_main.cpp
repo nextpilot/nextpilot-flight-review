@@ -14,6 +14,7 @@
 #include "AppContext.h"
 #include "RuntimeHost.h"
 #include "ProductSpec.h"
+#include "ViewRegistry.h"
 
 #include <QApplication>
 #include <QCommandLineParser>
@@ -90,6 +91,12 @@ int main(int argc, char *argv[])
         QStringLiteral("smoke"),
         QStringLiteral("建窗、跑一轮事件循环后退出；出现 warning/critical/fatal 即非零退出"));
     parser.addOption(smokeOpt);
+    // A2c 判据：--contributions 打印 views/customEditors 声明——裸壳不装配任何
+    // 模块呈现层，业务视图声明归模块（owner data/plot/script/automotive），
+    // 输出必须为空（反证：壳若代声明业务视图，这里就不再为空）。
+    const QCommandLineOption contribOpt(QStringLiteral("contributions"),
+                                        QStringLiteral("打印 views/customEditors 声明（裸壳应为空）"));
+    parser.addOption(contribOpt);
     parser.process(app);
 
     const bool smoke = parser.isSet(smokeOpt);
@@ -102,6 +109,36 @@ int main(int argc, char *argv[])
 
     nextpilot::plotscope::gui::MainWindow window(ctx, spec);
     window.build(host);
+
+    if (parser.isSet(contribOpt))
+    {
+        // A2c 反证面：裸壳零声明（壳不代声明业务视图，A2c 打回线 2）。
+        auto *views = host.services() ? host.services()->getService<nextpilot::plotscope::registry::ViewRegistry>(
+                                            QStringLiteral("views.registry"))
+                                      : nullptr;
+        int count = 0;
+        if (views)
+        {
+            for (const QString &owner : views->declaredOwners())
+            {
+                for (const auto &c : views->containersOf(owner))
+                    for (const auto &v : views->viewsIn(c.id))
+                    {
+                        std::printf("views %s container=%s area=%s\n", qPrintable(v.id), qPrintable(c.id),
+                                    qPrintable(c.area));
+                        ++count;
+                    }
+                for (const auto &ce : views->customEditorsOf(owner))
+                {
+                    std::printf("customEditors %s priority=%d\n", qPrintable(ce.viewType), ce.priority);
+                    ++count;
+                }
+            }
+        }
+        std::printf("contributions: %d\n", count);
+        return 0;
+    }
+
     window.show();
 
     if (smoke)

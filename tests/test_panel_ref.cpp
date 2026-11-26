@@ -129,7 +129,8 @@ int main(int argc, char **argv)
     if (packIssue)
     {
         CHECK(packIssue->source.contains(QStringLiteral("pack.test")));
-        CHECK(packIssue->message.contains(QStringLiteral("PS_REGISTER_PANEL")));
+        // 第③步顺延必修：消息改述三命中面（工厂 ∪ views ∪ customEditors）。
+        CHECK(packIssue->message.contains(QStringLiteral("三命中面")));
     }
 
     const PanelReferenceIssue *placementIssue = findIssue(issues, QStringLiteral("bogus-placement"));

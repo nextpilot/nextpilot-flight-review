@@ -5,6 +5,7 @@
 
 #include "App.h"
 #include "MainWindow.h"
+#include "PlotViewFactories.h"
 #include "AxesView.h"
 #include "PlotWorkspace.h"
 #include "PlotDocument.h"
@@ -51,6 +52,9 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
 
     App application;
+    // A2c：plot.workspace editor 化——build 内 openEditor 须先有 provider（声明+注册）。
+    CHECK(nextpilot::plotscope::plot::installPlotViewFactories(application.host().services(),
+                                                               &application.context(), &application.host()));
     MainWindow window(application.context());
     window.build(application.host());
     window.resize(1280, 800);

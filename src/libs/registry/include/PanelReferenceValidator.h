@@ -34,18 +34,24 @@ struct PanelReferenceIssue
 // 面板清单经 workbench::IPanelsService::panels() 读回。
 // knownViewIds：views 声明命中面（A2b 笔2b 第②步）——已迁 ViewRegistry 的 id
 // （gui 内置面板，注册不再走工厂表）由壳经 IViewsService 判定后传入；旧工厂表
-// 路径保留到⑦步删，两命中面并存期间任一命中即放行。
+// 路径保留到⑦步删，命中面并存期间任一命中即放行。
+// customEditorViewTypes：editor 命中面（第③步顺延必修补齐）——customEditors
+// 声明的 viewType（IEditorService::customEditors() 取回）由壳传入；centralEditor
+// 命中自此不再靠工厂表侥幸。三命中面 = 工厂 panels ∪ views ∪ customEditors。
 QList<PanelReferenceIssue> validatePanelReferences(const ToolboxHub &toolbox, const UiSlotHub &slotHub,
                                                    const QList<ProductPanelPlacement> &placements,
-                                                   const QStringList &knownViewIds = {});
+                                                   const QStringList &knownViewIds = {},
+                                                   const QStringList &customEditorViewTypes = {});
 QList<PanelReferenceIssue> validatePanelReferences(const QList<PanelSpec> &panels, const UiSlotHub &slotHub,
                                                    const QList<ProductPanelPlacement> &placements,
-                                                   const QStringList &knownViewIds = {});
+                                                   const QStringList &knownViewIds = {},
+                                                   const QStringList &customEditorViewTypes = {});
 // 壳侧版本（裁定 52442006 Step 4）：壳不再持 UiSlotHub，Activity 清单经
 // ISlotsService::activities() 取回后传入，语义与 UiSlotHub 版完全一致。
 QList<PanelReferenceIssue> validatePanelReferences(const QList<PanelSpec> &panels,
                                                    const QList<ActivitySpec> &activities,
                                                    const QList<ProductPanelPlacement> &placements,
-                                                   const QStringList &knownViewIds = {});
+                                                   const QStringList &knownViewIds = {},
+                                                   const QStringList &customEditorViewTypes = {});
 
 } // namespace nextpilot::plotscope::registry

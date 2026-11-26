@@ -5,7 +5,6 @@
 #include "DatasetHub.h"
 #include "ErrorCodes.h"
 #include "InteractionHub.h"
-#include "PanelFactoryHub.h"
 #include "Result.h"
 
 #include <QHeaderView>
@@ -29,11 +28,6 @@ namespace
 {
 // viewAction 通道 id（模块层入口在 DataModule::onAttach 注册 data.table.open）
 constexpr auto kActShow = "data.table.show";
-
-QWidget *createDataTablePanel(AppContext &app, IIntentExecutor &exec, QWidget *parent)
-{
-    return new DataTablePanel(app, exec, parent);
-}
 } // namespace
 
 DataTablePanel::DataTablePanel(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)
@@ -100,6 +94,22 @@ QString DataTablePanel::statsText() const
     return m_statsLabel ? m_statsLabel->text() : QString();
 }
 
+bool DataTablePanel::openDataset(int datasetId, const QString &table)
+{
+    const Dataset *ds = m_app.data().get(datasetId);
+    if (!ds)
+        return false;
+    if (!ds->table(table))
+        return false;
+
+    m_datasetId = datasetId;
+    m_tableName = table;
+    m_model->setDataset(ds, table);
+    m_statsLabel->clear();
+    m_title->setText(QStringLiteral("数据表格 — #%1 / %2（%3 行）").arg(datasetId).arg(table).arg(m_model->rowCount()));
+    return true;
+}
+
 void DataTablePanel::attachViewActions()
 {
     nextpilot::plotscope::context::InteractionHub &reg = m_app.interactions();
@@ -111,19 +121,14 @@ void DataTablePanel::attachViewActions()
             return fail(err::NoEnt, QStringLiteral("数据表格面板已关闭"));
         const int dsId = params.value(QStringLiteral("datasetId")).toInt();
         const QString table = params.value(QStringLiteral("table")).toString();
-        const Dataset *ds = guard->m_app.data().get(dsId);
-        if (!ds)
-            return fail(err::NoEnt, QStringLiteral("数据集不存在: #%1").arg(dsId));
-        if (!ds->table(table))
+        if (!guard->openDataset(dsId, table))
+        {
+            const Dataset *ds = guard->m_app.data().get(dsId);
+            if (!ds)
+                return fail(err::NoEnt, QStringLiteral("数据集不存在: #%1").arg(dsId));
             return fail(err::NoEnt,
                         QStringLiteral("数据集 #%1 中不存在表: %2").arg(dsId).arg(table));
-
-        guard->m_datasetId = dsId;
-        guard->m_tableName = table;
-        guard->m_model->setDataset(ds, table);
-        guard->m_statsLabel->clear();
-        guard->m_title->setText(QStringLiteral("数据表格 — #%1 / %2（%3 行）")
-                                    .arg(dsId).arg(table).arg(guard->m_model->rowCount()));
+        }
         return Result<QVariant>(QVariant(true));
     });
 }
@@ -169,6 +174,6 @@ void DataTablePanel::addColumnAsCurve(int columnIndex)
 
 } // namespace nextpilot::plotscope::data
 
-// 自注册（标题作中央页签显示文本）
-PS_REGISTER_PANEL_TI("data.table", dataTable,
-                    nextpilot::plotscope::data::createDataTablePanel, "数据表格", "data_table")
+// 旧工厂表注册（PS_REGISTER_PANEL_TI "data.table"）已删（A2b 笔2b 第③步）：
+// 本面板改由 DataViewFactories 经 ViewRegistry::registerEditorProvider 登记
+// （viewType "data.table"、owner "data"，声明在 DataModule::initialize）。

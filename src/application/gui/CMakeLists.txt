@@ -14,7 +14,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
 #    知识包的呈现层要能注册领域面板，就不能依赖整个 gui 层）
 #
 # 绘图视图（原 views/plot）已下沉到绘图模块的 gui 呈现层（c4）；
-# 通用面板只剩 PropertyPanel / diagnostics / output / problems / debugconsole。
+# PropertyPanel 也已归位 modules/plot/gui（A2c，owner "plot" 自声明自注册）；
+# 壳自有面板只剩 diagnostics / output / problems / debugconsole。
 #
 # 关键约束：
 #   - **外壳不认识视图**。MainWindow 不 include 任何业务视图头文件，
@@ -32,8 +33,8 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
 add_library(ps_gui_theme OBJECT
     theme/ThemeManager.cpp
     theme/ThemeManager.h
-    theme/PlotThumbnails.cpp
-    theme/PlotThumbnails.h
+    theme/IconRegistry.cpp
+    theme/IconRegistry.h
     theme/MenuIcons.cpp
     theme/MenuIcons.h
 )
@@ -72,9 +73,8 @@ add_library(ps_gui OBJECT
     shell/PreferencesIntentHandler.cpp
     shell/PreferencesIntentHandler.h
     # 报告导出已迁至 modules/report/gui（D18a）：装配层注册 viewAction，外壳零业务 include。
-    # --- 通用属性面板（dock.right）：PropertySchema 契约的纯视图 ---
-    views/PropertyPanel.cpp
-    views/PropertyPanel.h
+    # PropertyPanel 已归位 modules/plot/gui（A2c：业务视图模块自声明自注册），
+    # gui/views 下只剩壳自有的诊断/输出/问题/调试控制台。
     # --- 诊断面板（dock.diagnostics）：注册树全景，走 diag.registries 取数（M2.8）---
     views/diagnostics/DiagnosticsPanel.cpp
     views/diagnostics/DiagnosticsPanel.h

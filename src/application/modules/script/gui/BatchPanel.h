@@ -58,4 +58,9 @@ private:
     QVariantMap m_lastSummary;
 };
 
+// 工厂（A2c 归位）：ScriptViewFactories 装配时经 registerEditorProvider 登记
+// （editor viewType script.batchSummary，owner "script"）；原自注册已删。
+QWidget *createBatchSummaryPanel(context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor &executor,
+                                 QWidget *parent);
+
 } // namespace nextpilot::plotscope::script

@@ -127,6 +127,7 @@ public:
 private:
     // 声明 app 骨架提供的标准插槽（ribbon 页签/分组、停靠区、菜单）。
     void declareStandardSlots();
+    void declareViewToggleSlots();
 
     // 打开数据对话框已归 data 模块呈现层（D18a/A2a）：由模块自注册启动器
     // （DialogLauncherHub）处理，外壳按 id 触发、不 include 业务对话框。

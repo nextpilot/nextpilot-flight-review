@@ -11,8 +11,7 @@ class QTreeWidget;
 class QTreeWidgetItem;
 class QVBoxLayout;
 
-namespace nextpilot::plotscope::gui
-{
+namespace nextpilot::plotscope::gui {
 
 // 通用属性面板：SecondarySidebar 的唯一内容（替换原 CAN 面板的默认占用）。
 //
@@ -30,8 +29,7 @@ class PropertyPanel : public QWidget
     Q_OBJECT
 public:
     explicit PropertyPanel(nextpilot::plotscope::context::AppContext &appCtx,
-                           nextpilot::plotscope::intent::IIntentExecutor &executor,
-                           QWidget *parent = nullptr);
+                           nextpilot::plotscope::intent::IIntentExecutor &executor, QWidget *parent = nullptr);
     ~PropertyPanel() override;
 
     // 诊断/测试用。
@@ -61,5 +59,10 @@ private:
     QTreeWidget *m_tree = nullptr;
     bool m_rebuilding = false; // 重建期间屏蔽 itemChanged 回环
 };
+
+// 工厂（A2c 归位）：PlotViewFactories 装配时经 registerViewProvider 登记
+// （view id "plot.properties"，owner "plot"）；原 PS_REGISTER_PANEL_TI 自注册已删。
+QWidget *createPropertyPanel(nextpilot::plotscope::context::AppContext &appCtx,
+                             nextpilot::plotscope::intent::IIntentExecutor &executor, QWidget *parent);
 
 } // namespace nextpilot::plotscope::gui

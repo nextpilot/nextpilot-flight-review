@@ -136,6 +136,10 @@ private:
     // 命中且存活 → 置前返回（不重复 dock）；页签被关后 QPointer 自动失效，
     // 下次 openView 重新走创建+摆放路径。
     QHash<QString, QPointer<QWidget>> m_openViews;
+    // openEditor 已开簿记（第③步）：widget → 已 dock 中央页签。同一 ref 复用由
+    // provider 保证（同 ref 返回同 widget），壳只负责"已 dock 的不重复 dock、
+    // 置前即可"——widget 被 ADS 关闭后 QPointer 空转，下次重新走摆放路径。
+    QHash<QWidget *, QPointer<QWidget>> m_openEditors;
 
     // 面板图标（widget -> 图标名）：requestPanel 从
     // PanelFactoryHub / PanelSpec 取到图标后先记这里，dockWidget/dockCentral

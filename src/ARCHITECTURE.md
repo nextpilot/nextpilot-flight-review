@@ -1009,8 +1009,9 @@ headless 也能查到。
 
 ### 6.8 图库与快捷键
 
-- **gallery 是纯数据声明**：`UiAction` 加 `galleryGroup`（组名）/`visual`（缩略图种类）
-  两个字符串字段，headless 可读、core 不碰 QWidget。`ShellBinder` 按组把动作收进一个
+- **gallery 是纯数据声明**：`UiAction` 加 `galleryGroup`（组名）与 `icon`（缩略图 id，
+  值域 `plot/<kind>`，A2c 呈现侧归并后单一字段）等字符串字段，headless 可读、core 不碰
+  QWidget。缩略图 QIcon 由模块呈现层装配时注册进 `IconRegistry`，壳只按 id 查表。`ShellBinder` 按组把动作收进一个
   `SARibbonGallery`（单行模式 + IconOnly + 分组）。某个包卸载，图库项随动作一起消失。
 - **plot 类型 gallery**（`ribbon.group.home.plottype`）：12 种图型缩略图
   与"常用/曲线/地图3D/仪表"分组。缩略图绘制在 `application/gui/theme/PlotThumbnails`，

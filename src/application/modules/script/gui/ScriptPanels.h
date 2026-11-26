@@ -242,3 +242,17 @@ private:
 };
 
 } // namespace nextpilot::plotscope::script
+
+namespace nextpilot::plotscope::script {
+// 工厂（A2c 归位）：ScriptViewFactories 装配时经 registerViewProvider /
+// registerEditorProvider 登记（view id script.files/console/debug，editor viewType
+// script.editor，owner "script"）；原 PS_REGISTER_PANEL_TI 自注册已删。
+QWidget *createScriptFilesPanel(context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor &executor,
+                                QWidget *parent);
+QWidget *createScriptEditorPanel(context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor &executor,
+                                 QWidget *parent);
+QWidget *createScriptConsolePanel(context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor &executor,
+                                  QWidget *parent);
+QWidget *createScriptDebugPanel(context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor &executor,
+                                QWidget *parent);
+} // namespace nextpilot::plotscope::script

@@ -2,6 +2,10 @@
 
 #include "IWorkbenchContribution.h"
 
+namespace nextpilot::plotscope::uischema {
+class IScriptCapabilities;
+}
+
 // 绘图模块：把"数据集 + 通道"编译成 PlotSpec（纯数据），并提供分析算子入口。
 // 它不认识任何具体格式，也不直接画图——渲染由 UI 模块消费同一份 spec。
 class PlotModule final : public nextpilot::plotscope::host::IWorkbenchContribution
@@ -22,4 +26,9 @@ public:
 private:
     class Handler;
     Handler *m_handler = nullptr; // parent=this，随模块析构自动回收
+    // 视图动作注册面（initialize 存；onAttach 经它登记 plot.instrument.open）。
+    nextpilot::plotscope::uischema::IScriptCapabilities *m_caps = nullptr;
+    // GUI 上下文（onAttach 存；headless 恒空）。plot.instrument.open 处理器经它
+    // 走 IUiContext::openEditor——ref 由模块构造，壳不解析 uri（A2c）。
+    nextpilot::plotscope::host::IUiContext *m_ui = nullptr;
 };
