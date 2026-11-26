@@ -488,3 +488,26 @@ add_executable(ps_test_workbench_contracts test_workbench_contracts.cpp)
 target_link_libraries(ps_test_workbench_contracts PRIVATE ps_workbench Qt6::Core)
 set_target_properties(ps_test_workbench_contracts PROPERTIES AUTOMOC OFF CXX_STANDARD 17)
 add_test(NAME ps_workbench_contracts COMMAND ps_test_workbench_contracts)
+
+# —— GUI 类测试串行化（抖动治理）——
+# 这批用例各自要起完整 QApplication + MainWindow + dock 布局，在 offscreen 平台上还会
+# 共用平台插件与字体缓存的全局状态。CI 用 ctest -j$(nproc)，4 核上十几个这类进程一起
+# 起来会争 CPU/内存与这些共享资源：ps_gui 出现过「同一提交一次 SEGFAULT、重跑即过」的
+# 抖动。RESOURCE_LOCK 只让持锁者之间互斥，纯逻辑测试照常并行，总时长几乎不变。
+set(_ps_gui_tests
+    ps_state_view
+    ps_transform_field
+    ps_gui
+    ps_cmd_ext
+    fastplot
+    fastplot_api
+    fastplot_dataset
+    fastplot_instruments
+    ps_instrument
+    ps_plot_io)
+set_tests_properties(${_ps_gui_tests} PROPERTIES RESOURCE_LOCK ps_gui)
+
+# 裸壳冒烟同样要建窗，但它只在 PS_BUILD_BARE 下定义，锁单独挂。
+if(PS_BUILD_BARE AND TARGET ps_shell_bare)
+    set_tests_properties(ps_shell_bare_smoke PROPERTIES RESOURCE_LOCK ps_gui)
+endif()
