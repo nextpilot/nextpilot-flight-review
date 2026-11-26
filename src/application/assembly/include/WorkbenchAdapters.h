@@ -20,8 +20,12 @@
 #include "IContributionsInstaller.h"
 #include "IViewsService.h"
 #include "IEditorService.h"
+#include "IConfigurationService.h"
+#include "SettingsEditorWidget.h"
 #include "IEditorProvider.h"
 #include "ResourceRef.h"
+
+#include <QRegularExpression>
 
 #include "DatasetHub.h"
 #include "SourceHub.h"
@@ -504,7 +508,7 @@ private:
     registry::ViewRegistry &m_views;
 };
 
-// ---- IEditorService（M3-a 第 2 笔）----
+// ---- IEditorService ----
 // 内部转 ViewRegistry 的编辑器声明/注册面；壳经本接口读回与打开，不见 registry::。
 class EditorServiceAdapter final : public wb::IEditorService
 {
@@ -539,7 +543,223 @@ private:
     registry::ViewRegistry &m_views;
 };
 
-// ---- 壳内置 text 最小编辑器（M3-a 第 2 笔，正文步骤 4）----
+// ---- IConfigurationService ----
+// 声明面（ToolboxHub 的 contributes.configuration）与持久化（SettingsStore，
+// app 唯一出口）之间的唯一合并/复位/诊断出口；分层 SettingsScope：user(App) ←
+// workspace ← document。键空间 "config/<点号键>"；owner unmount 后属性从
+// configurations() 消失，残留值保留但不生效 + 诊断（读时推导，不删用户数据）。
+
+// core.settings 自带「通用」配置组（§5：零 owner 也能开设置）——装配层自数据
+// （与 core.text 同风格），键对位 VSCode workbench.settings.editor。
+inline QList<registry::ConfigurationSpec> coreBuiltinConfigurations()
+{
+    registry::ConfigurationSpec general;
+    general.title = QStringLiteral("通用");
+    general.iconId = QStringLiteral("gear");
+    general.order = 0;
+    registry::ConfigurationProperty editorMode;
+    editorMode.key = QStringLiteral("workbench.settings.editor");
+    editorMode.type = QStringLiteral("string");
+    editorMode.defaultValue = QStringLiteral("ui");
+    editorMode.enumValues = {QStringLiteral("ui"), QStringLiteral("json")};
+    editorMode.enumDescriptions = {QStringLiteral("图形界面"), QStringLiteral("JSON 文本")};
+    editorMode.description = QStringLiteral("设置编辑器的呈现模式");
+    editorMode.scope = QStringLiteral("application");
+    editorMode.order = 1;
+    general.properties.append(editorMode);
+    return {general};
+}
+
+class ConfigurationServiceAdapter final : public wb::IConfigurationService
+{
+public:
+    // builtinConfigurations：工作台自带配置（core.settings 的「通用」组，§5——
+    // 零扩展也能开设置；core 永不 unmount，无残留语义）。
+    ConfigurationServiceAdapter(ctx::SettingsStore &settings, registry::ToolboxHub &toolbox,
+                                QList<registry::ConfigurationSpec> builtinConfigurations = {})
+        : m_settings(settings), m_toolbox(toolbox), m_builtin(std::move(builtinConfigurations))
+    {
+    }
+
+    QList<registry::ConfigurationSpec> configurations() const override
+    {
+        QList<registry::ConfigurationSpec> out = m_builtin;
+        for (const auto &owned : m_toolbox.contributedConfigurations())
+            out.append(owned.item);
+        return out;
+    }
+
+    void setUserValue(const QString &key, const QJsonValue &value) override
+    {
+        setLayer(context::SettingsScope::App, key, value);
+    }
+    void setWorkspaceValue(const QString &key, const QJsonValue &value) override
+    {
+        setLayer(context::SettingsScope::Workspace, key, value);
+    }
+    void setDocumentValue(const QString &key, const QJsonValue &value) override
+    {
+        setLayer(context::SettingsScope::Document, key, value);
+    }
+
+    QJsonValue effectiveValue(const QString &key) const override { return inspect(key).effective; }
+
+    wb::ConfigurationInspect inspect(const QString &key) const override
+    {
+        wb::ConfigurationInspect ins;
+        ins.key = key;
+        // 声明面：ToolboxHub + core 内置（core.settings「通用」组）双来源。
+        auto scan = [&ins, &key](const registry::ConfigurationSpec &spec, const QString &owner) {
+            for (const auto &prop : spec.properties)
+                if (prop.key == key)
+                {
+                    ins.declared = true;
+                    ins.declaredOwner = owner;
+                    ins.defaultValue = prop.defaultValue;
+                    ins.scope = prop.scope;
+                }
+        };
+        for (const auto &spec : m_builtin)
+            scan(spec, QStringLiteral("core.settings"));
+        for (const auto &owned : m_toolbox.contributedConfigurations())
+            scan(owned.item, owned.owner);
+        // 持久化层：SettingsStore 三层各取一次；contains 即「该层已设置」，
+        // null 是合法值（对位 VSCode null 重置语义），不再用 isNull 误判。
+        auto fill = [&](wb::ConfigurationLayer &layer, context::SettingsScope scope) {
+            const bool set = m_settings.contains(m_settings.scopedKey(scope, storageKey(key)));
+            if (!set)
+                return;
+            layer.value = m_settings.scopedValue(scope, storageKey(key)).toJsonValue();
+            layer.set = true;
+        };
+        fill(ins.user, context::SettingsScope::App);
+        fill(ins.workspace, context::SettingsScope::Workspace);
+        fill(ins.document, context::SettingsScope::Document);
+        // 合并：document ← workspace ← user ← default；scope 决定哪些层参与
+        // （对位 VSCode ConfigurationScope 的 target 语义）：
+        //   application/machine → user；window/machine-overridable → user+workspace；
+        //   resource/language-overridable → user+workspace+document。
+        // 未声明键：残留值不生效（保留数据但不参与合并），effective 恒 Undefined。
+        const unsigned mask = layerMask(ins.scope);
+        if (!ins.declared)
+            ins.effective = QJsonValue(QJsonValue::Undefined);
+        else if ((mask & 4u) && ins.document.set)
+            ins.effective = ins.document.value;
+        else if ((mask & 2u) && ins.workspace.set)
+            ins.effective = ins.workspace.value;
+        else if ((mask & 1u) && ins.user.set)
+            ins.effective = ins.user.value;
+        else
+            ins.effective = ins.defaultValue;
+        return ins;
+    }
+
+    void reset(const QString &key) override
+    {
+        m_settings.removeScoped(context::SettingsScope::App, storageKey(key));
+        m_settings.removeScoped(context::SettingsScope::Workspace, storageKey(key));
+        m_settings.removeScoped(context::SettingsScope::Document, storageKey(key));
+    }
+
+    QList<wb::IConfigurationService::Diagnostic> diagnostics() const override
+    {
+        QList<wb::IConfigurationService::Diagnostic> out;
+        // 残留 = 存储里有值但不在任何 owner 的声明中（读时推导，纯状态函数）。
+        QSet<QString> declared;
+        for (const auto &spec : m_builtin)
+            for (const auto &prop : spec.properties)
+                declared.insert(prop.key);
+        for (const auto &owned : m_toolbox.contributedConfigurations())
+            for (const auto &prop : owned.item.properties)
+                declared.insert(prop.key);
+        const auto scan = [&](context::SettingsScope scope) {
+            // keysIn 返回带 scope 前缀的完整键（如 "app/config/plot.accent"）。
+            const QString fullPrefix = m_settings.scopedKey(scope, storagePrefix());
+            for (const QString &sk : m_settings.keysIn(scope))
+            {
+                if (!sk.startsWith(fullPrefix))
+                    continue;
+                const QString key = sk.mid(fullPrefix.size());
+                if (declared.contains(key) || key.isEmpty())
+                    continue;
+                bool already = false;
+                for (const auto &d : out)
+                    already |= d.key == key;
+                if (already)
+                    continue;
+                out.append({key, QStringLiteral("键 %1 未在任何 owner 的 configuration 声明中，"
+                                                "残留值保留但不生效（不删用户数据）")
+                                     .arg(key)});
+            }
+        };
+        scan(context::SettingsScope::App);
+        scan(context::SettingsScope::Workspace);
+        scan(context::SettingsScope::Document);
+        out.append(m_patternViolations);
+        return out;
+    }
+
+private:
+    // SettingsStore 相对键：config/<点号键>（scope 前缀由 SettingsStore 拼）。
+    static QString storagePrefix() { return QStringLiteral("config/"); }
+    static QString storageKey(const QString &key) { return QStringLiteral("config/") + key; }
+
+    // 声明 scope → 参与合并的层位掩码（bit0=user bit1=workspace bit2=document），
+    // 对位 VSCode ConfigurationScope 的 target 语义：application/machine 只认 user，
+    // window/machine-overridable 认 user+workspace，resource/language-overridable 认三层。
+    static unsigned layerMask(const QString &scope)
+    {
+        if (scope == QLatin1String("application") || scope == QLatin1String("machine"))
+            return 1u;
+        if (scope == QLatin1String("window") || scope == QLatin1String("machine-overridable"))
+            return 3u;
+        return 7u; // resource / language-overridable（以及未知值的保守缺省）
+    }
+
+    // string + pattern 声明：非法值不写入该层（对位 VSCode 的校验拒绝），违例进诊断。
+    bool patternAccept(const registry::ConfigurationProperty &prop, const QJsonValue &value)
+    {
+        if (prop.pattern.isEmpty() || prop.type != QLatin1String("string") || !value.isString())
+            return true;
+        if (QRegularExpression(QRegularExpression::anchoredPattern(prop.pattern)).match(value.toString()).hasMatch())
+            return true;
+        m_patternViolations.append(
+            {prop.key, QStringLiteral("值 %1 不匹配 pattern %2，未写入").arg(value.toString(), prop.pattern)});
+        return false;
+    }
+
+    // 该键的声明元数据（未声明返回空属性：pattern 为空 → 直接过）。
+    registry::ConfigurationProperty propertyOf(const QString &key) const
+    {
+        for (const auto &spec : m_builtin)
+            for (const auto &prop : spec.properties)
+                if (prop.key == key)
+                    return prop;
+        for (const auto &owned : m_toolbox.contributedConfigurations())
+            for (const auto &prop : owned.item.properties)
+                if (prop.key == key)
+                    return prop;
+        return {};
+    }
+
+    void setLayer(context::SettingsScope scope, const QString &key, const QJsonValue &value)
+    {
+        if (!patternAccept(propertyOf(key), value))
+            return;
+        const QString sk = storageKey(key);
+        if (value.isUndefined())
+            m_settings.removeScoped(scope, sk);
+        else
+            m_settings.setScopedValue(scope, sk, value.toVariant());
+    }
+
+    ctx::SettingsStore &m_settings;               // 借用：app 唯一持久化出口
+    registry::ToolboxHub &m_toolbox;              // 借用：contributes.configuration 声明面
+    QList<registry::ConfigurationSpec> m_builtin; // core.settings 自带（永不 unmount）
+    mutable QList<wb::IConfigurationService::Diagnostic> m_patternViolations;
+};
+
+// ---- 壳内置 text 最小编辑器 ----
 // 零扩展也能打开/编辑/保存纯文本；QPlainTextEdit 承载，保存经 QFile 写回 uri。
 // 注册：装配层以 owner="core.text" 声明 customEditors（viewType="text"）+ 注册 provider。
 class BuiltinTextEditorProvider final : public registry::IEditorProvider
@@ -552,11 +772,28 @@ public:
     }
     QWidget *createEditor(const registry::ResourceRef &ref, QWidget *parent) override;
     bool save(const registry::ResourceRef &ref) override;
-    // saveAs 落盘：把源内容写到 ref 给出的新目标（M3-a 3a-4，headless 可验）。
+    // saveAs 落盘：把源内容写到 ref 给出的新目标（headless 可验）。
     bool saveAs(const registry::ResourceRef &ref) override;
 
 private:
     static QString contentOf(const registry::ResourceRef &ref);
+};
+
+// ---- 壳内置 Settings editor provider ----
+// viewType 核过 VSCode 源码：SettingsEditor2.ID = 'workbench.editor.settings2'
+// （VSCode 源码：SettingsEditor2.ID = 'workbench.editor.settings2'；
+// 'workbench.editor.settings' 字符串在源码中不存在，实际 ID 带 "2"）。
+// owner=core.settings 经 M3-a 的 registerEditorProvider 注册，壳不特判 id。
+class BuiltinSettingsEditorProvider final : public registry::IEditorProvider
+{
+public:
+    static QString viewType() { return QStringLiteral("workbench.editor.settings2"); }
+    explicit BuiltinSettingsEditorProvider(wb::IConfigurationService &svc) : m_svc(svc) {}
+    bool canOpen(const registry::ResourceRef &ref) const override;
+    QWidget *createEditor(const registry::ResourceRef &ref, QWidget *parent) override;
+
+private:
+    wb::IConfigurationService &m_svc;
 };
 
 } // namespace nextpilot::plotscope::assembly

@@ -169,6 +169,215 @@ int main(int argc, char **argv)
         CHECK(r.doc.customEditors.at(0).displayName == QStringLiteral("第二"));
     }
 
+    // ===== configuration 正常解析（enum/minimum/maximum/pattern 各一例 + scope 缺省 window）=====
+    {
+        ParseResult r = parseContributes(fromJson(R"({
+            "configuration": [
+                {"title":"绘图","iconId":"plot","order":10,
+                 "properties":{
+                    "plot.lineWidth":{"type":"number","default":2,"minimum":1,"maximum":10,"order":1,"category":"曲线"},
+                    "plot.cursorMode":{"type":"string","default":"cross",
+                        "enum":["cross","line","none"],"enumDescriptions":["十字","整线","隐藏"],"order":2},
+                    "plot.title":{"type":"string","default":"","pattern":"^[^\\n]*$","order":3},
+                    "plot.trace.format":{"type":"string","default":"json","order":4},
+                    "plot.trace.raw":{"type":"string","default":"x","editPresentation":"multiline","order":5},
+                    "plot.workspace.only":{"type":"boolean","default":false,"scope":"resource","order":6}
+                 }}
+            ]
+        })"),
+                                         QStringLiteral("plot"));
+        CHECK(r.ok);
+        CHECK(r.doc.configurations.size() == 1);
+        const auto &spec = r.doc.configurations.at(0);
+        CHECK(spec.title == QStringLiteral("绘图"));
+        CHECK(spec.order == 10);
+        CHECK(spec.properties.size() == 6);
+        const auto *lw = [&spec]() -> const ConfigurationProperty * {
+            for (const auto &p : spec.properties)
+                if (p.key == QLatin1String("plot.lineWidth"))
+                    return &p;
+            return nullptr;
+        }();
+        CHECK(lw != nullptr);
+        CHECK(lw->type == QLatin1String("number"));
+        CHECK(lw->hasMinimum && lw->minimum == 1.0);
+        CHECK(lw->hasMaximum && lw->maximum == 10.0);
+        CHECK(lw->category == QStringLiteral("曲线"));
+        const auto *cursor = [&spec]() -> const ConfigurationProperty * {
+            for (const auto &p : spec.properties)
+                if (p.key == QLatin1String("plot.cursorMode"))
+                    return &p;
+            return nullptr;
+        }();
+        CHECK(cursor != nullptr);
+        CHECK(cursor->enumValues.size() == 3);
+        CHECK(cursor->enumValues.at(0) == QLatin1String("cross"));
+        CHECK(cursor->enumDescriptions.at(1) == QStringLiteral("整线"));
+        const auto *title = [&spec]() -> const ConfigurationProperty * {
+            for (const auto &p : spec.properties)
+                if (p.key == QLatin1String("plot.title"))
+                    return &p;
+            return nullptr;
+        }();
+        CHECK(title != nullptr && title->pattern == QLatin1String("^[^\\n]*$"));
+        const auto *ws = [&spec]() -> const ConfigurationProperty * {
+            for (const auto &p : spec.properties)
+                if (p.key == QLatin1String("plot.workspace.only"))
+                    return &p;
+            return nullptr;
+        }();
+        CHECK(ws != nullptr && ws->scope == QLatin1String("resource"));
+        const auto *raw = [&spec]() -> const ConfigurationProperty * {
+            for (const auto &p : spec.properties)
+                if (p.key == QLatin1String("plot.trace.raw"))
+                    return &p;
+            return nullptr;
+        }();
+        CHECK(raw != nullptr && raw->editPresentation == QLatin1String("multiline"));
+        // scope 缺省 = window（VSCode ConfigurationScope）
+        const auto *fmt = [&spec]() -> const ConfigurationProperty * {
+            for (const auto &p : spec.properties)
+                if (p.key == QLatin1String("plot.trace.format"))
+                    return &p;
+            return nullptr;
+        }();
+        CHECK(fmt != nullptr && fmt->scope == QLatin1String("window"));
+    }
+
+    // ===== scope 六值域：application/machine/window/resource/language-overridable/
+    // machine-overridable 全部可解析；域外值拒该条 =====
+    {
+        ParseResult r = parseContributes(fromJson(R"({
+            "configuration": [
+                {"title":"S","properties":{
+                    "s.application":{"type":"boolean","scope":"application"},
+                    "s.machine":{"type":"boolean","scope":"machine"},
+                    "s.window":{"type":"boolean","scope":"window"},
+                    "s.resource":{"type":"boolean","scope":"resource"},
+                    "s.lang":{"type":"boolean","scope":"language-overridable"},
+                    "s.machovr":{"type":"boolean","scope":"machine-overridable"}
+                 }}
+            ]
+        })"),
+                                         QStringLiteral("s.ok"));
+        CHECK(r.ok);
+        CHECK(r.doc.configurations.size() == 1);
+        CHECK(r.doc.configurations.at(0).properties.size() == 6);
+        for (const auto &p : r.doc.configurations.at(0).properties)
+            CHECK(!p.scope.isEmpty());
+        ParseResult bad = parseContributes(fromJson(R"({
+            "configuration": [
+                {"title":"B","properties":{"s.bad":{"type":"boolean","scope":"user"}}},
+                {"title":"G","properties":{"s.good":{"type":"boolean","default":true}}}
+            ]
+        })"),
+                                           QStringLiteral("s.bad"));
+        CHECK(hasIssueContaining(bad, QStringLiteral("scope")));
+        // 被拒条目不占坑：后到合法条目递补（整条校验通过后再占唯一名）。
+        bool goodKept = false;
+        for (const auto &s : bad.doc.configurations)
+            for (const auto &p : s.properties)
+                goodKept |= p.key == QLatin1String("s.good");
+        CHECK(goodKept);
+    }
+
+    // ===== 重复点号键拒 + 诊断（先到者保留，seenIds 共用）=====
+    {
+        ParseResult r = parseContributes(fromJson(R"({
+            "configuration": [
+                {"title":"A","properties":{"plot.dup":{"type":"number","default":1}}},
+                {"title":"B","properties":{"plot.dup":{"type":"number","default":2}}}
+            ]
+        })"),
+                                         QStringLiteral("dup.cfg"));
+        CHECK(!r.ok);
+        CHECK(hasIssueContaining(r, QStringLiteral("重复")));
+        // 后到节点因唯一属性被跳过而整节点拒（无合法属性），只剩先到节点。
+        CHECK(r.doc.configurations.size() == 1);
+        const auto *first = &r.doc.configurations.at(0);
+        const auto *kept = [&r]() -> const ConfigurationProperty * {
+            for (const auto &s : r.doc.configurations)
+                for (const auto &p : s.properties)
+                    if (p.key == QLatin1String("plot.dup"))
+                        return &p;
+            return nullptr;
+        }();
+        CHECK(kept == &first->properties.at(0));
+        CHECK(kept->defaultValue.toDouble() == 1.0);
+    }
+
+    // ===== 布局节点 tab/section/horizontal 拒该节点 + 被拒条目不占坑（后到合法递补）=====
+    {
+        ParseResult r = parseContributes(fromJson(R"({
+            "configuration": [
+                {"title":"坏","tab":"通用","properties":{"plot.bad":{"type":"number"}}},
+                {"title":"好","properties":{"plot.bad":{"type":"number","default":5}}}
+            ]
+        })"),
+                                         QStringLiteral("layout.cfg"));
+        CHECK(!r.ok);
+        CHECK(hasIssueContaining(r, QStringLiteral("布局节点")));
+        // 第一节点被整条拒且 plot.bad 未占坑：第二条合法递补，不得出现「重复」诊断。
+        CHECK(!hasIssueContaining(r, QStringLiteral("重复")));
+        CHECK(r.doc.configurations.size() == 1);
+        CHECK(r.doc.configurations.at(0).title == QStringLiteral("好"));
+    }
+
+    // ===== 缺 type / enum 非数组 → 拒该条；properties 非对象 → 拒节点 =====
+    {
+        ParseResult r = parseContributes(fromJson(R"({
+            "configuration": [
+                {"title":"a","properties":{"plot.a":{"default":1}}},
+                {"title":"b","properties":{"plot.b":{"type":"number","enum":"oops"}}},
+                {"title":"c","properties":[]}
+            ]
+        })"),
+                                         QStringLiteral("bad.cfg"));
+        CHECK(!r.ok);
+        CHECK(hasIssueContaining(r, QStringLiteral("缺 type")));
+        CHECK(hasIssueContaining(r, QStringLiteral("enum 必须是数组")));
+        CHECK(hasIssueContaining(r, QStringLiteral("properties 缺失或非法")));
+        CHECK(r.doc.configurations.isEmpty());
+    }
+
+    // ===== 点号键与命令 id 共用 seenIds（跨类型重复也拒）=====
+    {
+        ParseResult r = parseContributes(fromJson(R"({
+            "commands":[{"command":"plot.dup","title":"命令"}],
+            "configuration":[{"title":"c","properties":{"plot.dup":{"type":"number"}}}]
+        })"),
+                                         QStringLiteral("cross.cfg"));
+        CHECK(!r.ok);
+        CHECK(hasIssueContaining(r, QStringLiteral("重复")));
+        CHECK(r.doc.configurations.isEmpty());
+    }
+
+    // ===== area:"central" 拒载 + 诊断（§3.0.12 中央区只接受编辑器，防回归）=====
+    {
+        ParseResult r = parseContributes(fromJson(R"({
+            "viewsContainers": [
+                {"id":"bad.central","title":"中央","area":"central"},
+                {"id":"ok.side","title":"侧栏","area":"sidebar"}
+            ]
+        })"),
+                                         QStringLiteral("central.owner"));
+        CHECK(!r.ok);
+        CHECK(hasIssueContaining(r, QStringLiteral("中央区只接受编辑器")));
+        CHECK(r.doc.viewContainers.size() == 1);
+        CHECK(r.doc.viewContainers.at(0).id == QLatin1String("ok.side"));
+        // 被拒条目不占坑：同 id 的合法条目可递补。
+        ParseResult r2 = parseContributes(fromJson(R"({
+            "viewsContainers": [
+                {"id":"dup.area","title":"坏","area":"central"},
+                {"id":"dup.area","title":"好","area":"auxiliary"}
+            ]
+        })"),
+                                          QStringLiteral("central.recoup"));
+        CHECK(!r2.ok);
+        CHECK(r2.doc.viewContainers.size() == 1);
+        CHECK(r2.doc.viewContainers.at(0).area == QLatin1String("auxiliary"));
+    }
+
     // ===== 坏输入 1：重复 command id → 后到者跳过 + issue，不覆盖 =====
     {
         ParseResult r = parseContributes(fromJson(R"({

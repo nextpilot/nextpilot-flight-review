@@ -493,6 +493,28 @@ bool ToolboxHub::mountContribution(const ContributesDoc &doc)
         m_contribEditorViewTypes.insert(item.viewType, doc.owner);
         m_contribCustomEditors.append(OwnedCustomEditor{item, doc.owner});
     }
+    // M3-b：configuration 按 owner 归属存表；属性点号键跨 owner 全局唯一，
+    // 重复跳过 + 诊断（含双方 owner），同一节点内合法属性保留。
+    for (const auto &spec : doc.configurations)
+    {
+        ConfigurationSpec kept = spec;
+        for (int i = kept.properties.size() - 1; i >= 0; --i)
+        {
+            const QString &key = kept.properties.at(i).key;
+            if (m_contribConfigKeys.contains(key))
+            {
+                recordContributionIssue(doc.owner, QStringLiteral("configuration.") + key,
+                                        QStringLiteral("owner %2 的配置键已被 owner %1 声明，跳过（先到者保留）")
+                                            .arg(m_contribConfigKeys.value(key), doc.owner));
+                kept.properties.removeAt(i);
+            }
+        }
+        if (kept.properties.isEmpty())
+            continue;
+        for (const auto &prop : kept.properties)
+            m_contribConfigKeys.insert(prop.key, doc.owner);
+        m_contribConfigurations.append(OwnedConfiguration{kept, doc.owner});
+    }
 
     Q_EMIT objectAdded(doc.owner);
     return true;
@@ -531,6 +553,14 @@ bool ToolboxHub::unmountContribution(const QString &owner)
     {
         if (it.value() == owner)
             it = m_contribEditorViewTypes.erase(it);
+        else
+            ++it;
+    }
+    removeOwned(m_contribConfigurations);
+    for (auto it = m_contribConfigKeys.begin(); it != m_contribConfigKeys.end();)
+    {
+        if (it.value() == owner)
+            it = m_contribConfigKeys.erase(it);
         else
             ++it;
     }

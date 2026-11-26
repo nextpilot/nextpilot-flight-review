@@ -96,7 +96,7 @@ struct ContributedStatus
     QString text;
 };
 
-// contributes.customEditors[] —— VSCode 自定义编辑器声明（A8b-M3-a 第 1 笔）。
+// contributes.customEditors[] —— VSCode 自定义编辑器声明。
 // viewType 全局唯一（先 parser 内去重、跨 owner 由 ToolboxHub mount 诊断）；
 // selector 按 mime 或 filenamePattern 匹配资源，壳据此选编辑器，不解释业务。
 struct ContributedEditorSelector
@@ -112,6 +112,38 @@ struct ContributedCustomEditor
     QList<ContributedEditorSelector> selector;
     int priority = 0;      // 多个编辑器都能打开时，大者优先
     QString owner;         // 声明者归属（parse 不填；ViewRegistry.declare 时写）
+};
+
+// contributes.configuration[] —— 设置属性声明（替换 SettingsPageSpec）。
+// key 是全局扁平点号键（如 "plot.lineWidth"）；scope 缺省 window（VSCode ConfigurationScope
+// 六值域）；字段白名单 §4.1，禁 tab/section/horizontal 布局节点——排版归工作台（§5）。
+struct ConfigurationProperty
+{
+    QString key;  // 全局唯一点号键（parser 内去重，跨 owner 由 ToolboxHub mount 诊断）
+    QString type; // boolean | number | string | object | array（enum 用 enumValues 表达）
+    QJsonValue defaultValue;
+    QStringList enumValues;
+    QStringList enumDescriptions;
+    double minimum = 0.0; // hasMinimum/hasMaximum 区分「未给」与「给了 0」（数值控件用）
+    bool hasMinimum = false;
+    double maximum = 0.0;
+    bool hasMaximum = false;
+    QString pattern;
+    QString description;
+    QString markdownDescription;
+    QString scope; // VSCode ConfigurationScope 六值（缺省 window），参与合并分层
+    int order = 0;
+    QString editPresentation; // "multiline" → 多行控件（§5）
+    QString category;         // §3.0.7：设置目录分组标题
+};
+
+// 一组设置（VSCode contributes.configuration 的一个条目）：设置目录按 (order, title) 排。
+struct ConfigurationSpec
+{
+    QString title;
+    QString iconId;
+    int order = 0;
+    QList<ConfigurationProperty> properties; // 只留整条校验通过的属性
 };
 
 // 一个 owner 解析后的 contributes 表（全文唯一名）。
@@ -131,11 +163,14 @@ struct ContributesDoc
     // M3-a 新增（M2 恒为空，向后兼容）。
     QList<ContributedCustomEditor> customEditors;
 
+    // M3-b 新增（M3-a 恒为空，向后兼容）。
+    QList<ConfigurationSpec> configurations;
+
     bool isEmpty() const
     {
-        return commands.isEmpty() && commandPalette.isEmpty() && viewContainers.isEmpty() &&
-               views.isEmpty() && menuItems.isEmpty() && colors.isEmpty() && statuses.isEmpty() &&
-               customEditors.isEmpty();
+        return commands.isEmpty() && commandPalette.isEmpty() && viewContainers.isEmpty() && views.isEmpty() &&
+               menuItems.isEmpty() && colors.isEmpty() && statuses.isEmpty() && customEditors.isEmpty() &&
+               configurations.isEmpty();
     }
 };
 

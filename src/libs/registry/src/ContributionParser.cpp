@@ -14,14 +14,13 @@ void addIssue(ParseResult &r, const QString &keyPath, const QString &msg)
     r.issues.append(ParseIssue{keyPath, msg});
 }
 
-// 顶层已知键：M1 两键 + M2 五键 + M3-a 的 customEditors；configuration（M3-b）仍记 issue 跳过。
+// 顶层已知键：M1 两键 + M2 五键 + M3-a 的 customEditors + M3-b 的 configuration。
 bool isKnownTopKey(const QString &key)
 {
-    static const QSet<QString> allowed = {
-        QStringLiteral("commands"), QStringLiteral("menus"),
-        QStringLiteral("viewsContainers"), QStringLiteral("views"),
-        QStringLiteral("colors"), QStringLiteral("statusbar"),
-        QStringLiteral("customEditors")};
+    static const QSet<QString> allowed = {QStringLiteral("commands"),        QStringLiteral("menus"),
+                                          QStringLiteral("viewsContainers"), QStringLiteral("views"),
+                                          QStringLiteral("colors"),          QStringLiteral("statusbar"),
+                                          QStringLiteral("customEditors"),   QStringLiteral("configuration")};
     return allowed.contains(key);
 }
 
@@ -79,6 +78,51 @@ bool isKnownSelectorField(const QString &key)
 {
     static const QSet<QString> allowed = {QStringLiteral("mime"), QStringLiteral("filenamePattern")};
     return allowed.contains(key);
+}
+
+// configuration 条目字段（§4.1 白名单 + title/iconId/order/properties 容器字段）。
+bool isKnownConfigurationField(const QString &key)
+{
+    static const QSet<QString> allowed = {QStringLiteral("title"), QStringLiteral("iconId"), QStringLiteral("order"),
+                                          QStringLiteral("properties")};
+    return allowed.contains(key);
+}
+
+// configuration 属性字段白名单（§4.1：type/default/enum/enumDescriptions/minimum/
+// maximum/pattern/description/markdownDescription/scope/order/editPresentation + category）。
+bool isKnownConfigurationPropertyField(const QString &key)
+{
+    static const QSet<QString> allowed = {QStringLiteral("type"),
+                                          QStringLiteral("default"),
+                                          QStringLiteral("enum"),
+                                          QStringLiteral("enumDescriptions"),
+                                          QStringLiteral("minimum"),
+                                          QStringLiteral("maximum"),
+                                          QStringLiteral("pattern"),
+                                          QStringLiteral("description"),
+                                          QStringLiteral("markdownDescription"),
+                                          QStringLiteral("scope"),
+                                          QStringLiteral("order"),
+                                          QStringLiteral("editPresentation"),
+                                          QStringLiteral("category")};
+    return allowed.contains(key);
+}
+
+// §4.1：tab/section/horizontal 这类布局节点禁入 configuration——排版归工作台（§5）。
+bool isForbiddenLayoutNode(const QString &key)
+{
+    static const QSet<QString> forbidden = {QStringLiteral("tab"), QStringLiteral("section"),
+                                            QStringLiteral("horizontal")};
+    return forbidden.contains(key);
+}
+
+// §3.0.12：viewsContainers/views 只能落 sidebar/panel(bottom)/auxiliary/ribbon——
+// 中央区只接受编辑器。area 恒无 "central"，出现即拒该条 + 诊断（防回归）。
+bool isKnownContainerArea(const QString &area)
+{
+    static const QSet<QString> allowed = {QStringLiteral("sidebar"), QStringLiteral("bottom"),
+                                          QStringLiteral("auxiliary"), QStringLiteral("ribbon")};
+    return area.isEmpty() || allowed.contains(area);
 }
 
 // 校验 id 字段：空/非字符串 → 记 issue 返回 false。
@@ -276,12 +320,21 @@ ParseResult parseContributes(const QJsonObject &contributes, const QString &owne
                 if (!requireId(obj, path, QStringLiteral("id"), result))
                     continue;
                 const QString id = obj.value(QStringLiteral("id")).toString();
+                // area 白名单（§3.0.12）：中央区只接受编辑器；非法 area 拒该条且不占坑。
+                const QString area = obj.value(QStringLiteral("area")).toString();
+                if (!isKnownContainerArea(area))
+                {
+                    addIssue(result, path + QStringLiteral(".area"),
+                             QStringLiteral("area 只认 sidebar/bottom/auxiliary/ribbon，"
+                                            "中央区只接受编辑器，拒该条"));
+                    continue;
+                }
                 if (!claimId(id, path + QStringLiteral(".id")))
                     continue;
                 ContributedViewContainer c;
                 c.id = id;
                 c.title = obj.value(QStringLiteral("title")).toString();
-                c.area = obj.value(QStringLiteral("area")).toString();
+                c.area = area;
                 c.icon = obj.value(QStringLiteral("icon")).toString();
                 c.order = readInt(obj, QStringLiteral("order"));
                 result.doc.viewContainers.append(c);
@@ -389,7 +442,7 @@ ParseResult parseContributes(const QJsonObject &contributes, const QString &owne
                 result.doc.statuses.append(s);
             }
         }
-        // ---------- customEditors（M3-a 第 1 笔） ----------
+        // ---------- customEditors ----------
         else if (key == QLatin1String("customEditors"))
         {
             if (!top.value().isArray())
@@ -461,6 +514,177 @@ ParseResult parseContributes(const QJsonObject &contributes, const QString &owne
                 if (!claimId(id, path + QStringLiteral(".viewType")))
                     continue;
                 result.doc.customEditors.append(e);
+            }
+        }
+        // ---------- configuration ----------
+        else if (key == QLatin1String("configuration"))
+        {
+            if (!top.value().isArray())
+            {
+                addIssue(result, key, QStringLiteral("configuration 必须是数组，整条拒收"));
+                continue;
+            }
+            const QJsonArray arr = top.value().toArray();
+            for (int i = 0; i < arr.size(); ++i)
+            {
+                const QString path = QStringLiteral("configuration[%1]").arg(i);
+                if (!arr.at(i).isObject())
+                {
+                    addIssue(result, path, QStringLiteral("configuration 条目必须是对象，跳过"));
+                    continue;
+                }
+                const QJsonObject obj = arr.at(i).toObject();
+                bool layoutRejected = false;
+                for (auto f = obj.constBegin(); f != obj.constEnd(); ++f)
+                {
+                    if (isForbiddenLayoutNode(f.key()))
+                    {
+                        // §4.1：布局节点禁入——诊断并拒该节点（整条），不是只跳字段。
+                        addIssue(
+                            result, path + QLatin1Char('.') + f.key(),
+                            QStringLiteral("布局节点 %1 禁入 configuration，拒该节点（排版归工作台）").arg(f.key()));
+                        layoutRejected = true;
+                    }
+                    else if (!isKnownConfigurationField(f.key()))
+                    {
+                        addIssue(result, path + QLatin1Char('.') + f.key(),
+                                 QStringLiteral("configuration 条目未知字段，跳过"));
+                    }
+                }
+                if (layoutRejected)
+                    continue;
+                if (!obj.value(QStringLiteral("properties")).isObject())
+                {
+                    addIssue(result, path + QStringLiteral(".properties"),
+                             QStringLiteral("properties 缺失或非法，拒该节点"));
+                    continue;
+                }
+                ConfigurationSpec spec;
+                spec.title = obj.value(QStringLiteral("title")).toString();
+                spec.iconId = obj.value(QStringLiteral("iconId")).toString();
+                spec.order = readInt(obj, QStringLiteral("order"));
+                const QJsonObject props = obj.value(QStringLiteral("properties")).toObject();
+                for (auto p = props.constBegin(); p != props.constEnd(); ++p)
+                {
+                    const QString propPath = path + QStringLiteral(".properties.") + p.key();
+                    if (!p.value().isObject())
+                    {
+                        addIssue(result, propPath, QStringLiteral("属性条目必须是对象，跳过"));
+                        continue;
+                    }
+                    const QJsonObject pobj = p.value().toObject();
+                    bool propRejected = false;
+                    for (auto f = pobj.constBegin(); f != pobj.constEnd(); ++f)
+                    {
+                        if (isForbiddenLayoutNode(f.key()))
+                        {
+                            addIssue(result, propPath + QLatin1Char('.') + f.key(),
+                                     QStringLiteral("布局节点 %1 禁入 configuration 属性，拒该条").arg(f.key()));
+                            propRejected = true;
+                        }
+                        else if (!isKnownConfigurationPropertyField(f.key()))
+                        {
+                            addIssue(result, propPath + QLatin1Char('.') + f.key(),
+                                     QStringLiteral("配置属性未知字段，跳过"));
+                        }
+                    }
+                    if (propRejected)
+                        continue;
+                    const QJsonValue typeV = pobj.value(QStringLiteral("type"));
+                    if (!typeV.isString() || typeV.toString().isEmpty())
+                    {
+                        addIssue(result, propPath + QStringLiteral(".type"),
+                                 QStringLiteral("缺 type（或类型不符），跳过该条"));
+                        continue;
+                    }
+                    ConfigurationProperty prop;
+                    prop.key = p.key();
+                    prop.type = typeV.toString();
+                    prop.defaultValue = pobj.value(QStringLiteral("default"));
+                    prop.pattern = pobj.value(QStringLiteral("pattern")).toString();
+                    prop.description = pobj.value(QStringLiteral("description")).toString();
+                    prop.markdownDescription = pobj.value(QStringLiteral("markdownDescription")).toString();
+                    prop.order = readInt(pobj, QStringLiteral("order"));
+                    prop.editPresentation = pobj.value(QStringLiteral("editPresentation")).toString();
+                    prop.category = pobj.value(QStringLiteral("category")).toString();
+                    // scope：VSCode ConfigurationScope 六值域（缺省 window），非法值拒该条。
+                    const QString scope = pobj.value(QStringLiteral("scope")).toString();
+                    static const QSet<QString> allowedScopes = {QStringLiteral("application"),
+                                                                QStringLiteral("machine"),
+                                                                QStringLiteral("window"),
+                                                                QStringLiteral("resource"),
+                                                                QStringLiteral("language-overridable"),
+                                                                QStringLiteral("machine-overridable")};
+                    if (scope.isEmpty())
+                        prop.scope = QStringLiteral("window");
+                    else if (!allowedScopes.contains(scope))
+                    {
+                        addIssue(result, propPath + QStringLiteral(".scope"),
+                                 QStringLiteral("scope 不在 application/machine/window/resource/"
+                                                "language-overridable/machine-overridable 值域内，"
+                                                "拒该条"));
+                        continue;
+                    }
+                    else
+                        prop.scope = scope;
+                    // enum / enumDescriptions：给了就必须是数组（类型不符 → 拒该条）。
+                    if (pobj.contains(QStringLiteral("enum")))
+                    {
+                        if (!pobj.value(QStringLiteral("enum")).isArray())
+                        {
+                            addIssue(result, propPath + QStringLiteral(".enum"),
+                                     QStringLiteral("enum 必须是数组，拒该条"));
+                            continue;
+                        }
+                        for (const auto &v : pobj.value(QStringLiteral("enum")).toArray())
+                            prop.enumValues.append(v.toVariant().toString());
+                    }
+                    if (pobj.contains(QStringLiteral("enumDescriptions")))
+                    {
+                        if (!pobj.value(QStringLiteral("enumDescriptions")).isArray())
+                        {
+                            addIssue(result, propPath + QStringLiteral(".enumDescriptions"),
+                                     QStringLiteral("enumDescriptions 必须是数组，拒该条"));
+                            continue;
+                        }
+                        for (const auto &v : pobj.value(QStringLiteral("enumDescriptions")).toArray())
+                            prop.enumDescriptions.append(v.toString());
+                    }
+                    // minimum / maximum：给了就必须是数字。
+                    if (pobj.contains(QStringLiteral("minimum")))
+                    {
+                        if (!pobj.value(QStringLiteral("minimum")).isDouble())
+                        {
+                            addIssue(result, propPath + QStringLiteral(".minimum"),
+                                     QStringLiteral("minimum 必须是数字，拒该条"));
+                            continue;
+                        }
+                        prop.minimum = pobj.value(QStringLiteral("minimum")).toDouble();
+                        prop.hasMinimum = true;
+                    }
+                    if (pobj.contains(QStringLiteral("maximum")))
+                    {
+                        if (!pobj.value(QStringLiteral("maximum")).isDouble())
+                        {
+                            addIssue(result, propPath + QStringLiteral(".maximum"),
+                                     QStringLiteral("maximum 必须是数字，拒该条"));
+                            continue;
+                        }
+                        prop.maximum = pobj.value(QStringLiteral("maximum")).toDouble();
+                        prop.hasMaximum = true;
+                    }
+                    // 整条校验通过后再 claimId：被拒条目不占坑，
+                    // 后到的同 key 合法条目可递补；seenIds 与命令/视图/编辑器共用。
+                    if (!claimId(prop.key, propPath))
+                        continue;
+                    spec.properties.append(prop);
+                }
+                if (spec.properties.isEmpty())
+                {
+                    addIssue(result, path + QStringLiteral(".properties"), QStringLiteral("无合法属性，拒该节点"));
+                    continue;
+                }
+                result.doc.configurations.append(spec);
             }
         }
     }

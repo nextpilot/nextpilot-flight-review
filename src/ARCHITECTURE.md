@@ -556,6 +556,28 @@ PS_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
   vscode.StatusBarItem）——id 自动生成（`dynamic.N`）不撞声明键，`show/hide/dispose` 三态，
   `setText` 显示中直推；与声明式 `contributes.statusbar` 汇同一张 StatusHub 表。
 
+### 5.3b 设置 = 内置 Settings editor 与中央区判定
+
+**设置是一种编辑器**（照 VSCode，不是"设置页"）：
+
+- **viewType 核源码定死** `workbench.editor.settings2`（VSCode `SettingsEditor2.ID`；
+  以 VSCode 源码为准）。owner `core.settings`
+  经 M3-a 的 `registerEditorProvider` 注册——无第二注册面，壳内无 id 特判。
+- **`contributes.configuration`**：`ConfigurationSpec` + 扁平点号键 `ConfigurationProperty`
+  （字段白名单 §4.1 + `category`）；禁 `tab/section/horizontal` 布局节点（排版归工作台）；
+  属性键进共用 `seenIds`、**整条校验通过后再占坑**（被拒不占、后到递补）。
+- **`IConfigurationService`**（`libs/workbench`，实现 assembly，对位
+  vs/platform/configuration 的同名服务）：分层合并 `document ← workspace ← user(App)
+← 声明默认值`；`inspect` 给每层来源 + 声明者；`reset` 单键；持久化**只**走
+  `SettingsStore`（键空间 `config/<点号键>`）。owner unmount：属性从目录消失，
+  各层残留值**保留但不生效**（effective 恒 Undefined）+ 诊断（不删用户数据）；
+  remount 后残留值重新生效。core.settings 自带「通用」组——零 owner 也能开设置。
+- **中央区只认 editor**（§3.0.12）：新入口一律 `IEditorService::openEditor`；
+  内置命令 `workbench.action.openSettings` 的执行体即打开 settings 编辑器页签
+  （`workbench.*` 保留前缀归工作台 handler，扩展 handler 让出）；页签必须能回答
+  自己的 `ResourceRef`。`viewsContainers.area` 白名单
+  `sidebar/bottom/auxiliary/ribbon`——`area:"central"` 拒载 + 诊断，恒不存在。
+
 ### 5.4 注册表全景：一张表说清谁是什么
 
 **架构裁决：`Registry<T,Key>` 是唯一的容器机制，其余全是数据，挂进去就完事**

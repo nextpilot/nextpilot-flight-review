@@ -27,7 +27,13 @@ public:
 
     bool canHandle(const Intent &intent) const override
     {
-        return !intent.op.isEmpty() && m_extensions.findCommand(intent.op) != nullptr;
+        if (intent.op.isEmpty())
+            return false;
+        // workbench.* 保留前缀归工作台内置 handler（内置命令
+        // workbench.action.openSettings 等有自己的执行体），扩展 handler 不抢。
+        if (intent.op.startsWith(QLatin1String("workbench.")))
+            return false;
+        return m_extensions.findCommand(intent.op) != nullptr;
     }
 
     Result<IntentResult> execute(const Intent &intent) override

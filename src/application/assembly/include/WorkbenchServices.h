@@ -10,15 +10,40 @@
 #include "WorkbenchAdapters.h"
 #include "ExtensionActivationService.h" // ContributionsInstaller（裁定 52442006 Step 3）
 #include "IDisposable.h"
+#include "Intent.h"
 #include "NullWindow.h"
 #include "RuntimeHost.h"
 
+#include <QPointer>
 #include <memory>
 
 namespace nextpilot::plotscope::assembly {
 namespace inst = nextpilot::plotscope::instantiation;
 namespace wb = nextpilot::plotscope::workbench;
+namespace intent = nextpilot::plotscope::intent;
 namespace host = nextpilot::plotscope::host;
+
+// 工作台内置命令执行体：认领 workbench.* 保留前缀的内置命令
+// （§3.0.9 内置命令最小集，本笔交付 openSettings）。扩展 handler 让出该前缀，
+// claim 唯一、与 QHash 遍历序无关。
+class WorkbenchCommandHandler final : public QObject, public intent::IIntentHandler
+{
+public:
+    WorkbenchCommandHandler(wb::IEditorService &editors, nextpilot::plotscope::context::AppContext &appCtx,
+                            intent::IIntentExecutor &executor, QObject *parent = nullptr);
+
+    bool canHandle(const intent::Intent &intent) const override;
+    foundation::Result<intent::IntentResult> execute(const intent::Intent &intent) override;
+
+    // 命令执行后创建的编辑器页（e2e 断言"页签能回答 ResourceRef"用）。
+    QWidget *lastOpenedEditor() const { return m_lastOpened.data(); }
+
+private:
+    wb::IEditorService &m_editors;
+    nextpilot::plotscope::context::AppContext &m_appCtx;
+    intent::IIntentExecutor &m_executor;
+    QPointer<QWidget> m_lastOpened;
+};
 
 // 一次性把整套服务装配好：构造 adapter → registerSingleton → 暴露 services 给宿主。
 class WorkbenchServices : public QObject
@@ -57,8 +82,16 @@ private:
     // 壳经 IViewsService 读回/打开。
     registry::ViewRegistry m_viewRegistry;
     ViewsServiceAdapter m_viewsService;
-    // 编辑器读回（M3-a 第 2 笔）：壳经 IEditorService 读回/打开，不见 registry::。
+    // 编辑器读回：壳经 IEditorService 读回/打开，不见 registry::。
     EditorServiceAdapter m_editorsService;
+    // 配置合并/复位/诊断：壳经 IConfigurationService 读写设置，
+    // 持久化只落 SettingsStore（app 唯一出口）。
+    ConfigurationServiceAdapter m_configurationService;
+    // 壳内置 Settings editor（零扩展也能开设置）。
+    BuiltinSettingsEditorProvider m_settingsEditor;
+    std::unique_ptr<registry::IDisposable> m_settingsEditorDisposable; // 与成员同生命周期
+    // 工作台内置命令执行体：workbench.action.openSettings。
+    WorkbenchCommandHandler *m_workbenchHandler = nullptr; // 父归 WorkbenchServices（QObject）
     // 壳内置 text 最小编辑器（零扩展也能打开/编辑/保存）。
     BuiltinTextEditorProvider m_textEditor;
     std::unique_ptr<registry::IDisposable> m_textEditorDisposable; // 与成员同生命周期，析构先于 registry

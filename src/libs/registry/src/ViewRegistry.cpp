@@ -5,6 +5,7 @@
 #include "ResourceRef.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace nextpilot::plotscope::registry
 {
@@ -233,8 +234,9 @@ IEditorProvider *ViewRegistry::editorProvider(const QString &viewType) const
 QString ViewRegistry::editorViewTypeFor(const ResourceRef &ref) const
 {
     // priority 降序取第一个「有声明且有运行层 provider」的 viewType。
+    // 哨兵必须是 int 最小值：-1 会把 priority < -1 的声明（如 settings -10）整段排除。
     QString best;
-    int bestPriority = -1;
+    int bestPriority = std::numeric_limits<int>::min();
     for (const auto &e : m_editors)
     {
         if (e.priority < bestPriority)

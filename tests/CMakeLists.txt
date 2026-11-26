@@ -62,6 +62,13 @@ target_link_libraries(ps_test_extension_contributions PRIVATE ps_registry Qt6::C
 set_target_properties(ps_test_extension_contributions PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 add_test(NAME ps_extension_contributions COMMAND ps_test_extension_contributions)
 
+# IConfigurationService：分层合并 / reset 单键 / unmount 残留诊断。
+# 链 ps_assembly（adapter 头文件内联）+ Qt6::Core；SettingsStore 内存态，不碰 GUI。
+add_executable(ps_test_configuration_service test_configuration_service.cpp)
+target_link_libraries(ps_test_configuration_service PRIVATE ps_assembly Qt6::Core)
+set_target_properties(ps_test_configuration_service PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ps_configuration_service COMMAND ps_test_configuration_service)
+
 # A8b-M1 扩展扫描：扫目录读 manifest.json，只登记 contributes，不链 GUI/toolbox。
 add_executable(ps_test_extension_scanner test_extension_scanner.cpp)
 target_link_libraries(ps_test_extension_scanner PRIVATE ps_registry Qt6::Core)

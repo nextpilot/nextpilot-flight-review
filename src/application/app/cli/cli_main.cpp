@@ -225,6 +225,20 @@ int main(int argc, char **argv)
                         u8(e.owner), u8(e.item.viewType), si, u8(cond));
             }
         }
+        // configuration 属性输出（owner / key / default / scope）。
+        const auto defaultText = [](const QJsonValue &v) -> QString {
+            if (v.isBool())
+                return v.toBool() ? QStringLiteral("true") : QStringLiteral("false");
+            if (v.isDouble())
+                return QString::number(v.toDouble());
+            if (v.isString())
+                return v.toString();
+            return QStringLiteral("-");
+        };
+        for (const auto &c : extensions.contributedConfigurations())
+            for (const auto &p : c.item.properties)
+                fprintf(stdout, "%s configuration %s default=%s scope=%s\n", u8(c.owner), u8(p.key),
+                        u8(defaultText(p.defaultValue)), u8(p.scope));
         for (const auto &d : extensions.contributionDiagnostics())
             fprintf(stdout, "diagnostic %s %s %s\n", u8(d.owner), u8(d.keyPath), u8(d.message));
         return 0;

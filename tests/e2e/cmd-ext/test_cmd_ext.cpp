@@ -83,6 +83,12 @@ int main(int argc, char *argv[])
         "views":[{"id":"hello.view","name":"示例","container":"hello.container","order":0}],
         "customEditors":[{"viewType":"web","displayName":"网页","priority":5,
                           "selector":[{"mime":"text/html"}]}],
+        "configuration":[{"title":"示例设置","iconId":"chat","order":40,
+                          "properties":{
+                            "hello.greeting":{"type":"string","default":"你好","description":"问候语","order":1},
+                            "hello.count":{"type":"number","default":3,"minimum":1,"maximum":10,"order":2},
+                            "hello.verbose":{"type":"boolean","default":false,"order":3}
+                          }}],
         "colors":{"hello.accent":{"dark":"#4fc3f7","light":"#0277bd"}},
         "statusbar":[{"id":"hello.status","side":"right","priority":30,"text":"示例: --","commandId":"hello.say"}]
     })";
@@ -96,8 +102,9 @@ int main(int argc, char *argv[])
     activation.bind(&commands, application.host());
 
     // 面板出现：贡献命令已进命令表（buildCommandItems 从 commands() 读）。
-    CHECK(activation.boundCommandCount() == 1);
+    CHECK(activation.boundCommandCount() == 2); // hello.say + workbench.action.openSettings（core.settings）
     CHECK(commands.contains(QStringLiteral("hello.say")));
+    CHECK(commands.contains(QStringLiteral("workbench.action.openSettings")));
     const CommandDescriptor *d = commands.find(QStringLiteral("hello.say"));
     CHECK(d != nullptr);
     if (d)
@@ -177,6 +184,35 @@ int main(int argc, char *argv[])
     using nextpilot::plotscope::registry::ResourceRef;
     CHECK(ext.contributedCustomEditors().size() == 1);
     CHECK(ext.contributedCustomEditors().at(0).item.viewType == QLatin1String("web"));
+    // e2e：manifest configuration 解析进同一张贡献表（属性数/默认值/scope）。
+    // 注：core.settings 先于本 owner 挂载，「通用」组在表头，按 owner 查。
+    {
+        const auto *helloCfg = [&ext]() -> const ToolboxHub::OwnedConfiguration * {
+            for (const auto &c : ext.contributedConfigurations())
+                if (c.owner == QLatin1String("plotscope.helloworld"))
+                    return &c;
+            return nullptr;
+        }();
+        CHECK(helloCfg != nullptr);
+        CHECK(ext.contributedConfigurations().size() == 2); // hello + core.settings 通用
+        if (helloCfg)
+        {
+            CHECK(helloCfg->item.title == QStringLiteral("示例设置"));
+            CHECK(helloCfg->item.properties.size() == 3);
+            bool greetingOk = false;
+            for (const auto &p : helloCfg->item.properties)
+                if (p.key == QLatin1String("hello.greeting"))
+                    greetingOk = p.type == QLatin1String("string") &&
+                                 p.defaultValue.toString() == QStringLiteral("你好") &&
+                                 p.scope == QLatin1String("window");
+            CHECK(greetingOk);
+            bool countOk = false;
+            for (const auto &p : helloCfg->item.properties)
+                if (p.key == QLatin1String("hello.count"))
+                    countOk = p.hasMinimum && p.minimum == 1.0 && p.hasMaximum && p.maximum == 10.0;
+            CHECK(countOk);
+        }
+    }
     auto *editorSvc = services ? services->getService<IEditorService>(
                                      QStringLiteral("editor.readback"))
                                : nullptr;
@@ -186,10 +222,19 @@ int main(int argc, char *argv[])
     ResourceRef txt{QStringLiteral("/tmp/a.txt"), QStringLiteral("text/plain"), QStringLiteral("备注")};
     if (editorSvc && viewsReg)
     {
-        // 声明随 bind 灌进同一张 ViewRegistry；读回含扩展 web + 内置 text（core.text）。
-        CHECK(editorSvc->customEditors().size() == 2);
+        // 声明随 bind 灌进同一张 ViewRegistry；读回含扩展 web + 内置 text（core.text）
+        // + 内置 settings（core.settings）。
+        CHECK(editorSvc->customEditors().size() == 3);
+        bool settingsDeclared = false;
+        for (const auto &ed : editorSvc->customEditors())
+            if (ed.viewType == QLatin1String("workbench.editor.settings2"))
+                settingsDeclared = true;
+        CHECK(settingsDeclared);
         // 防冒名：owner 不等于声明者 → 拒。
         CHECK(viewsReg->registerEditorProvider(QStringLiteral("web"), &g_webProvider,
+                                               QStringLiteral("evil")) == nullptr);
+        // 防冒名（M3-b）：settings 的声明者只能是 core.settings。
+        CHECK(viewsReg->registerEditorProvider(QStringLiteral("workbench.editor.settings2"), &g_webProvider,
                                                QStringLiteral("evil")) == nullptr);
         // 声明者注册 → 成功，返回可撤销句柄（editorViewTypeFor 要求 provider 在位，先注册再匹配）。
         auto webDispose = viewsReg->registerEditorProvider(
@@ -236,12 +281,120 @@ int main(int argc, char *argv[])
         CHECK(editorSvc->providerFor(QStringLiteral("web")) == nullptr);
     }
 
+    // ---- e2e：内置 settings 编辑器（owner core.settings）----
+    {
+        // headless 判据：editorViewTypeFor(settings: application/json) 命中 settings2。
+        ResourceRef settingsRef{QStringLiteral("settings:"), QStringLiteral("application/json"),
+                                QStringLiteral("设置")};
+        CHECK(editorSvc->editorViewTypeFor(settingsRef) == QLatin1String("workbench.editor.settings2"));
+        // 打开（openEditor 全链：providerFor → canOpen → createEditor）拿到的就是不透明控件。
+        QWidget *page = editorSvc->openEditor(QStringLiteral("workbench.editor.settings2"), settingsRef,
+                                              application.context(), application.host(), nullptr);
+        CHECK(page != nullptr);
+        auto *settingsPage = qobject_cast<assembly::SettingsEditorWidget *>(page);
+        CHECK(settingsPage != nullptr);
+        if (settingsPage)
+        {
+            using nextpilot::plotscope::workbench::IConfigurationService;
+            auto *cfgSvc = services->getService<IConfigurationService>(QStringLiteral("configuration.readback"));
+            CHECK(cfgSvc != nullptr);
+            if (cfgSvc)
+            {
+                // 搜索命中一条属性（搜索 key + description）。
+                settingsPage->setSearch(QStringLiteral("hello.greeting"));
+                CHECK(settingsPage->visibleSettingCount() == 1);
+                settingsPage->setSearch({});
+                const int allCount = settingsPage->visibleSettingCount();
+                CHECK(allCount >= 4); // hello 3 条 + core.settings 通用 1 条
+                // 改一个值（走控件写路径 → 服务 → SettingsStore）。
+                CHECK(!cfgSvc->inspect(QStringLiteral("hello.greeting")).user.set);
+                settingsPage->setSettingValue(QStringLiteral("hello.greeting"), QJsonValue(QStringLiteral("嗨")));
+                CHECK(cfgSvc->effectiveValue(QStringLiteral("hello.greeting")).toString() == QStringLiteral("嗨"));
+                CHECK(settingsPage->layerHintOf(QStringLiteral("hello.greeting")) == QLatin1String("user"));
+                // Modified 过滤：只显示改过的项（hello.greeting 是唯一被改的）。
+                settingsPage->setModifiedFilter(true);
+                CHECK(settingsPage->visibleSettingCount() == 1);
+                settingsPage->setSearch(QStringLiteral("hello.greeting"));
+                CHECK(settingsPage->visibleSettingCount() == 1);
+                settingsPage->setSearch({});
+                settingsPage->setModifiedFilter(false);
+                // JSON 视图与属性表一致：改过的值出现在 JSON 中，未改的是默认/合并值。
+                settingsPage->setJsonView(true);
+                CHECK(settingsPage->jsonText().contains(QStringLiteral("\"hello.greeting\": \"嗨\"")));
+                CHECK(settingsPage->jsonText().contains(QStringLiteral("\"hello.count\": 3"))); // 未改 → 默认值
+                CHECK(settingsPage->jsonText().contains(
+                    QStringLiteral("\"workbench.settings.editor\": \"ui\""))); // core 通用组
+                settingsPage->setJsonView(false);
+                // 改值落 SettingsStore 后重开仍在：关掉页签重开新页，值还在（服务层读回）。
+                settingsPage->setJsonView(true);
+                CHECK(settingsPage->jsonText().contains(QStringLiteral("\"hello.greeting\": \"嗨\"")));
+                settingsPage->setJsonView(false);
+                delete page;
+                page = editorSvc->openEditor(QStringLiteral("workbench.editor.settings2"), settingsRef,
+                                             application.context(), application.host(), nullptr);
+                settingsPage = qobject_cast<assembly::SettingsEditorWidget *>(page);
+                CHECK(settingsPage != nullptr);
+                if (settingsPage)
+                {
+                    settingsPage->setSearch(QStringLiteral("hello.greeting"));
+                    CHECK(settingsPage->visibleSettingCount() == 1);
+                    // 重开的页 JSON 与属性表一致：改过的值仍在（SettingsStore 读回）。
+                    settingsPage->setJsonView(true);
+                    CHECK(settingsPage->jsonText().contains(QStringLiteral("\"hello.greeting\": \"嗨\"")));
+                    settingsPage->setJsonView(false);
+                }
+                // 逐项 reset：恢复默认，Modified 过滤变空。
+                settingsPage->setModifiedFilter(true);
+                CHECK(settingsPage->visibleSettingCount() == 1);
+                // reset 走行内按钮等价路径（直接调服务 + refresh；行按钮最终也是它）。
+                cfgSvc->reset(QStringLiteral("hello.greeting"));
+                settingsPage->refresh();
+                CHECK(settingsPage->visibleSettingCount() == 0);
+                // 零 owner 开设置：工作台自带「通用」组独立可搜索（不依赖任何扩展）。
+                settingsPage->setModifiedFilter(false);
+                settingsPage->setSearch(QStringLiteral("workbench.settings.editor"));
+                CHECK(settingsPage->visibleSettingCount() == 1);
+                settingsPage->setSearch({});
+            }
+        }
+        delete page;
+        // 改过的值落 SettingsStore（app 唯一出口）。
+        // （unmount 残留断言在下方卸载段之后补。）
+    }
+
     // 执行成功：命令面板激活 → executeCommand(id) → intentOp → host.execute → handler。
     Intent intent;
     intent.op = QStringLiteral("hello.say");
     auto result = application.host().execute(intent);
     CHECK(static_cast<bool>(result));
     CHECK(activation.triggeredCount(QStringLiteral("hello.say")) == 1);
+
+    // ---- e2e：workbench.action.openSettings 命令 + 中央区只认 editor ----
+    {
+        Intent openSettings;
+        openSettings.op = QStringLiteral("workbench.action.openSettings");
+        auto opened = application.host().execute(openSettings);
+        CHECK(static_cast<bool>(opened));
+        // 扩展 handler 让出 workbench.* 前缀：触发计数必须归零（不会被扩展 handler 抢）。
+        CHECK(activation.triggeredCount(QStringLiteral("workbench.action.openSettings")) == 0);
+        // 命令执行后"页签"（编辑器页）能回答自己的 ResourceRef（headless 断言，§3.0.12）。
+        auto *wbHandler = services->getService<assembly::WorkbenchCommandHandler>(QStringLiteral("workbench.commands"));
+        CHECK(wbHandler != nullptr);
+        if (wbHandler)
+        {
+            auto *page = wbHandler->lastOpenedEditor();
+            CHECK(page != nullptr);
+            auto *settingsPage = qobject_cast<assembly::SettingsEditorWidget *>(page);
+            CHECK(settingsPage != nullptr);
+            if (settingsPage)
+            {
+                const auto ref = settingsPage->resourceRef();
+                CHECK(ref.uri == QLatin1String("settings:"));
+                CHECK(ref.mime == QLatin1String("application/json"));
+                CHECK(ref.title == QStringLiteral("设置"));
+            }
+        }
+    }
 
     // handler 不认领未贡献的命令（不抢别人的 op）。
     Intent unknown;
@@ -250,10 +403,43 @@ int main(int argc, char *argv[])
     CHECK(!static_cast<bool>(other));
 
     // 卸载 owner：命令从命令表整批撤，不留悬空。
+    // 先造一个用户层残留值，验证 unmount 后组消失、残留诊断。
+    {
+        using nextpilot::plotscope::workbench::IConfigurationService;
+        auto *cfgSvc = services->getService<IConfigurationService>(QStringLiteral("configuration.readback"));
+        CHECK(cfgSvc != nullptr);
+        if (cfgSvc)
+            cfgSvc->setUserValue(QStringLiteral("hello.verbose"), QJsonValue(true));
+    }
     application.context().toolbox().unmountContribution(QStringLiteral("plotscope.helloworld"));
     activation.unbind(QStringLiteral("plotscope.helloworld"), &commands);
     CHECK(!commands.contains(QStringLiteral("hello.say")));
-    CHECK(activation.boundCommandCount() == 0);
+    // core.settings 的内置命令不随扩展卸载（owner 是工作台自带）。
+    CHECK(commands.contains(QStringLiteral("workbench.action.openSettings")));
+    CHECK(activation.boundCommandCount() == 1);
+    // unmount 后配置组消失、值残留不生效 + 诊断（不删用户数据）。
+    {
+        using nextpilot::plotscope::workbench::IConfigurationService;
+        auto *cfgSvc = services->getService<IConfigurationService>(QStringLiteral("configuration.readback"));
+        CHECK(cfgSvc != nullptr);
+        if (cfgSvc)
+        {
+            bool helloGone = true;
+            for (const auto &c : cfgSvc->configurations())
+                helloGone &= c.title != QStringLiteral("示例设置");
+            CHECK(helloGone); // core.settings 通用组仍在，扩展组消失
+            const auto ins = cfgSvc->inspect(QStringLiteral("hello.verbose"));
+            CHECK(!ins.declared);
+            CHECK(ins.effective.type() == QJsonValue::Undefined); // 残留不生效
+            bool residualDiag = false;
+            for (const auto &d : cfgSvc->diagnostics())
+                residualDiag |= d.key == QLatin1String("hello.verbose") && d.message.contains(QStringLiteral("残留"));
+            CHECK(residualDiag);
+            // 用户数据不删：SettingsStore 里仍在。
+            CHECK(application.context().settings().contains(application.context().settings().scopedKey(
+                nextpilot::plotscope::context::SettingsScope::App, QStringLiteral("config/hello.verbose"))));
+        }
+    }
     // 视图声明也整批撤回（侧栏容器/视图/标题动作/colors/status 全消失）。
     CHECK(ext.contributedViewContainers().isEmpty());
     CHECK(ext.contributedViews().isEmpty());
@@ -274,11 +460,19 @@ int main(int argc, char *argv[])
         CHECK(viewSvc->containersIn(QStringLiteral("sidebar")).isEmpty());
         CHECK(viewSvc->viewForId(QStringLiteral("hello.view")).owner.isEmpty());
     }
-    // M3-a：unmount 后扩展编辑器声明整批撤，只剩内置 text（core.text 不随扩展撤）。
+    // M3-a/M3-b：unmount 后扩展编辑器声明整批撤，只剩内置 text + settings
+    //（core.text / core.settings 不随扩展撤）。
     if (editorSvc)
     {
-        CHECK(editorSvc->customEditors().size() == 1);
-        CHECK(editorSvc->customEditors().at(0).viewType == QLatin1String("text"));
+        CHECK(editorSvc->customEditors().size() == 2);
+        bool webGone = true, settingsKept = false;
+        for (const auto &ed : editorSvc->customEditors())
+        {
+            webGone &= ed.viewType != QLatin1String("web");
+            settingsKept |= ed.viewType == QLatin1String("workbench.editor.settings2");
+        }
+        CHECK(webGone);
+        CHECK(settingsKept);
         CHECK(editorSvc->editorViewTypeFor(html).isEmpty());
         // 声明没了，再注册 web 必拒（owner 不匹配 → 无声明者）。
         CHECK(viewsReg && viewsReg->registerEditorProvider(QStringLiteral("web"), &g_webProvider,

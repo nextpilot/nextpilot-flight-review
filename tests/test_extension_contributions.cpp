@@ -162,6 +162,39 @@ int main(int argc, char **argv)
         CHECK(extensions.unmountContribution(QStringLiteral("ed.b"))); // 清场
     }
 
+    // ===== M3-b：configuration 跨 owner 键唯一性（挂载层，与 customEditors 同口径）=====
+    {
+        extensions.clearContributionDiagnostics();
+        // 先到者 A 声明 plot.dup → 保留。
+        const char *jsonA =
+            "{\"configuration\":[{\"title\":\"A\",\"properties\":{\"plot.dup\":{\"type\":\"number\",\"default\":1}}}]}";
+        CHECK(extensions.mountContribution(doc(jsonA, QStringLiteral("cfg.a"))));
+        CHECK(extensions.contributedConfigurations().size() == 1);
+        // 后到者 B 声明同一键 → mount 成功但该条跳过，诊断含双方 owner。
+        const char *jsonB =
+            "{\"configuration\":[{\"title\":\"B\",\"properties\":{\"plot.dup\":{\"type\":\"number\",\"default\":2}}}]}";
+        CHECK(extensions.mountContribution(doc(jsonB, QStringLiteral("cfg.b"))));
+        CHECK(extensions.contributedConfigurations().size() == 1); // B 的空节点不进表
+        CHECK(extensions.contributedConfigurations().at(0).owner == QLatin1String("cfg.a"));
+        bool diagBoth = false;
+        for (const auto &d : extensions.contributionDiagnostics())
+            if (d.keyPath.startsWith(QLatin1String("configuration.")) && d.message.contains(QLatin1String("cfg.a")) &&
+                d.message.contains(QLatin1String("cfg.b")))
+                diagBoth = true;
+        CHECK(diagBoth);
+        // B 先卸载再换键 mount → 正常入表；unmount 各自整批撤。
+        CHECK(extensions.unmountContribution(QStringLiteral("cfg.b")));
+        const char *jsonB2 =
+            "{\"configuration\":[{\"title\":\"B2\",\"properties\":{\"plot.other\":{\"type\":\"boolean\",\"default\":true}}}]}";
+        CHECK(extensions.mountContribution(doc(jsonB2, QStringLiteral("cfg.b"))));
+        CHECK(extensions.contributedConfigurations().size() == 2);
+        CHECK(extensions.unmountContribution(QStringLiteral("cfg.a")));
+        CHECK(extensions.contributedConfigurations().size() == 1);
+        CHECK(extensions.contributedConfigurations().at(0).owner == QLatin1String("cfg.b"));
+        CHECK(extensions.unmountContribution(QStringLiteral("cfg.b"))); // 清场
+        CHECK(extensions.contributedConfigurations().isEmpty());
+    }
+
     if (g_failed == 0)
         std::printf("extension_contributions: ALL PASS\n");
     else

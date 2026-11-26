@@ -9,11 +9,13 @@
 add_library(ps_assembly STATIC
     include/WorkbenchAdapters.h
     include/WorkbenchServices.h
+    include/SettingsEditorWidget.h
     include/ExtensionActivationService.h
     src/WorkbenchAdapters.cpp
     src/WorkbenchServices.cpp
     src/ExtensionActivationService.cpp
     src/BuiltinTextEditor.cpp
+    src/SettingsEditor.cpp
 )
 target_include_directories(ps_assembly PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(ps_assembly PUBLIC

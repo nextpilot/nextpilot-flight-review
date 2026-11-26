@@ -41,6 +41,18 @@
         "selector": [{ "mime": "text/html" }]
       }
     ],
+    "configuration": [
+      {
+        "title": "示例设置",
+        "iconId": "chat",
+        "order": 40,
+        "properties": {
+          "hello.greeting": { "type": "string", "default": "你好", "description": "问候语", "order": 1 },
+          "hello.count": { "type": "number", "default": 3, "minimum": 1, "maximum": 10, "order": 2 },
+          "hello.verbose": { "type": "boolean", "default": false, "order": 3 }
+        }
+      }
+    ],
     "statusbar": [
       { "id": "hello.status", "side": "right", "priority": 30, "tooltip": "示例状态", "text": "示例: --", "commandId": "hello.say" }
     ]
