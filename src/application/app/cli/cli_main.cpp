@@ -4,6 +4,7 @@
 #include "../core/App.h"
 #include "Intent.h"
 #include "Dataset.h"
+#include "ContributionsFormat.h"
 #include "../mcp/mcp_bridge.h"
 #include "../diag/diagnostics.h"
 
@@ -199,8 +200,7 @@ int main(int argc, char **argv)
             fprintf(stdout, "%s viewsContainers %s area=%s order=%d\n",
                     u8(c.owner), u8(c.item.id), u8(c.item.area), c.item.order);
         for (const auto &v : extensions.contributedViews())
-            fprintf(stdout, "%s views %s container=%s order=%d\n",
-                    u8(v.owner), u8(v.item.id), u8(v.item.container), v.item.order);
+            fprintf(stdout, "%s\n", u8(formatContributionViewLine(v.owner, v.item)));
         for (const auto &m : extensions.contributedMenuItems())
             fprintf(stdout, "%s menus.%s %s group=%s when=%s\n",
                     u8(m.owner), u8(m.item.place), u8(m.item.command),

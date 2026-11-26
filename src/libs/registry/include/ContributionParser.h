@@ -70,6 +70,7 @@ struct ContributedView
     QString id;        // 全局唯一
     QString name;
     QString container; // 所属 viewsContainers[].id
+    QString icon;      // 对位 ViewDescriptor.iconPath；纯名字，不带 `:/`、不带扩展名
     QString when;
     int order = 0;
     QString owner;     // 声明者归属（parse 不填；ViewRegistry.declare 时写）

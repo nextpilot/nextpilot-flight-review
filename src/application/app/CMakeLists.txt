@@ -28,7 +28,8 @@ add_library(ps_app STATIC
 target_include_directories(ps_app PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/core
     ${CMAKE_CURRENT_SOURCE_DIR}/mcp
-    ${CMAKE_CURRENT_SOURCE_DIR}/diag)
+    ${CMAKE_CURRENT_SOURCE_DIR}/diag
+    ${CMAKE_CURRENT_SOURCE_DIR}/cli)
 target_link_libraries(ps_app PUBLIC
     ps_assembly ps_host ps_context ps_intent ps_recording Qt6::Core)
 set_target_properties(ps_app PROPERTIES AUTOMOC ON CXX_STANDARD 17 POSITION_INDEPENDENT_CODE ON)

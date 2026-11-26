@@ -178,6 +178,47 @@ int main(int argc, char *argv[])
     // 先给窗口一个确定尺寸：画布按自身像素宽请求数据，尺寸确定后断言才可复现。
     window.resize(1280, 800);
 
+    // --- 0a0) A2b 笔 2a：openView 已创建则复用并置前（独立装配，不依赖 MainWindow）---
+    {
+        using namespace nextpilot::plotscope;
+        // 声明顺序保证析构逆序安全：views(adapter) 先于 host 析构，
+        // host 删除控件时 destroyed 连接的 context 已失效、lambda 不再触碰缓存。
+        QWidget host;
+        registry::ViewRegistry vreg;
+        assembly::ViewsServiceAdapter views(vreg);
+        int created = 0;
+        QWidget *made = nullptr;
+        registry::ViewRegistry::ViewFactory countingFactory =
+            [&created, &made](context::AppContext &, intent::IIntentExecutor &, QWidget *parent) -> QWidget * {
+            ++created;
+            made = new QWidget(parent);
+            return made;
+        };
+        CHECK(vreg.registerViewProvider(QStringLiteral("probe.view.a"), countingFactory, QStringLiteral("probe.ext")));
+        QWidget *p1 = views.openView(QStringLiteral("probe.view.a"), application.context(), application.host(), &host);
+        CHECK(p1 != nullptr);
+        CHECK(created == 1);
+        QWidget *p2 = views.openView(QStringLiteral("probe.view.a"), application.context(), application.host(), &host);
+        CHECK(p2 == p1);                // 同一 id 返回同一控件
+        CHECK(created == 1);            // 复用不再构造
+        CHECK(p1->isHidden() == false); // show() 置前后即便父未可见，isHidden 也为 false
+        // 同一 viewId、不同 parent → 各自独立实例，不复用错父窗口的控件。
+        QWidget otherHost;
+        QWidget *p3 =
+            views.openView(QStringLiteral("probe.view.a"), application.context(), application.host(), &otherHost);
+        CHECK(p3 != nullptr);
+        CHECK(p3 != p1);     // 不同 parent → 不同控件
+        CHECK(created == 2); // 新 parent 触发第二次构造
+        CHECK(p3->parentWidget() == &otherHost);
+        QWidget *p4 = views.openView(QStringLiteral("probe.view.a"), application.context(), application.host(), &host);
+        CHECK(p4 == p1);     // 回到原 parent 仍复用原实例
+        CHECK(created == 2); // 不再构造
+        // 未注册 viewId → nullptr（并 qWarning 出诊断）。
+        CHECK(views.openView(QStringLiteral("probe.view.unregistered"), application.context(), application.host(),
+                             &host) == nullptr);
+        OK("openView 复用置前 + 按 parent 隔离：二次同指针、跨 parent 各自实例、isHidden=false");
+    }
+
     // --- 0a) 「文件 → 设置」的接线契约：ribbon 动作绑的是 GUI 专属意图 ---
     {
         // 偏好对话框是 GUI 专属能力：动作必须绑 preferences.open（由外壳注册的

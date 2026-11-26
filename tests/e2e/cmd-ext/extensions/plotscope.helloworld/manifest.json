@@ -28,7 +28,8 @@
       { "id": "hello.container", "title": "示例视图", "area": "sidebar", "icon": "chat", "order": 20 }
     ],
     "views": [
-      { "id": "hello.view", "name": "示例", "container": "hello.container", "order": 0 }
+      { "id": "hello.view", "name": "示例", "container": "hello.container", "icon": "hello.icon", "order": 0 },
+      { "id": "hello.view.plain", "name": "无图标示例", "container": "hello.container", "order": 1 }
     ],
     "colors": {
       "hello.accent": { "dark": "#4fc3f7", "light": "#0277bd" }

@@ -43,7 +43,13 @@
 #include "ViewRegistry.h"
 #include "RuntimeHost.h" // ThemeServiceAdapter 内联构造读 uiSlots()，需完整类型
 
+// <QDebug> 仅为 ViewsServiceAdapter::openView 的 qWarning 诊断；本文件的适配器均为
+// header-only 内联类，openView 亦内联定义，无法挪到 .cpp，故保留（勿据此 include 扩散依赖）。
+#include <QDebug>
+#include <QHash>
+#include <QPair>
 #include <QObject>
+#include <QPointer>
 #include <QVariantMap>
 #include <algorithm>
 
@@ -492,7 +498,7 @@ private:
 class ViewsServiceAdapter final : public wb::IViewsService
 {
 public:
-    ViewsServiceAdapter(registry::ViewRegistry &views) : m_views(views) {}
+    explicit ViewsServiceAdapter(registry::ViewRegistry &views) : m_views(views) {}
 
     QList<registry::ContributedViewContainer> containersIn(const QString &area) const override
     {
@@ -524,11 +530,39 @@ public:
     QWidget *openView(const QString &viewId, ctx::AppContext &appCtx,
                       intent::IIntentExecutor &executor, QWidget *parent) override
     {
-        return m_views.create(viewId, appCtx, executor, parent);
+        // 缓存键含 parent：同一 viewId 在不同窗口/不同 parent 各持一实例，互不复用
+        // （对位 VSCode view 实例按窗口隔离）。命中且存活 → 置前（show/raise）返回原控件。
+        const ViewKey key(viewId, parent);
+        auto it = m_createdViews.find(key);
+        if (it != m_createdViews.end() && it.value())
+        {
+            QWidget *existing = it.value().data();
+            existing->show();
+            existing->raise();
+            return existing;
+        }
+        // 未注册 view provider → 返回 nullptr 并出诊断，不静默。
+        if (m_views.provider(viewId) == nullptr)
+        {
+            qWarning() << "openView: 未注册 view provider, viewId =" << viewId;
+            return nullptr;
+        }
+        QWidget *w = m_views.create(viewId, appCtx, executor, parent);
+        if (!w)
+            return nullptr;
+        m_createdViews.insert(key, w);
+        // 控件销毁时清缓存项，杜绝悬垂 QPointer 残留。用 QObject 成员作 context：
+        // 适配器先销毁时 connect 自动断开，lambda 不再触碰已释放的缓存表。
+        QObject::connect(w, &QObject::destroyed, &m_cacheLifetime, [this, key]() { m_createdViews.remove(key); });
+        return w;
     }
 
 private:
     registry::ViewRegistry &m_views;
+    // 缓存键 = (viewId, parent)：同一 viewId 跨 parent 各自独立实例，不与错父窗口复用。
+    using ViewKey = QPair<QString, QWidget *>;
+    QHash<ViewKey, QPointer<QWidget>> m_createdViews;
+    QObject m_cacheLifetime; // connect context：声明在缓存之后，析构先于缓存断开连接
 };
 
 // ---- IEditorService ----

@@ -10,6 +10,7 @@
 #include "ExtensionActivationService.h"
 #include "command/CommandRegistry.h"
 #include "ContributionParser.h"
+#include "ContributionsFormat.h"
 #include "ViewRegistry.h"
 #include "IViewsService.h"
 #include "IEditorService.h"
@@ -82,7 +83,8 @@ int main(int argc, char *argv[])
             "view/item/context":[{"command":"hello.say","group":"inline","when":"view == hello.view && item.kind == demo"}]
         },
         "viewsContainers":[{"id":"hello.container","title":"示例视图","area":"sidebar","order":20}],
-        "views":[{"id":"hello.view","name":"示例","container":"hello.container","order":0}],
+        "views":[{"id":"hello.view","name":"示例","container":"hello.container","icon":"hello.icon","order":0},
+                 {"id":"hello.view.plain","name":"无图标示例","container":"hello.container","order":1}],
         "customEditors":[{"viewType":"web","displayName":"网页","priority":5,
                           "selector":[{"mime":"text/html"}]}],
         "configuration":[{"title":"示例设置","iconId":"chat","order":40,
@@ -123,8 +125,11 @@ int main(int argc, char *argv[])
     CHECK(ext.contributedViewContainers().size() == 1);
     CHECK(ext.contributedViewContainers().at(0).item.id == QLatin1String("hello.container"));
     CHECK(ext.contributedViewContainers().at(0).item.area == QLatin1String("sidebar"));
-    CHECK(ext.contributedViews().size() == 1);
+    CHECK(ext.contributedViews().size() == 2);
     CHECK(ext.contributedViews().at(0).item.container == QLatin1String("hello.container"));
+    // icon 原样进贡献表：首个视图 icon=hello.icon，第二个未声明 icon 为空。
+    CHECK(ext.contributedViews().at(0).item.icon == QLatin1String("hello.icon"));
+    CHECK(ext.contributedViews().at(1).item.icon.isEmpty());
     // view/title 与 view/item/context 两个 place 的菜单项可见（侧栏视图的动作）。
     const auto titleItems = ext.menuItemsIn(QStringLiteral("view/title"));
     CHECK(titleItems.size() == 1);
@@ -154,12 +159,25 @@ int main(int argc, char *argv[])
             CHECK(containers.at(0).title == QStringLiteral("示例视图"));
         }
         const auto inContainer = viewSvc->viewsInContainer(QStringLiteral("hello.container"));
-        CHECK(inContainer.size() == 1);
+        CHECK(inContainer.size() == 2);
         if (!inContainer.isEmpty())
             CHECK(inContainer.at(0).id == QLatin1String("hello.view"));
         const auto one = viewSvc->viewForId(QStringLiteral("hello.view"));
         CHECK(one.owner == QLatin1String("plotscope.helloworld"));
         CHECK(viewSvc->viewForId(QStringLiteral("nope")).owner.isEmpty());
+
+        // A2b 笔 2a icon：声明的 icon 原样回读；未声明的视图 icon 为空（CLI 输出时为 "-"）。
+        CHECK(one.icon == QLatin1String("hello.icon"));
+        const auto plain = viewSvc->viewForId(QStringLiteral("hello.view.plain"));
+        CHECK(plain.owner == QLatin1String("plotscope.helloworld"));
+        CHECK(plain.icon.isEmpty());
+        // icon 行格式由生产侧 formatContributionViewLine 唯一定义，CLI 与本测试共用；
+        // 整行精确相等（非 contains）：owner/container/order/icon 任一打错都会红。
+        CHECK(
+            formatContributionViewLine(one.owner, one) ==
+            QStringLiteral("plotscope.helloworld views hello.view container=hello.container order=0 icon=hello.icon"));
+        CHECK(formatContributionViewLine(plain.owner, plain) ==
+              QStringLiteral("plotscope.helloworld views hello.view.plain container=hello.container order=1 icon=-"));
     }
 
     // viewId 注册内容工厂后 openView 走 ViewRegistry::create 同一条链（这里工厂
@@ -169,7 +187,7 @@ int main(int argc, char *argv[])
     CHECK(viewsReg != nullptr);
     if (viewsReg)
     {
-        CHECK(viewsReg->viewsIn(QStringLiteral("hello.container")).size() == 1);
+        CHECK(viewsReg->viewsIn(QStringLiteral("hello.container")).size() == 2);
         CHECK(viewsReg->registerViewProvider(
             QStringLiteral("hello.view"),
             [](context::AppContext &, intent::IIntentExecutor &, QWidget *) -> QWidget * {

@@ -39,6 +39,7 @@ public:
     viewForId(const QString &viewId) const = 0;
 
     // 打开视图内容（工厂经 ViewRegistry::registerViewProvider 注册；未注册返回 nullptr）。
+    // 已创建则置前（show/raise）并返回原控件，未创建则经工厂创建（A2b 笔 2a）。
     virtual QWidget *openView(const QString &viewId,
                               nextpilot::plotscope::context::AppContext &appCtx,
                               nextpilot::plotscope::intent::IIntentExecutor &executor,

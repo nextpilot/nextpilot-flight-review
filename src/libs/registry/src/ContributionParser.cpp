@@ -51,9 +51,8 @@ bool isKnownViewContainerField(const QString &key)
 
 bool isKnownViewField(const QString &key)
 {
-    static const QSet<QString> allowed = {QStringLiteral("id"), QStringLiteral("name"),
-                                          QStringLiteral("container"), QStringLiteral("when"),
-                                          QStringLiteral("order")};
+    static const QSet<QString> allowed = {QStringLiteral("id"),   QStringLiteral("name"), QStringLiteral("container"),
+                                          QStringLiteral("icon"), QStringLiteral("when"), QStringLiteral("order")};
     return allowed.contains(key);
 }
 
@@ -371,6 +370,7 @@ ParseResult parseContributes(const QJsonObject &contributes, const QString &owne
                 v.id = id;
                 v.name = obj.value(QStringLiteral("name")).toString();
                 v.container = obj.value(QStringLiteral("container")).toString();
+                v.icon = obj.value(QStringLiteral("icon")).toString();
                 v.when = obj.value(QStringLiteral("when")).toString();
                 v.order = readInt(obj, QStringLiteral("order"));
                 result.doc.views.append(v);

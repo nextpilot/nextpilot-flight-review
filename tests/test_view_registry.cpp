@@ -37,6 +37,7 @@ public:
         return !ro; // readonly 提供者自身保存失败（壳本不该调）
     }
 };
+
 #define CHECK(cond)                                                            \
     do                                                                         \
     {                                                                          \
@@ -227,6 +228,28 @@ int main(int argc, char **argv)
         CHECK(eds.editorProvider(QStringLiteral("text")) == nullptr);
         CHECK(eds.editorOwner(QStringLiteral("text")).isEmpty());
         CHECK(eds.editorViewTypeFor(html).isEmpty());
+    }
+
+    // ===== A2b 笔 2a：views[].icon 解析（对位 ViewDescriptor.iconPath，纯名字）=====
+    {
+        ViewRegistry vreg;
+        vreg.declare(doc(R"({"viewsContainers":[{"id":"explorer","title":"资源管理器","area":"sidebar"}],
+            "views":[{"id":"data.tree","name":"数据树","container":"explorer","icon":"database"},
+                     {"id":"plot.axes","name":"坐标轴","container":"explorer"}]})",
+                         QStringLiteral("ext.view")));
+
+        // 声明的 icon 原样解析进 ContributedView；未声明者为空（壳不猜、不兜底）。
+        QString treeIcon;
+        int axesCount = 0;
+        for (const auto &v : vreg.allViews())
+        {
+            if (v.id == QLatin1String("data.tree"))
+                treeIcon = v.icon;
+            if (v.id == QLatin1String("plot.axes") && v.icon.isEmpty())
+                ++axesCount;
+        }
+        CHECK(treeIcon == QLatin1String("database"));
+        CHECK(axesCount == 1);
     }
 
     if (g_failed == 0)
