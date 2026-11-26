@@ -4,8 +4,8 @@
 The generated file is committed; the application never runs Python at build time.
 Run: python3 tools/nmea-metadata.py
 """
+
 import json
-import re
 from pathlib import Path
 
 import pynmea2
@@ -72,12 +72,19 @@ def convert_field(index: int, definition) -> dict:
         field["unit"] = unit
     if field["type"] == "string" and unit in ("m", "kn", "deg", "ratio", "count", "dBHz", "nm", "km/h", "h", "min"):
         field["type"] = "number"
-    if field["type"] == "string" and name in ("num_sats", "num_sv_in_view", "num_messages",
-                                             "age_gps_data", "pdop", "hdop", "vdop", "snr_1"):
+    if field["type"] == "string" and name in (
+        "num_sats",
+        "num_sv_in_view",
+        "num_messages",
+        "age_gps_data",
+        "pdop",
+        "hdop",
+        "vdop",
+        "snr_1",
+    ):
         field["type"] = "number"
 
-    if name in ("lat", "latitude", "lon", "longitude", "lat_next", "lon_next",
-                "waypoint_lat", "waypoint_lon"):
+    if name in ("lat", "latitude", "lon", "longitude", "lat_next", "lon_next", "waypoint_lat", "waypoint_lon"):
         field["type"] = "dm"
         field["unit"] = "deg"
         field["hemiIndex"] = index + 1
@@ -110,6 +117,5 @@ def generate() -> dict:
 
 if __name__ == "__main__":
     document = generate()
-    DATABASE.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n",
-                        encoding="utf-8")
+    DATABASE.write_text(json.dumps(document, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"wrote {DATABASE}: {len(document['sentences'])} sentences")

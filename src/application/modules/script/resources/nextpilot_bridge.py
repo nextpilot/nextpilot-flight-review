@@ -30,7 +30,8 @@ try:
 except ImportError:  # 桥的大数组旁路（memmap / tofile）硬依赖 numpy
     sys.stderr.write(
         "[bridge] 缺少 numpy：PlotScope 的 Python 桥需要它（ds 列注入 / 写回走 "
-        "np.memmap 与 tofile）。安装方式：apt install python3-numpy 或 pip install numpy\n")
+        "np.memmap 与 tofile）。安装方式：apt install python3-numpy 或 pip install numpy\n"
+    )
     raise
 
 
@@ -141,7 +142,7 @@ def handle(req):
         arr.tofile(req["path"])
         return {"rows": int(arr.shape[0] if arr.ndim else 0)}
 
-    raise ValueError("未知 op: %r" % (op,))
+    raise ValueError(f"未知 op: {op!r}")
 
 
 def main():
@@ -152,8 +153,7 @@ def main():
         try:
             req = json.loads(line)
         except Exception as e:  # 协议坏了也要回一条，避免宿主死等
-            sys.stdout.write(json.dumps({"id": None, "ok": False,
-                                         "error": "bad json line: %s" % e}) + "\n")
+            sys.stdout.write(json.dumps({"id": None, "ok": False, "error": f"bad json line: {e}"}) + "\n")
             sys.stdout.flush()
             continue
         rid = req.get("id")
@@ -161,7 +161,7 @@ def main():
             resp = {"id": rid, "ok": True}
             resp.update(handle(req))
         except Exception as e:
-            resp = {"id": rid, "ok": False, "error": "%s: %s" % (type(e).__name__, e)}
+            resp = {"id": rid, "ok": False, "error": f"{type(e).__name__}: {e}"}
         sys.stdout.write(json.dumps(resp, ensure_ascii=False) + "\n")
         sys.stdout.flush()
 

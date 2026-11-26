@@ -3,15 +3,16 @@
 
 Run: python3 tools/ubx-metadata.py
 """
+
 import json
 import re
 from pathlib import Path
 
 import pyubx2
+from pyubx2.ubxhelpers import GNSSLIST, SIGID
 from pyubx2.ubxtypes_core import UBX_MSGIDS
 from pyubx2.ubxtypes_get import UBX_PAYLOADS_GET
 from pyubx2.ubxtypes_set import UBX_PAYLOADS_SET
-from pyubx2.ubxhelpers import GNSSLIST, SIGID
 
 ROOT = Path(__file__).resolve().parent.parent
 DATABASE = ROOT / "src/extensions/builtin/gnss/ubx_database.json"
@@ -166,24 +167,28 @@ def size_of(field) -> int:
 def bitfield_fields(name, adef, offset):
     btype, bdict = adef
     raw_type, raw_size, _ = type_info(btype)
-    fields = [{
-        "name": snake(name[:-4]),
-        "offset": offset,
-        "type": raw_type,
-        "size": raw_size,
-    }]
+    fields = [
+        {
+            "name": snake(name[:-4]),
+            "offset": offset,
+            "type": raw_type,
+            "size": raw_size,
+        }
+    ]
     bit = 0
     for flag_name, flag_type in bdict.items():
         width = int(flag_type[1:4]) if isinstance(flag_type, str) else 1
         if not flag_name.startswith("reserved"):
-            fields.append({
-                "name": snake(flag_name),
-                "offset": offset,
-                "type": "bit",
-                "size": raw_size,
-                "bitOffset": bit,
-                "bitWidth": width,
-            })
+            fields.append(
+                {
+                    "name": snake(flag_name),
+                    "offset": offset,
+                    "type": "bit",
+                    "size": raw_size,
+                    "bitOffset": bit,
+                    "bitWidth": width,
+                }
+            )
         bit += width
     return fields
 

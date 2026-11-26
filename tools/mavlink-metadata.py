@@ -4,11 +4,11 @@
 The C headers carry wire layout, offsets, array lengths and CRC extras; this
 sidecar only adds the XML metadata that C does not expose.
 """
+
 import argparse
 import importlib
 import inspect
 import json
-
 
 TYPE_SIZE = {
     "char": 1,
@@ -23,6 +23,7 @@ TYPE_SIZE = {
     "int64_t": 8,
     "double": 8,
 }
+
 
 def dump_dialect(dialect: str) -> dict:
     module = importlib.import_module(f"pymavlink.dialects.v20.{dialect}")

@@ -6,6 +6,7 @@
 
 用法：python3 tools/gen-seed-flights.py /tmp/ps_seed
 """
+
 import csv
 import math
 import os
@@ -37,8 +38,7 @@ def main(out_dir: str) -> int:
                 yaw = 30.0 * t / dur + random.gauss(0, 0.2)
                 alt = 100 + 20 * math.sin(2 * math.pi * 0.02 * t)
                 vz = 0.4 * math.cos(2 * math.pi * 0.02 * t)
-                w.writerow([f"{t:.3f}", f"{roll:.4f}", f"{pitch:.4f}",
-                            f"{yaw:.4f}", f"{alt:.3f}", f"{vz:.4f}"])
+                w.writerow([f"{t:.3f}", f"{roll:.4f}", f"{pitch:.4f}", f"{yaw:.4f}", f"{alt:.3f}", f"{vz:.4f}"])
         print(f"{name}.csv {n} points")
     return 0
 
