@@ -10,7 +10,9 @@
     tools/clang-tidy-diff-gate.py --log tidy.log --base origin/main [--max 200]
 
 退出码：0 = 新增行无 finding；1 = 新增行有 finding（已打印清单）；
-        2 = 参数/环境错误（不算门禁失败，避免误红）。
+        2 = 门禁没跑起来（基线缺失 / git diff 失败）——按**阻断**处理。
+            宁可红一次让人来看，也不让门禁静默放过：检查通过必须是「真的比对过」，
+            而不是「没比成所以没报错」。
 """
 
 from __future__ import annotations
@@ -69,6 +71,23 @@ def findings(log_path: str, root: str) -> list[tuple[str, int, str]]:
     return items
 
 
+def resolve_base(root: str) -> str | None:
+    """--base 缺失时的兜底：优先 origin/main，其次 HEAD~1；都不可用返回 None。
+
+    这里只是防御编排侧漏传（比如 outputs 里少了 base=）。真正该给的基线仍由
+    lint.yml 的 `Collect changed C++ sources` 计算，不能靠猜替代。
+    """
+    for ref in ("origin/main", "HEAD~1"):
+        r = subprocess.run(
+            ["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
+            cwd=root,
+            capture_output=True,
+        )
+        if r.returncode == 0:
+            return ref
+    return None
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--log", required=True, help="clang-tidy 原始输出")
@@ -78,7 +97,20 @@ def main() -> int:
     args = ap.parse_args()
 
     root = os.path.abspath(args.root)
-    touched = added_lines(args.base, root)
+    base = (args.base or "").strip()
+    if not base:
+        base = resolve_base(root) or ""
+        if not base:
+            # 连兜底基线都找不到：门禁没有基线可算 → fail-closed 阻断。
+            # 宁可红一次让人来看，也不静默放过（绿了但没检查比红更危险）。
+            print(
+                "[gate] --base 为空且无可用基线（origin/main / HEAD~1 都不可用）："
+                "门禁没有基线可算 → 按阻断处理（fail-closed）",
+                file=sys.stderr,
+            )
+            return 2
+        print(f"[gate] --base 为空，回退到 {base}（检查 lint.yml 的 outputs.base 是否漏写）")
+    touched = added_lines(base, root)
     if not touched:
         print("[gate] 本次没有新增的 C++ 行，跳过")
         return 0

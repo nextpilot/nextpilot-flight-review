@@ -72,6 +72,12 @@ jobs:
           # Also checks the shell snippets embedded in `run:` blocks via shellcheck.
           /tmp/actionlint -color .github/workflows/*.yml
 
+      - name: Check step outputs contract
+        # actionlint 管语法和 run 块的 shellcheck，管不到「引用了哪个 step 的哪个 output」：
+        # GitHub Actions 对写错的 id/key 不报错，运行时只给空串——tidy 的 base 就是这么丢的，
+        # 空串传到 git diff 里才炸，失败点离原因几十行，还被 if: 门挡着看不见。
+        run: python3 tools/check-workflow-outputs.py .github/workflows
+
   format:
     # Changed-lines-only clang-format gate.
     #
@@ -292,6 +298,9 @@ jobs:
             git cat-file -e "${BASE}^{commit}" 2>/dev/null || BASE="$(git rev-parse HEAD~1)"
           fi
           echo "base = $BASE"
+          # 必须写进 outputs：clang-tidy 增量门禁靠 base 算新增行，缺了这个通道值
+          # 它就是空串，`git diff ""...HEAD` 直接非法 ref，每个 C++ PR 的 tidy 都会红。
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
           mapfile -t FILES < <(git diff --name-only --diff-filter=d "$BASE"...HEAD \
             -- '*.cpp' '*.cxx' | grep -v -e '/3rdparty/' || true)
           if [ "${#FILES[@]}" -eq 0 ]; then
