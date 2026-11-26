@@ -67,7 +67,10 @@ PS_JOBS=2 cmake --build --preset default
 > used previously`）。缓存本身仍然有效，Ninja 下 ccache 增量命中实测 100%，
 > 数据与机制见 `build-performance.md` §9。
 
-`~/.ps-deps` 不完整时 configure 会报找不到 Qt6，先跑 `tools/ubuntu-setup.sh --install --qt`。Lua 由仓库内 `src/3rdparty/lua-5.4` 源码编静态库，不依赖系统 Lua。
+`~/.ps-deps` 不完整时 configure 会报找不到 Qt6，先跑 `tools/ubuntu-setup.sh --install --qt`。
+
+非交互 shell（agent、CI 里的一次性 `bash -c`、IDE 的外部工具）不读 `~/.bashrc`，所以 `PATH` 里常常没有 `$PS_DEPS_ROOT/toolchain/ccache/bin`——`find_program(ccache)` 探不到时缓存会被静默旁路。`--install` 会落一份 `$PS_DEPS_ROOT/env.sh`，这类进程先 `. "$PS_DEPS_ROOT/env.sh"` 再 configure；判断缓存是否真的挂上，看 configure 的 `[ccache] 已启用：…` 行，或 `grep -c ccache build/build.ninja`。验收机/CI 加 `-DPS_REQUIRE_CCACHE=ON`，探不到即在配置期硬失败，避免「以为开了、实际直连编译器」。`tools/ubuntu-setup.sh --check` 也会把「持久副本存在但 PATH 探不到」标成 ✗。
+Lua 由仓库内 `src/3rdparty/lua-5.4` 源码编静态库，不依赖系统 Lua。
 
 ## 格式化（只改变更行）
 

@@ -32,18 +32,37 @@ endif()
 include(Dependencies)
 
 # 编译缓存：命中即跳过整段编译，2 核机器收益最明显。
-# 探测不到就静默跳过——没装 ccache 的机器必须照常可编。
+# 探不到时默认只告警并直连编译器——没装 ccache 的机器必须照常可编；
+# 但「以为开了、实际没开」不能静默：验收机/CI 用 -DPS_REQUIRE_CCACHE=ON
+# 把这条变成配置期硬失败。非交互 shell（agent/CI 的一次性 bash）不读
+# ~/.bashrc，PATH 里可能没有 $PS_DEPS_ROOT/toolchain/ccache/bin，
+# 这类进程先 `. "$PS_DEPS_ROOT/env.sh"`。
 option(PS_USE_CCACHE "探测 ccache 并启用编译缓存" ON)
+option(PS_REQUIRE_CCACHE "探不到 ccache 时配置期直接失败（验收机/CI 用）" OFF)
 if(PS_USE_CCACHE)
     # 不写 cache：旧 build 目录里残留的绝对路径在换机/换 HOME 后失效，
     # 会让 launcher 指向不存在的文件（表现为 /bin/sh: ccache: not found）。
     find_program(CCACHE_PROGRAM ccache NO_CACHE)
+    # 提示里给出可核对的绝对路径；PS_DEPS_ROOT 未导出时退回默认位置。
+    set(_ps_ccache_root "$ENV{PS_DEPS_ROOT}")
+    if(NOT _ps_ccache_root)
+        set(_ps_ccache_root "$ENV{HOME}/.ps-deps")
+    endif()
+    set(_ps_ccache_hint "${_ps_ccache_root}/toolchain/ccache/bin/ccache")
     if(CCACHE_PROGRAM)
         set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
         set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
         message(STATUS "[ccache] 已启用：${CCACHE_PROGRAM}")
+    elseif(PS_REQUIRE_CCACHE)
+        message(STATUS "[ccache] 期望的 ccache：${_ps_ccache_hint}")
+        message(FATAL_ERROR
+            "[ccache] PS_REQUIRE_CCACHE=ON 但没有探到 ccache；装法 tools/ubuntu-setup.sh --install --toolchain，"
+            "非交互 shell 先 source \"${_ps_ccache_root}/env.sh\"；不用缓存就 -DPS_USE_CCACHE=OFF。")
     else()
-        message(STATUS "[ccache] 未找到 ccache，使用直连编译器")
+        message(WARNING
+            "[ccache] 没探到 ccache，本次构建直连编译器（编译缓存未启用）；期望 ${_ps_ccache_hint} "
+            "或 PATH 上的系统 ccache。非交互 shell（agent/CI 的一次性 bash）不读 ~/.bashrc，"
+            "先 source \"${_ps_ccache_root}/env.sh\"；验收机要硬失败就 -DPS_REQUIRE_CCACHE=ON。")
     endif()
 endif()
 

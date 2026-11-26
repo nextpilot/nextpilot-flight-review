@@ -251,6 +251,11 @@ check_all() {
 
   v="$(probe_ccache)"; if [ -z "$v" ]; then
     record ccache "$V_CCACHE_MIN" "缺" none false
+  elif ! command -v ccache >/dev/null 2>&1; then
+    # 持久副本在、但当前 PATH 里没有：CMake 的 find_program 按 PATH 探，
+    # 这种状态下缓存实际未启用，必须标红而不是给 ✓。
+    record ccache "$V_CCACHE_VER" "$v" "managed(不在PATH)" false
+    log "ccache 在 $PS_DEPS_ROOT/toolchain/ccache/bin，但当前 PATH 探不到：. \"$PS_DEPS_ROOT/env.sh\" 后再构建"
   elif [ -x "$PS_DEPS_ROOT/toolchain/ccache/bin/ccache" ]; then
     ver_satisfy "$v" "$V_CCACHE_VER" && record ccache "$V_CCACHE_VER" "$v" managed true || record ccache "$V_CCACHE_VER" "$v" managed false
   else
@@ -279,8 +284,8 @@ strip_block() {
 }
 
 write_block() {
-  local qt="" f done_files=()
-  qt="$(find_qt || true)"
+  local f done_files=()
+  write_env_file || return 1
   for f in "${STARTUP_FILES[@]}"; do
     if ! touch "$f" 2>/dev/null; then
       log "跳过 $f（不可写）"
@@ -288,19 +293,10 @@ write_block() {
     fi
     strip_block "$f"
     if ! {
+      # 单一事实源：真正的导出全在 $PS_DEPS_ROOT/env.sh（--install 落盘），
+      # 交互 shell 与 agent/CI 的一次性 bash 都 . 同一个文件，不再各写一份。
       echo "$MARK_BEGIN"
-      echo "export PS_DEPS_ROOT=\"$PS_DEPS_ROOT\""
-      echo "export PATH=\"$PS_DEPS_ROOT/bin:$PS_DEPS_ROOT/toolchain/python/venv/bin:$PS_DEPS_ROOT/toolchain/ccache/bin:\$PATH\""
-      [ -n "$qt" ] && {
-        echo "export PS_QT_DIR=\"$qt\""
-        echo 'export CMAKE_PREFIX_PATH="$PS_QT_DIR${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}"'
-        echo 'export LD_LIBRARY_PATH="$PS_QT_DIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"'
-      }
-      # 分层：这里只放缓存物理位置；策略项进 ccache.conf，base_dir 进 preset。
-      # 不再 export CCACHE_MAXSIZE/BASEDIR —— 环境变量优先级高于 conf/preset，
-      # 会让未 source 脚本的 IDE/CI 与命令行行为不一致。
-      echo "export CCACHE_DIR=\"$PS_DEPS_ROOT/caches/ccache\""
-      rust_env
+      echo "[ -f \"$PS_DEPS_ROOT/env.sh\" ] && . \"$PS_DEPS_ROOT/env.sh\""
       echo "$MARK_END"
     } >>"$f" 2>/dev/null; then
       log "写入 $f 失败"
@@ -329,6 +325,29 @@ print_env() {
 }
 
 # 让脚本自身（尤其结尾体检）看到刚装的东西，不必等用户开新终端
+# 落一份可 source 的环境文件：非交互 shell（agent/CI 的一次性 bash、IDE 外部工具）
+# 不读 ~/.bashrc，靠它把 PATH/CCACHE_DIR/Qt 变量带进来。
+write_env_file() {
+  local f="$PS_DEPS_ROOT/env.sh" tmp="$PS_DEPS_ROOT/env.sh.tmp"
+  mkdir -p "$PS_DEPS_ROOT" 2>/dev/null || { log "环境目录不可写：$PS_DEPS_ROOT"; return 1; }
+  if ! {
+    echo "# 由 tools/ubuntu-setup.sh 生成；非交互 shell 用 . \"$f\" 引入。"
+    echo "# 同一个 shell 里重复 source 只在首次生效，不层层追加 PATH。"
+    echo 'if [ -z "${PS_DEPS_ENV_LOADED:-}" ]; then'
+    print_env
+    echo 'export PS_DEPS_ENV_LOADED=1'
+    echo 'fi'
+  } >"$tmp" 2>/dev/null; then
+    log "写入 $tmp 失败"
+    return 1
+  fi
+  if ! mv "$tmp" "$f" 2>/dev/null; then
+    log "落位 $f 失败"
+    return 1
+  fi
+  log "环境文件：$f"
+}
+
 env_apply() { eval "$(print_env)"; }
 
 save_state() {
