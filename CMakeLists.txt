@@ -21,9 +21,17 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         "-ffile-prefix-map=${CMAKE_SOURCE_DIR}=."
         "-ffile-prefix-map=${CMAKE_BINARY_DIR}=build")
 elseif(MSVC)
-    add_compile_options(
-        "/pathmap:${CMAKE_SOURCE_DIR}=."
-        "/pathmap:${CMAKE_BINARY_DIR}=build")
+    # 例外：sccache 的 MSVC 参数解析不认 /pathmap，把 "/pathmap:<abs>=build" 当成
+    # 第二个输入文件，于是每条 cl.exe 命令都判为 "multiple input files" 而整条拒绝
+    # （Windows CI 实测 364/364 全 miss，executed 0）。sccache 作启动器时让位：
+    # CI 是 compile-only 门禁、不产 PDB，Windows 本地开发不用 sccache，仍保留映射。
+    if(CMAKE_C_COMPILER_LAUNCHER MATCHES "sccache" OR CMAKE_CXX_COMPILER_LAUNCHER MATCHES "sccache")
+        message(STATUS "[reproducible] sccache 启动器下跳过 /pathmap（sccache 不认该参数）")
+    else()
+        add_compile_options(
+            "/pathmap:${CMAKE_SOURCE_DIR}=."
+            "/pathmap:${CMAKE_BINARY_DIR}=build")
+    endif()
 endif()
 
 # 第三方 C 依赖（zlib / sqlite3）：优先系统或 -DPS_DEPS_ROOT 前缀，

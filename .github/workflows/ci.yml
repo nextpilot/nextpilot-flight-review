@@ -333,10 +333,10 @@ jobs:
       # 缓存从来没存上、每次都是全量编译（ci #25 证据）。目录由下面的显式 actions/cache
       # 负责保存/恢复，不再依赖 action 内部猜测的默认路径。
       SCCACHE_DIR: ${{ github.workspace }}/.sccache
-      # 临时诊断（IKY116）：sccache 把全部请求判为 "multiple input files"，executed 0、
-      # 命中 0。要看清它到底收到什么命令行，只能开 debug 日志。定位后这两行删除。
-      SCCACHE_LOG: debug
-      SCCACHE_ERROR_LOG: ${{ github.workspace }}/sccache-error.log
+      # 命中率口径：sccache 的 MSVC 参数解析不认 /pathmap，会把 "/pathmap:<abs>=build"
+      # 当成第二个输入文件，于是每条 cl.exe 命令都被判为 "multiple input files" 而拒绝
+      # 缓存。这里不靠环境变量绕过，而是让 CMake 在 sccache 作启动器时不加 /pathmap
+      # （见 CMakeLists.txt 的 MSVC 分支）。改这两处任何一处都要重跑一次 windows-compile。
     steps:
       - name: Checkout repository
         uses: actions/checkout@v5
@@ -398,15 +398,6 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=sccache `
             -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
 
-      - name: Diagnose sccache input parsing (temporary)
-        # 临时诊断（IKY116）：打印一条 ninja 真正会执行的编译命令行。sccache 的输入文件
-        # 判定就是照着这串参数做的，命令里若有两个「非 flag」token 就会报
-        # "multiple input files" 并整条拒绝（当前 364/364 全拒）。
-        shell: pwsh
-        run: |
-          $cmd = & ninja -C build -t commands 2>&1 | Select-String 'cl\.exe' | Select-Object -First 1
-          if ($cmd) { $cmd.Line } else { "no cl.exe command found" }
-
       - name: Build all targets (compile-only gate)
         shell: pwsh
         # All targets, not just the two shipped executables: the point is maximum
@@ -447,20 +438,6 @@ jobs:
               "::error::$ctx"
             }
             exit 1
-          }
-
-      - name: Show sccache debug log (temporary)
-        # 临时诊断（IKY116）：即便编译成功 sccache 也在拒每一条请求，所以这里无条件打印。
-        if: always()
-        shell: pwsh
-        run: |
-          $p = "$env:SCCACHE_ERROR_LOG"
-          if (Test-Path $p) {
-            Get-Content $p |
-              Select-String -Pattern 'multiple input|Command line|Compiling|parse' -Context 0,2 |
-              Select-Object -First 40
-          } else {
-            "no sccache debug log at $p"
           }
 
   macos-compile:
