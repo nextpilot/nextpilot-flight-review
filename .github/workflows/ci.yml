@@ -157,7 +157,10 @@ jobs:
             if [ "$rc" -ge 128 ]; then
               crashes=$((crashes + 1))
               echo "=== run$i 崩溃（rc=$rc），抓堆栈 ==="
-              CORE="$(ls -t "$out"/core* core core.* build/core* 2>/dev/null | head -1)"
+              # 不用 ls 挑最新 core（shellcheck SC2012/SC2010）：find + stat 按 mtime 排序，
+              # 文件名里出现空格或非字母数字也不会解析错。
+              CORE="$(find "$out" . -maxdepth 3 -type f \( -name 'core' -o -name 'core.*' \) -print0 2>/dev/null \
+                | xargs -0 -r stat -c '%Y %n' 2>/dev/null | sort -rn | head -1 | cut -d' ' -f2-)"
               if [ -n "$CORE" ] && [ -f "$CORE" ]; then
                 echo "core: $CORE"
                 gdb -batch -ex 'bt' -ex 'info registers' "$BIN" "$CORE" 2>&1 | tail -80
