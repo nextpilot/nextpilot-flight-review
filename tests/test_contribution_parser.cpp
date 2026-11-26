@@ -128,6 +128,47 @@ int main(int argc, char **argv)
         CHECK(r.doc.statuses.at(0).priority == 20);
     }
 
+    // ===== M3-a：customEditors 正常解析 =====
+    {
+        ParseResult r = parseContributes(fromJson(R"({
+            "customEditors": [
+                {"viewType":"canvas","displayName":"画布","priority":10,
+                 "selector":[{"mime":"application/x-pschema"},{"filenamePattern":"*.pschema"}]}
+            ]
+        })"), QStringLiteral("plot"));
+        CHECK(r.ok);
+        CHECK(r.doc.customEditors.size() == 1);
+        const auto &e = r.doc.customEditors.at(0);
+        CHECK(e.viewType == QLatin1String("canvas"));
+        CHECK(e.displayName == QStringLiteral("画布"));
+        CHECK(e.priority == 10);
+        CHECK(e.selector.size() == 2);
+        CHECK(e.selector.at(0).mime == QLatin1String("application/x-pschema"));
+        CHECK(e.selector.at(1).filenamePattern == QLatin1String("*.pschema"));
+    }
+
+    // ===== M3-a：selector 必填（校验前移到 claimId 之前，裁定 52442966/52443049）=====
+    // 先到者缺 selector / 全非法 → 整条拒且不占坑；后到者同 viewType 合法 → 递补保留。
+    {
+        ParseResult r = parseContributes(fromJson(R"({
+            "customEditors": [
+                {"viewType":"web","displayName":"第一"},
+                {"viewType":"web","displayName":"第二","selector":[{"mime":"text/html"}]},
+                {"displayName":"缺 viewType"},
+                {"viewType":"bad.sel","selector":[{"mime":""}]},
+                {"viewType":"bad.arr","selector":"oops"}
+            ]
+        })"), QStringLiteral("dup.owner"));
+        CHECK(!r.ok);
+        // web 第一条被整条拒且未占坑：不得出现第二条「重复 id」诊断。
+        CHECK(!hasIssueContaining(r, QStringLiteral("重复")));
+        CHECK(hasIssueContaining(r, QStringLiteral("缺 viewType")));
+        CHECK(hasIssueContaining(r, QStringLiteral("selector 缺失或非法")));
+        CHECK(hasIssueContaining(r, QStringLiteral("selector 全非法")));
+        CHECK(r.doc.customEditors.size() == 1);
+        CHECK(r.doc.customEditors.at(0).displayName == QStringLiteral("第二"));
+    }
+
     // ===== 坏输入 1：重复 command id → 后到者跳过 + issue，不覆盖 =====
     {
         ParseResult r = parseContributes(fromJson(R"({

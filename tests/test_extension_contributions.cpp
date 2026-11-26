@@ -131,6 +131,37 @@ int main(int argc, char **argv)
     CHECK(extensions.contributionOwners().isEmpty());
     CHECK(extensions.count() == 0); // 全撤后诊断恢复 0，不留幽灵扩展
 
+    // ===== M3-a：customEditors 跨 owner viewType 唯一性（挂载层，裁定 52442925 必改3）=====
+    {
+        extensions.clearContributionDiagnostics();
+        // 先到者 A 声明 web → 保留。
+        const char *jsonA = "{\"customEditors\":[{\"viewType\":\"web\",\"displayName\":\"A 的网页\",\"selector\":[{\"mime\":\"text/html\"}]}]}";
+        CHECK(extensions.mountContribution(doc(jsonA, QStringLiteral("ed.a"))));
+        CHECK(extensions.contributedCustomEditors().size() == 1);
+        // 后到者 B 声明同一 viewType → mount 成功但该条跳过，诊断含双方 owner。
+        const char *jsonB = "{\"customEditors\":[{\"viewType\":\"web\",\"displayName\":\"B 的网页\",\"selector\":[{\"mime\":\"text/html\"}]}]}";
+        CHECK(extensions.mountContribution(doc(jsonB, QStringLiteral("ed.b"))));
+        CHECK(extensions.contributedCustomEditors().size() == 1); // 先到者保留
+        CHECK(extensions.contributedCustomEditors().at(0).owner == QLatin1String("ed.a"));
+        bool diagBoth = false;
+        for (const auto &d : extensions.contributionDiagnostics())
+            if (d.keyPath.startsWith(QLatin1String("customEditors.")) &&
+                d.message.contains(QLatin1String("ed.a")) &&
+                d.message.contains(QLatin1String("ed.b")))
+                diagBoth = true;
+        CHECK(diagBoth);
+        // unmount 先到者后，后到者重新 mount 能递补（erase 分支真的清干净）。
+        CHECK(extensions.unmountContribution(QStringLiteral("ed.a")));
+        extensions.clearContributionDiagnostics();
+        CHECK(extensions.unmountContribution(QStringLiteral("ed.b")));
+        const char *jsonB2 = "{\"customEditors\":[{\"viewType\":\"web\",\"displayName\":\"B 递补\",\"selector\":[{\"mime\":\"text/html\"}]}]}";
+        CHECK(extensions.mountContribution(doc(jsonB2, QStringLiteral("ed.b"))));
+        CHECK(extensions.contributedCustomEditors().size() == 1);
+        CHECK(extensions.contributedCustomEditors().at(0).owner == QLatin1String("ed.b"));
+        CHECK(extensions.contributedCustomEditors().at(0).item.displayName == QStringLiteral("B 递补"));
+        CHECK(extensions.unmountContribution(QStringLiteral("ed.b"))); // 清场
+    }
+
     if (g_failed == 0)
         std::printf("extension_contributions: ALL PASS\n");
     else

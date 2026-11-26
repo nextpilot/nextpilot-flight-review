@@ -33,6 +33,14 @@
     "colors": {
       "hello.accent": { "dark": "#4fc3f7", "light": "#0277bd" }
     },
+    "customEditors": [
+      {
+        "viewType": "hello.web",
+        "displayName": "网页视图",
+        "priority": 10,
+        "selector": [{ "mime": "text/html" }]
+      }
+    ],
     "statusbar": [
       { "id": "hello.status", "side": "right", "priority": 30, "tooltip": "示例状态", "text": "示例: --", "commandId": "hello.say" }
     ]

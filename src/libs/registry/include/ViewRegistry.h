@@ -17,12 +17,16 @@
 
 #include "ContributionParser.h"
 #include "IActionProvider.h"
+#include "IEditorProvider.h"
+#include "IDisposable.h"
+#include "ResourceRef.h"
 
 #include <QHash>
 #include <QList>
 #include <QString>
 
 #include <functional>
+#include <memory>
 
 class QWidget;
 
@@ -78,6 +82,20 @@ public:
     QList<ActionProviderEntry> actionProviders() const;
     QList<ActionProviderEntry> actionProvidersFor(const QString &slotId) const;
 
+    // ---- 编辑器注册面（M3-a 第 2 笔，vscode.window.registerCustomEditorProvider 对位）----
+    // owner 必须等于该 viewType 的声明者（contributes.customEditors），否则拒（防冒名）；
+    // 未声明 viewType 一律拒（声明是运行层注册的前提）。
+    // 返回可撤销句柄（dispose 即撤该条；owner 卸载时宿主整批撤）。
+    std::unique_ptr<nextpilot::plotscope::registry::IDisposable>
+    registerEditorProvider(const QString &viewType, nextpilot::plotscope::registry::IEditorProvider *provider,
+                           const QString &owner);
+    // 按 viewType 取 provider（未注册返回 nullptr；provider 是借用指针）。
+    nextpilot::plotscope::registry::IEditorProvider *editorProvider(const QString &viewType) const;
+    // 资源 → viewType 匹配：遍历声明，selector 的 mime 精确命中或 filenamePattern
+    // 简单 glob（* / ? 通配，大小写不敏感）命中，按 priority 降序取第一个有运行层
+    // provider 的 viewType；无命中返回空串。
+    QString editorViewTypeFor(const nextpilot::plotscope::registry::ResourceRef &ref) const;
+
     // 声明层：把一份 contributes 的视图/容器声明登记进表（按 owner 分组）。
     void declare(const ContributesDoc &doc);
     // unmount(owner) 时撤该 owner 的全部声明 + provider + actionProvider。
@@ -91,12 +109,27 @@ public:
     QList<ContributedView> viewsIn(const QString &containerId) const;
     QStringList declaredOwners() const { return m_ownerOrder; }
 
+    // 编辑器声明读回（M3-a；IEditorService 用）。
+    QList<ContributedCustomEditor> allCustomEditors() const { return m_editors; }
+    QList<ContributedCustomEditor> customEditorsOf(const QString &owner) const;
+    // 该 viewType 的声明者 owner；未声明返回空串。
+    QString editorOwner(const QString &viewType) const;
+
 private:
     QHash<QString, ProviderEntry> m_providers; // viewId -> 工厂 + owner
     QList<ActionProviderEntry> m_actionProviders; // slotId -> 提供器（借用）+ owner
     QList<ContributedViewContainer> m_containers;
     QList<ContributedView> m_views;
     QList<QString> m_ownerOrder;
+    QList<ContributedCustomEditor> m_editors;
+
+    struct EditorProviderEntry
+    {
+        nextpilot::plotscope::registry::IEditorProvider *provider = nullptr; // 借用，不拥有
+        QString owner;
+        bool disposed = false;
+    };
+    QHash<QString, EditorProviderEntry> m_editorProviders; // viewType -> provider + owner
 };
 
 } // namespace nextpilot::plotscope::registry

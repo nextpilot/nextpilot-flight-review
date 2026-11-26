@@ -109,6 +109,52 @@ int main(int argc, char **argv)
     }
     OK("瞬时消息：非空才发、空串/非法时长丢弃、clear 复位");
 
+    // 5) A8b-M3-a 3a-3：createStatusBarItem(alignment, priority) 运行层动态条目
+    //    （vscode.StatusBarItem 对位）。id 自动生成；show/hide/dispose 三态。
+    {
+        QSignalSpy declared(&hub, &StatusHub::statusSpecDeclared);
+        auto *item = hub.createStatusBarItem(StatusSide::Right, 50);
+        CHECK(item != nullptr);
+        CHECK(item->id.startsWith(QStringLiteral("dynamic.")));
+        CHECK(!item->visible() && !item->disposed());
+        item->text = QStringLiteral("游标: x=1.2");
+        item->command = QStringLiteral("plot.abMeasure");
+        item->show();
+        CHECK(item->visible());
+        CHECK(declared.count() == 1); // show 时才登记声明
+        CHECK(hub.specs().size() == 1);
+        CHECK(hub.specs().first().side == StatusSide::Right);
+        CHECK(hub.specs().first().priority == 50);
+        CHECK(hub.specs().first().commandId == QStringLiteral("plot.abMeasure"));
+        CHECK(hub.text(item->id) == QStringLiteral("游标: x=1.2"));
+        // 显示中 setText 直接推 updateStatus。
+        QSignalSpy changed(&hub, &StatusHub::statusChanged);
+        item->setText(QStringLiteral("游标: x=3.4"));
+        CHECK(changed.count() == 1);
+        CHECK(hub.text(item->id) == QStringLiteral("游标: x=3.4"));
+        // hide 撤显示可再 show；dispose 幂等、作废后 show 拒。
+        item->hide();
+        CHECK(!item->visible());
+        CHECK(hub.specs().isEmpty());
+        item->show();
+        CHECK(item->visible() && hub.specs().size() == 1);
+        item->dispose();
+        CHECK(item->disposed());
+        item->dispose(); // 幂等
+        CHECK(hub.specs().isEmpty());
+        item->show(); // 作废后拒
+        CHECK(!item->visible() && hub.specs().isEmpty());
+        // 第二个条目 id 递增不撞键。
+        auto *item2 = hub.createStatusBarItem(StatusSide::Left, 5);
+        CHECK(item2->id != item->id);
+        item2->show();
+        CHECK(hub.specs().size() == 1);
+        CHECK(hub.specs().first().side == StatusSide::Left);
+        item2->dispose();
+        CHECK(hub.specs().isEmpty());
+    }
+    OK("createStatusBarItem：id 自动生成、show/hide/dispose 三态、setText 显示中直推");
+
     std::fprintf(stdout, "ALL PASS\n");
     return 0;
 }

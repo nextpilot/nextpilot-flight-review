@@ -12,10 +12,16 @@
 #include "ContributionParser.h"
 #include "ViewRegistry.h"
 #include "IViewsService.h"
+#include "IEditorService.h"
+#include "IEditorProvider.h"
+#include "ResourceRef.h"
 #include "IActionProvider.h"
 #include "Intent.h"
 
 #include <QApplication>
+#include <QDir>
+#include <QFile>
+#include <QWidget>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QString>
@@ -39,6 +45,22 @@ int g_failed = 0;
             ++g_failed;                                                        \
         }                                                                      \
     } while (0)
+
+// A8b-M3-a 第 2 笔：假 "web" provider（§9 h 判据）——壳不改一行即可打开网页页签。
+class FakeWebProvider final : public nextpilot::plotscope::registry::IEditorProvider
+{
+public:
+    bool canOpen(const nextpilot::plotscope::registry::ResourceRef &ref) const override
+    {
+        return ref.mime == QLatin1String("text/html");
+    }
+    QWidget *createEditor(const nextpilot::plotscope::registry::ResourceRef &,
+                          QWidget *parent) override
+    {
+        return new QWidget(parent);
+    }
+};
+FakeWebProvider g_webProvider;
 } // namespace
 
 int main(int argc, char *argv[])
@@ -59,6 +81,8 @@ int main(int argc, char *argv[])
         },
         "viewsContainers":[{"id":"hello.container","title":"示例视图","area":"sidebar","order":20}],
         "views":[{"id":"hello.view","name":"示例","container":"hello.container","order":0}],
+        "customEditors":[{"viewType":"web","displayName":"网页","priority":5,
+                          "selector":[{"mime":"text/html"}]}],
         "colors":{"hello.accent":{"dark":"#4fc3f7","light":"#0277bd"}},
         "statusbar":[{"id":"hello.status","side":"right","priority":30,"text":"示例: --","commandId":"hello.say"}]
     })";
@@ -148,6 +172,70 @@ int main(int argc, char *argv[])
                                 application.host(), nullptr) == nullptr);
     }
 
+    // ---- A8b-M3-a 第 2 笔 e2e：customEditors + registerEditorProvider + 四语义链路 ----
+    using nextpilot::plotscope::workbench::IEditorService;
+    using nextpilot::plotscope::registry::ResourceRef;
+    CHECK(ext.contributedCustomEditors().size() == 1);
+    CHECK(ext.contributedCustomEditors().at(0).item.viewType == QLatin1String("web"));
+    auto *editorSvc = services ? services->getService<IEditorService>(
+                                     QStringLiteral("editor.readback"))
+                               : nullptr;
+    CHECK(editorSvc != nullptr);
+    ResourceRef html{QStringLiteral("https://example.com"), QStringLiteral("text/html"),
+                     QStringLiteral("示例页")};
+    ResourceRef txt{QStringLiteral("/tmp/a.txt"), QStringLiteral("text/plain"), QStringLiteral("备注")};
+    if (editorSvc && viewsReg)
+    {
+        // 声明随 bind 灌进同一张 ViewRegistry；读回含扩展 web + 内置 text（core.text）。
+        CHECK(editorSvc->customEditors().size() == 2);
+        // 防冒名：owner 不等于声明者 → 拒。
+        CHECK(viewsReg->registerEditorProvider(QStringLiteral("web"), &g_webProvider,
+                                               QStringLiteral("evil")) == nullptr);
+        // 声明者注册 → 成功，返回可撤销句柄（editorViewTypeFor 要求 provider 在位，先注册再匹配）。
+        auto webDispose = viewsReg->registerEditorProvider(
+            QStringLiteral("web"), &g_webProvider, QStringLiteral("plotscope.helloworld"));
+        CHECK(webDispose != nullptr);
+        // 资源匹配：mime text/html → 扩展的 web；text/plain → 内置 text。
+        CHECK(editorSvc->editorViewTypeFor(html) == QLatin1String("web"));
+        CHECK(editorSvc->editorViewTypeFor(txt) == QLatin1String("text"));
+        // 壳不改一行：openEditor("web", html) 命中假 provider，返回不透明控件。
+        QWidget *webPage =
+            editorSvc->openEditor(QStringLiteral("web"), html, application.context(),
+                                  application.host(), nullptr);
+        CHECK(webPage != nullptr);
+        delete webPage;
+        // 内置 text 编辑器零扩展可用：打开 → 控件；保存 → 本地文件可写校验。
+        QWidget *textPage = editorSvc->openEditor(QStringLiteral("text"), txt,
+                                                  application.context(), application.host(),
+                                                  nullptr);
+        CHECK(textPage != nullptr);
+        delete textPage;
+        CHECK(editorSvc->providerFor(QStringLiteral("text")) != nullptr);
+        // saveAs 落盘（3a-4）：title=源 uri，uri=另存目标；写入内容与源一致。
+        {
+            const QString srcPath = QDir::temp().filePath(QStringLiteral("ps_saveas_src.txt"));
+            const QString dstPath = QDir::temp().filePath(QStringLiteral("ps_saveas_dst.txt"));
+            QFile srcFile(srcPath);
+            CHECK(srcFile.open(QIODevice::WriteOnly | QIODevice::Text));
+            srcFile.write("hello saveAs\n");
+            srcFile.close();
+            auto *textProv = editorSvc->providerFor(QStringLiteral("text"));
+            CHECK(textProv != nullptr);
+            ResourceRef target{dstPath, QStringLiteral("text/plain"), srcPath};
+            CHECK(textProv->saveAs(target));
+            QFile dstFile(dstPath);
+            CHECK(dstFile.open(QIODevice::ReadOnly | QIODevice::Text));
+            CHECK(QString::fromUtf8(dstFile.readAll()) == QStringLiteral("hello saveAs\n"));
+            dstFile.close();
+            QFile::remove(srcPath);
+            QFile::remove(dstPath);
+        }
+        // dispose 撤销注册，无悬空。
+        if (webDispose)
+            webDispose->dispose();
+        CHECK(editorSvc->providerFor(QStringLiteral("web")) == nullptr);
+    }
+
     // 执行成功：命令面板激活 → executeCommand(id) → intentOp → host.execute → handler。
     Intent intent;
     intent.op = QStringLiteral("hello.say");
@@ -185,6 +273,17 @@ int main(int argc, char *argv[])
         CHECK(viewSvc->viewsInContainer(QStringLiteral("hello.container")).isEmpty());
         CHECK(viewSvc->containersIn(QStringLiteral("sidebar")).isEmpty());
         CHECK(viewSvc->viewForId(QStringLiteral("hello.view")).owner.isEmpty());
+    }
+    // M3-a：unmount 后扩展编辑器声明整批撤，只剩内置 text（core.text 不随扩展撤）。
+    if (editorSvc)
+    {
+        CHECK(editorSvc->customEditors().size() == 1);
+        CHECK(editorSvc->customEditors().at(0).viewType == QLatin1String("text"));
+        CHECK(editorSvc->editorViewTypeFor(html).isEmpty());
+        // 声明没了，再注册 web 必拒（owner 不匹配 → 无声明者）。
+        CHECK(viewsReg && viewsReg->registerEditorProvider(QStringLiteral("web"), &g_webProvider,
+                                                           QStringLiteral("plotscope.helloworld")) ==
+                                      nullptr);
     }
     // host 再 execute 该 op 无 handler 认领。
     auto afterUnmount = application.host().execute(intent);

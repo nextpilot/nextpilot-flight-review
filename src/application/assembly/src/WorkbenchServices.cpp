@@ -29,8 +29,27 @@ WorkbenchServices::WorkbenchServices(nextpilot::plotscope::context::AppContext &
       m_themeService(appCtx, hostRef),
       m_slotsService(hostRef.uiSlotsMutable()),
       m_viewsService(m_viewRegistry),
+      m_editorsService(m_viewRegistry),
       m_contribInstaller(appCtx, m_slotsService, m_viewRegistry)
 {
+    // 壳内置 text 最小编辑器（M3-a 第 2 笔，正文步骤 4）：装配层声明 viewType="text"
+    // 并注册 provider——零扩展也能打开/编辑/保存。owner="core.text" 是装配层自数据，
+    // 不是"壳按 owner 分支"（壳不见 registry，也不解释业务 id）。
+    {
+        registry::ContributesDoc coreDoc;
+        coreDoc.owner = QStringLiteral("core.text");
+        registry::ContributedCustomEditor text;
+        text.viewType = QStringLiteral("text");
+        text.displayName = QStringLiteral("纯文本");
+        text.priority = -1; // 扩展编辑器命中时优先于内置
+        registry::ContributedEditorSelector sel;
+        sel.mime = QStringLiteral("text/plain");
+        text.selector.append(sel);
+        coreDoc.customEditors.append(text);
+        m_viewRegistry.declare(coreDoc);
+        m_textEditorDisposable = m_viewRegistry.registerEditorProvider(
+            QStringLiteral("text"), &m_textEditor, QStringLiteral("core.text"));
+    }
     // §1.4.2 + §1.2.1：注册 4 条服务。owner=assembly，version=1。
     m_services.registerSingleton(
         QStringLiteral("vscode.workspace"), &m_workspace, QStringLiteral("assembly"), 1,
@@ -77,6 +96,11 @@ WorkbenchServices::WorkbenchServices(nextpilot::plotscope::context::AppContext &
         QStringLiteral("views.readback"), &m_viewsService, QStringLiteral("assembly"), 1,
         nextpilot::plotscope::instantiation::ServiceTypeTag<
             nextpilot::plotscope::workbench::IViewsService>::value());
+    // 编辑器读回（M3-a 第 2 笔）：写面复用 views.registry（ViewRegistry），读/打开面给壳。
+    m_services.registerSingleton(
+        QStringLiteral("editor.readback"), &m_editorsService, QStringLiteral("assembly"), 1,
+        nextpilot::plotscope::instantiation::ServiceTypeTag<
+            nextpilot::plotscope::workbench::IEditorService>::value());
 }
 
 } // namespace nextpilot::plotscope::assembly

@@ -539,6 +539,22 @@ PS_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
 外部插件：目录扫描 → dlopen → ABI 校验 ────────────┘
 ```
 
+### 5.3a 编辑器与状态栏的声明面（A8b-M3-a）
+
+扩展可以声明**自定义编辑器**与**运行层状态栏条目**，与命令/视图同走 contributes 契约：
+
+- **`contributes.customEditors`**：`{viewType, displayName, selector[{mime|filenamePattern}], priority}`。
+  字段口径照 VSCode schema——`selector` 是必填（缺失/非数组/全条目非法 → 整条拒载 + 诊断，
+  且校验先于 id 占坑，被拒条目不占 `viewType` 名额）；`viewType` 跨 owner 全局唯一，先到者保留。
+- **运行层注册**：`IEditorProvider`（`canOpen/createEditor/save` + 四语义
+  `isDirty/setDirtyCallback/saveAs/readonly`）经 `registerEditorProvider(viewType, provider, owner)`
+  注册，防冒名——owner ≠ 声明者拒；返回 `IDisposable` 句柄可撤销。
+  资源 → 编辑器匹配：selector 命中（mime 精确 / filenamePattern glob 大小写不敏感）且
+  provider 在位，priority 降序取先；壳内置 `text` 最小编辑器（`core.text`）零扩展兜底。
+- **`createStatusBarItem(alignment, priority)`**：运行层动态条目（`StatusBarItem` 对位
+  vscode.StatusBarItem）——id 自动生成（`dynamic.N`）不撞声明键，`show/hide/dispose` 三态，
+  `setText` 显示中直推；与声明式 `contributes.statusbar` 汇同一张 StatusHub 表。
+
 ### 5.4 注册表全景：一张表说清谁是什么
 
 **架构裁决：`Registry<T,Key>` 是唯一的容器机制，其余全是数据，挂进去就完事**

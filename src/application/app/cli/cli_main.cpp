@@ -212,6 +212,19 @@ int main(int argc, char **argv)
         for (const auto &s : extensions.contributedStatuses())
             fprintf(stdout, "%s statusbar %s side=%s priority=%d\n",
                     u8(s.owner), u8(s.item.id), u8(s.item.side), s.item.priority);
+        // A8b-M3-a：customEditors 声明输出（owner / viewType / selIdx / 条件，
+        // 与「owner/key/id/order」约定对齐——裁定 52442925 建议）。
+        for (const auto &e : extensions.contributedCustomEditors())
+        {
+            for (int si = 0; si < e.item.selector.size(); ++si)
+            {
+                const auto &sel = e.item.selector.at(si);
+                const QString cond = !sel.mime.isEmpty() ? QStringLiteral("mime=%1").arg(sel.mime)
+                                                         : QStringLiteral("pattern=%1").arg(sel.filenamePattern);
+                fprintf(stdout, "%s customEditors %s %d %s\n",
+                        u8(e.owner), u8(e.item.viewType), si, u8(cond));
+            }
+        }
         for (const auto &d : extensions.contributionDiagnostics())
             fprintf(stdout, "diagnostic %s %s %s\n", u8(d.owner), u8(d.keyPath), u8(d.message));
         return 0;

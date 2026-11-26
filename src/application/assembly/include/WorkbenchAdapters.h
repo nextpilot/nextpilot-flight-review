@@ -19,6 +19,9 @@
 #include "ISlotsService.h"
 #include "IContributionsInstaller.h"
 #include "IViewsService.h"
+#include "IEditorService.h"
+#include "IEditorProvider.h"
+#include "ResourceRef.h"
 
 #include "DatasetHub.h"
 #include "SourceHub.h"
@@ -499,6 +502,61 @@ public:
 
 private:
     registry::ViewRegistry &m_views;
+};
+
+// ---- IEditorService（M3-a 第 2 笔）----
+// 内部转 ViewRegistry 的编辑器声明/注册面；壳经本接口读回与打开，不见 registry::。
+class EditorServiceAdapter final : public wb::IEditorService
+{
+public:
+    EditorServiceAdapter(registry::ViewRegistry &views) : m_views(views) {}
+
+    QList<registry::ContributedCustomEditor> customEditors() const override
+    {
+        return m_views.allCustomEditors();
+    }
+    QString editorViewTypeFor(const registry::ResourceRef &ref) const override
+    {
+        return m_views.editorViewTypeFor(ref);
+    }
+    registry::IEditorProvider *providerFor(const QString &viewType) const override
+    {
+        return m_views.editorProvider(viewType);
+    }
+    QWidget *openEditor(const QString &viewType, const registry::ResourceRef &ref,
+                        ctx::AppContext &appCtx, intent::IIntentExecutor &executor,
+                        QWidget *parent) override
+    {
+        registry::IEditorProvider *p = m_views.editorProvider(viewType);
+        if (p == nullptr || !p->canOpen(ref))
+            return nullptr;
+        Q_UNUSED(appCtx);
+        Q_UNUSED(executor);
+        return p->createEditor(ref, parent);
+    }
+
+private:
+    registry::ViewRegistry &m_views;
+};
+
+// ---- 壳内置 text 最小编辑器（M3-a 第 2 笔，正文步骤 4）----
+// 零扩展也能打开/编辑/保存纯文本；QPlainTextEdit 承载，保存经 QFile 写回 uri。
+// 注册：装配层以 owner="core.text" 声明 customEditors（viewType="text"）+ 注册 provider。
+class BuiltinTextEditorProvider final : public registry::IEditorProvider
+{
+public:
+    bool canOpen(const registry::ResourceRef &ref) const override
+    {
+        return ref.mime == QLatin1String("text/plain") ||
+               ref.uri.endsWith(QLatin1String(".txt"), Qt::CaseInsensitive);
+    }
+    QWidget *createEditor(const registry::ResourceRef &ref, QWidget *parent) override;
+    bool save(const registry::ResourceRef &ref) override;
+    // saveAs 落盘：把源内容写到 ref 给出的新目标（M3-a 3a-4，headless 可验）。
+    bool saveAs(const registry::ResourceRef &ref) override;
+
+private:
+    static QString contentOf(const registry::ResourceRef &ref);
 };
 
 } // namespace nextpilot::plotscope::assembly

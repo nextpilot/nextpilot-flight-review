@@ -14,13 +14,14 @@ void addIssue(ParseResult &r, const QString &keyPath, const QString &msg)
     r.issues.append(ParseIssue{keyPath, msg});
 }
 
-// 顶层已知键：M1 两键 + M2 五键；customEditors/configuration（M3）仍记 issue 跳过。
+// 顶层已知键：M1 两键 + M2 五键 + M3-a 的 customEditors；configuration（M3-b）仍记 issue 跳过。
 bool isKnownTopKey(const QString &key)
 {
     static const QSet<QString> allowed = {
         QStringLiteral("commands"), QStringLiteral("menus"),
         QStringLiteral("viewsContainers"), QStringLiteral("views"),
-        QStringLiteral("colors"), QStringLiteral("statusbar")};
+        QStringLiteral("colors"), QStringLiteral("statusbar"),
+        QStringLiteral("customEditors")};
     return allowed.contains(key);
 }
 
@@ -63,6 +64,20 @@ bool isKnownStatusField(const QString &key)
                                           QStringLiteral("priority"), QStringLiteral("when"),
                                           QStringLiteral("icon"), QStringLiteral("tooltip"),
                                           QStringLiteral("commandId"), QStringLiteral("text")};
+    return allowed.contains(key);
+}
+
+bool isKnownCustomEditorField(const QString &key)
+{
+    static const QSet<QString> allowed = {QStringLiteral("viewType"),
+                                          QStringLiteral("displayName"),
+                                          QStringLiteral("selector"), QStringLiteral("priority")};
+    return allowed.contains(key);
+}
+
+bool isKnownSelectorField(const QString &key)
+{
+    static const QSet<QString> allowed = {QStringLiteral("mime"), QStringLiteral("filenamePattern")};
     return allowed.contains(key);
 }
 
@@ -372,6 +387,80 @@ ParseResult parseContributes(const QJsonObject &contributes, const QString &owne
                 s.commandId = obj.value(QStringLiteral("commandId")).toString();
                 s.text = obj.value(QStringLiteral("text")).toString();
                 result.doc.statuses.append(s);
+            }
+        }
+        // ---------- customEditors（M3-a 第 1 笔） ----------
+        else if (key == QLatin1String("customEditors"))
+        {
+            if (!top.value().isArray())
+            {
+                addIssue(result, key, QStringLiteral("customEditors 必须是数组，整条拒收"));
+                continue;
+            }
+            const QJsonArray arr = top.value().toArray();
+            for (int i = 0; i < arr.size(); ++i)
+            {
+                const QString path = QStringLiteral("customEditors[%1]").arg(i);
+                if (!arr.at(i).isObject())
+                {
+                    addIssue(result, path, QStringLiteral("编辑器条目必须是对象，跳过"));
+                    continue;
+                }
+                const QJsonObject obj = arr.at(i).toObject();
+                for (auto f = obj.constBegin(); f != obj.constEnd(); ++f)
+                    if (!isKnownCustomEditorField(f.key()))
+                        addIssue(result, path + QLatin1Char('.') + f.key(),
+                                 QStringLiteral("编辑器条目未知字段，跳过"));
+                if (!requireId(obj, path, QStringLiteral("viewType"), result))
+                    continue;
+                const QString id = obj.value(QStringLiteral("viewType")).toString();
+                // selector 是 VSCode required 字段：校验全部前移到 claimId 之前——
+                // 整条被拒时不占 seenIds 坑，后到的同 viewType 合法条目可递补
+                // （裁定 52443049；seenIds 命令/视图/颜色/状态栏/编辑器共用，无回退手段）。
+                if (!obj.value(QStringLiteral("selector")).isArray())
+                {
+                    addIssue(result, path + QStringLiteral(".selector"),
+                             QStringLiteral("selector 缺失或非法，整条拒"));
+                    continue;
+                }
+                ContributedCustomEditor e;
+                e.viewType = id;
+                e.displayName = obj.value(QStringLiteral("displayName")).toString();
+                e.priority = readInt(obj, QStringLiteral("priority"));
+                const QJsonArray sels = obj.value(QStringLiteral("selector")).toArray();
+                for (int j = 0; j < sels.size(); ++j)
+                {
+                    const QString selPath = path + QStringLiteral(".selector[%1]").arg(j);
+                    if (!sels.at(j).isObject())
+                    {
+                        addIssue(result, selPath, QStringLiteral("selector 条目必须是对象，跳过"));
+                        continue;
+                    }
+                    const QJsonObject sobj = sels.at(j).toObject();
+                    for (auto f = sobj.constBegin(); f != sobj.constEnd(); ++f)
+                        if (!isKnownSelectorField(f.key()))
+                            addIssue(result, selPath + QLatin1Char('.') + f.key(),
+                                     QStringLiteral("selector 条目未知字段，跳过"));
+                    ContributedEditorSelector sel;
+                    sel.mime = sobj.value(QStringLiteral("mime")).toString();
+                    sel.filenamePattern = sobj.value(QStringLiteral("filenamePattern")).toString();
+                    if (sel.mime.isEmpty() && sel.filenamePattern.isEmpty())
+                    {
+                        addIssue(result, selPath,
+                                 QStringLiteral("selector 缺 mime 与 filenamePattern，跳过"));
+                        continue;
+                    }
+                    e.selector.append(sel);
+                }
+                if (e.selector.isEmpty())
+                {
+                    addIssue(result, path + QStringLiteral(".selector"),
+                             QStringLiteral("selector 全非法，整条拒"));
+                    continue;
+                }
+                if (!claimId(id, path + QStringLiteral(".viewType")))
+                    continue;
+                result.doc.customEditors.append(e);
             }
         }
     }

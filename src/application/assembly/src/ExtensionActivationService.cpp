@@ -82,6 +82,13 @@ void ExtensionActivationService::bind(CommandRegistry *commands, host::RuntimeHo
             doc.views.append(owned.item);
             m_views->declare(doc);
         }
+        for (const auto &owned : m_extensions.contributedCustomEditors())
+        {
+            registry::ContributesDoc doc;
+            doc.owner = owned.owner;
+            doc.customEditors.append(owned.item);
+            m_views->declare(doc);
+        }
     }
 
     if (!m_handler)
@@ -141,12 +148,13 @@ void ContributionsInstaller::install(const registry::ModuleContributions &c)
     // contributes.viewsContainers / views（Step 5）：声明灌 ViewRegistry，壳经
     // IViewsService 读回——壳不认识视图数据来源（模块 contributes / 扩展包 manifest
     // 都汇到同一张表）。
-    if (!c.viewContainers.isEmpty() || !c.views.isEmpty())
+    if (!c.viewContainers.isEmpty() || !c.views.isEmpty() || !c.customEditors.isEmpty())
     {
         registry::ContributesDoc doc;
         doc.owner = c.owner.isEmpty() ? QStringLiteral("module") : c.owner;
         doc.viewContainers = c.viewContainers;
         doc.views = c.views;
+        doc.customEditors = c.customEditors;
         m_views.declare(doc);
     }
 

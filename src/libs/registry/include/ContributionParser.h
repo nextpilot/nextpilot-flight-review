@@ -96,6 +96,24 @@ struct ContributedStatus
     QString text;
 };
 
+// contributes.customEditors[] —— VSCode 自定义编辑器声明（A8b-M3-a 第 1 笔）。
+// viewType 全局唯一（先 parser 内去重、跨 owner 由 ToolboxHub mount 诊断）；
+// selector 按 mime 或 filenamePattern 匹配资源，壳据此选编辑器，不解释业务。
+struct ContributedEditorSelector
+{
+    QString mime;            // 如 "application/x-pschema"；与 filenamePattern 二选一
+    QString filenamePattern; // 如 "*.pschema"（简单 glob）
+};
+
+struct ContributedCustomEditor
+{
+    QString viewType;      // 全局唯一，registerEditorProvider 的对位键
+    QString displayName;
+    QList<ContributedEditorSelector> selector;
+    int priority = 0;      // 多个编辑器都能打开时，大者优先
+    QString owner;         // 声明者归属（parse 不填；ViewRegistry.declare 时写）
+};
+
 // 一个 owner 解析后的 contributes 表（全文唯一名）。
 struct ContributesDoc
 {
@@ -110,10 +128,14 @@ struct ContributesDoc
     QList<ContributedColor> colors;
     QList<ContributedStatus> statuses;
 
+    // M3-a 新增（M2 恒为空，向后兼容）。
+    QList<ContributedCustomEditor> customEditors;
+
     bool isEmpty() const
     {
         return commands.isEmpty() && commandPalette.isEmpty() && viewContainers.isEmpty() &&
-               views.isEmpty() && menuItems.isEmpty() && colors.isEmpty() && statuses.isEmpty();
+               views.isEmpty() && menuItems.isEmpty() && colors.isEmpty() && statuses.isEmpty() &&
+               customEditors.isEmpty();
     }
 };
 

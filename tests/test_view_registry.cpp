@@ -4,6 +4,8 @@
 #include "ViewRegistry.h"
 #include "ContributionParser.h"
 #include "IActionProvider.h"
+#include "IEditorProvider.h"
+#include "ResourceRef.h"
 #include "RegistryTree.h"
 
 #include <QCoreApplication>
@@ -18,6 +20,23 @@ using namespace nextpilot::plotscope::registry;
 namespace
 {
 int g_failed = 0;
+
+// M3-a：假编辑器 provider（不构造控件，仅验证注册/匹配/撤销链路）。
+class FakeEditorProvider final : public IEditorProvider
+{
+public:
+    bool canOpen(const ResourceRef &) const override { return true; }
+    QWidget *createEditor(const ResourceRef &, QWidget *) override { return nullptr; }
+    // 3a-4：readonly 语义——置位后壳据此渲染只读页签、禁保存（headless 验契约面）。
+    bool ro = false;
+    bool readonly() const override { return ro; }
+    int saveCalls = 0;
+    bool save(const ResourceRef &) override
+    {
+        ++saveCalls;
+        return !ro; // readonly 提供者自身保存失败（壳本不该调）
+    }
+};
 #define CHECK(cond)                                                            \
     do                                                                         \
     {                                                                          \
@@ -157,6 +176,58 @@ int main(int argc, char **argv)
     CHECK(views.declaredOwners().isEmpty());
     CHECK(views.viewsIn(QStringLiteral("data.side")).isEmpty());
     CHECK(views.actionProviders().isEmpty());
+
+    // ===== M3-a 第 2 笔：registerEditorProvider 防冒名 + dispose + selector 匹配 + 整批撤 =====
+    {
+        ViewRegistry eds;
+        FakeEditorProvider web;
+        FakeEditorProvider text;
+        eds.declare(doc(R"({"customEditors":[
+            {"viewType":"web","displayName":"网页","priority":5,"selector":[{"mime":"text/html"}]},
+            {"viewType":"text","displayName":"文本","priority":0,"selector":[{"mime":"text/plain"},{"filenamePattern":"*.psx"}]}
+        ]})", QStringLiteral("ext.a")));
+        // 防冒名：owner ≠ 声明者 → 拒；未声明 viewType → 拒；空 owner/viewType → 拒。
+        CHECK(!eds.registerEditorProvider(QStringLiteral("web"), &web, QStringLiteral("ext.b")));
+        CHECK(!eds.registerEditorProvider(QStringLiteral("nope"), &web, QStringLiteral("ext.a")));
+        CHECK(!eds.registerEditorProvider(QStringLiteral("web"), &web, QString()));
+        // 声明者注册 → 成功（Disposable 句柄）。
+        auto d1 = eds.registerEditorProvider(QStringLiteral("web"), &web, QStringLiteral("ext.a"));
+        auto d2 = eds.registerEditorProvider(QStringLiteral("text"), &text, QStringLiteral("ext.a"));
+        CHECK(d1 != nullptr && d2 != nullptr);
+        // 重复注册同一 viewType → 先到者为准，后到者拒。
+        CHECK(!eds.registerEditorProvider(QStringLiteral("web"), &text, QStringLiteral("ext.a")));
+        // selector 匹配：mime 精确；filenamePattern glob（*.psx）大小写不敏感。
+        ResourceRef html{QStringLiteral("https://e.com"), QStringLiteral("text/html"), QString()};
+        ResourceRef docx{QStringLiteral("a.PSX"), QString(), QString()}; // pattern 命中 text
+        ResourceRef bin{QStringLiteral("a.bin"), QStringLiteral("application/octet"), QString()};
+        CHECK(eds.editorViewTypeFor(html) == QLatin1String("web"));
+        CHECK(eds.editorViewTypeFor(docx) == QLatin1String("text"));
+        CHECK(eds.editorViewTypeFor(bin).isEmpty());
+        // 回退反证（3a-4）：无匹配 customEditor 的资源不得误回退到已注册编辑器——
+        // application/octet 资源即使 provider canOpen 全放行，也因 selector 不中而空匹配；
+        // 回退到内置/默认编辑器是壳的打开策略，声明层只回答「有没有 customEditor 命中」。
+        CHECK(eds.editorProvider(QStringLiteral("web")) == &web); // provider 在位也不误配
+        ResourceRef oct{QStringLiteral("a.bin"), QStringLiteral("application/octet"), QString()};
+        CHECK(eds.editorViewTypeFor(oct).isEmpty());
+        // readonly 语义（3a-4）：readonly 提供者 readonly() 传播契约面；壳据此禁保存。
+        FakeEditorProvider roProv;
+        roProv.ro = true;
+        CHECK(roProv.readonly());
+        CHECK(!roProv.save(ResourceRef{})); // readonly 提供者自身保存失败
+        CHECK(roProv.saveCalls == 1);
+        CHECK(eds.editorProvider(QStringLiteral("web")) == &web);
+        // dispose 撤销该条注册；provider 借用指针不悬空（表项直接移除）。
+        d1->dispose();
+        d1->dispose(); // 幂等
+        CHECK(eds.editorProvider(QStringLiteral("web")) == nullptr);
+        CHECK(eds.editorProvider(QStringLiteral("text")) == &text);
+        // owner 卸载整批撤：声明 + provider 全消失。
+        eds.undeclare(QStringLiteral("ext.a"));
+        CHECK(eds.allCustomEditors().isEmpty());
+        CHECK(eds.editorProvider(QStringLiteral("text")) == nullptr);
+        CHECK(eds.editorOwner(QStringLiteral("text")).isEmpty());
+        CHECK(eds.editorViewTypeFor(html).isEmpty());
+    }
 
     if (g_failed == 0)
         std::printf("view_registry: ALL PASS\n");

@@ -9,8 +9,11 @@
 #include "InstantiationService.h"
 #include "WorkbenchAdapters.h"
 #include "ExtensionActivationService.h" // ContributionsInstaller（裁定 52442006 Step 3）
+#include "IDisposable.h"
 #include "NullWindow.h"
 #include "RuntimeHost.h"
+
+#include <memory>
 
 namespace nextpilot::plotscope::assembly {
 namespace inst = nextpilot::plotscope::instantiation;
@@ -54,6 +57,11 @@ private:
     // 壳经 IViewsService 读回/打开。
     registry::ViewRegistry m_viewRegistry;
     ViewsServiceAdapter m_viewsService;
+    // 编辑器读回（M3-a 第 2 笔）：壳经 IEditorService 读回/打开，不见 registry::。
+    EditorServiceAdapter m_editorsService;
+    // 壳内置 text 最小编辑器（零扩展也能打开/编辑/保存）。
+    BuiltinTextEditorProvider m_textEditor;
+    std::unique_ptr<registry::IDisposable> m_textEditorDisposable; // 与成员同生命周期，析构先于 registry
     ContributionsInstaller m_contribInstaller;
     wb::NullWindow m_window;
 };

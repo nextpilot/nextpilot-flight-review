@@ -479,6 +479,20 @@ bool ToolboxHub::mountContribution(const ContributesDoc &doc)
         m_contribColors.append(OwnedColor{item, doc.owner});
     for (const auto &item : doc.statuses)
         m_contribStatuses.append(OwnedStatus{item, doc.owner});
+    // M3-a：customEditors 按 owner 归属存表；viewType 跨 owner 全局唯一，重复跳过 + 诊断（含双方 owner）。
+    for (const auto &item : doc.customEditors)
+    {
+        if (m_contribEditorViewTypes.contains(item.viewType))
+        {
+            recordContributionIssue(
+                doc.owner, QStringLiteral("customEditors.") + item.viewType,
+                QStringLiteral("owner %2 的 viewType 已被 owner %1 声明，跳过（先到者保留）")
+                    .arg(m_contribEditorViewTypes.value(item.viewType), doc.owner));
+            continue;
+        }
+        m_contribEditorViewTypes.insert(item.viewType, doc.owner);
+        m_contribCustomEditors.append(OwnedCustomEditor{item, doc.owner});
+    }
 
     Q_EMIT objectAdded(doc.owner);
     return true;
@@ -512,6 +526,14 @@ bool ToolboxHub::unmountContribution(const QString &owner)
     removeOwned(m_contribMenuItems);
     removeOwned(m_contribColors);
     removeOwned(m_contribStatuses);
+    removeOwned(m_contribCustomEditors);
+    for (auto it = m_contribEditorViewTypes.begin(); it != m_contribEditorViewTypes.end();)
+    {
+        if (it.value() == owner)
+            it = m_contribEditorViewTypes.erase(it);
+        else
+            ++it;
+    }
 
     const QStringList ids = m_contribByOwner.value(owner);
     for (const QString &id : ids)

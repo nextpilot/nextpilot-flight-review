@@ -118,12 +118,14 @@ public:
     struct OwnedMenuItem { ContributedMenuItem item; QString owner; };
     struct OwnedColor { ContributedColor item; QString owner; };
     struct OwnedStatus { ContributedStatus item; QString owner; };
+    struct OwnedCustomEditor { ContributedCustomEditor item; QString owner; };
 
     QList<OwnedViewContainer> contributedViewContainers() const { return m_contribViewContainers; }
     QList<OwnedView> contributedViews() const { return m_contribViews; }
     QList<OwnedMenuItem> contributedMenuItems() const { return m_contribMenuItems; }
     QList<OwnedColor> contributedColors() const { return m_contribColors; }
     QList<OwnedStatus> contributedStatuses() const { return m_contribStatuses; }
+    QList<OwnedCustomEditor> contributedCustomEditors() const { return m_contribCustomEditors; }
     // 按 place 取菜单项（place 原串，如 "view/title" / "menubar/plot"）。
     QList<OwnedMenuItem> menuItemsIn(const QString &place) const;
 
@@ -204,6 +206,8 @@ private:
     QList<OwnedMenuItem> m_contribMenuItems;
     QList<OwnedColor> m_contribColors;
     QList<OwnedStatus> m_contribStatuses;
+    QList<OwnedCustomEditor> m_contribCustomEditors;
+    QHash<QString, QString> m_contribEditorViewTypes; // viewType -> owner（跨 owner 唯一）
     QList<ContributionDiagnostic> m_contribDiagnostics;
 
     std::vector<std::unique_ptr<IMessageParser>> m_parsers; // 全部解析器（含旧 driver 包装包的）

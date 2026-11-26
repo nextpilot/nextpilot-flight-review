@@ -67,11 +67,16 @@ struct ModuleContributions
     QList<ContributedViewContainer> viewContainers;
     QList<ContributedView> views;
 
+    // contributes.customEditors（M3-a 第 1 笔）：纯数据；宿主收集后灌 ViewRegistry，
+    // 壳经 IEditorService 读回。内置模块本期零声明（扩展包经 manifest 走同一张表）。
+    QList<ContributedCustomEditor> customEditors;
+
     bool isEmpty() const
     {
         return ribbonPages.isEmpty() && ribbonGroups.isEmpty() && actions.isEmpty() &&
                activities.isEmpty() && themeTokens.isEmpty() && statuses.isEmpty() &&
-               actionProviders.isEmpty() && viewContainers.isEmpty() && views.isEmpty();
+               actionProviders.isEmpty() && viewContainers.isEmpty() && views.isEmpty() &&
+               customEditors.isEmpty();
     }
 };
 

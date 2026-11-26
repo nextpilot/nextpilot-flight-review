@@ -13,11 +13,12 @@ add_library(ps_assembly STATIC
     src/WorkbenchAdapters.cpp
     src/WorkbenchServices.cpp
     src/ExtensionActivationService.cpp
+    src/BuiltinTextEditor.cpp
 )
 target_include_directories(ps_assembly PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(ps_assembly PUBLIC
     ps_workbench ps_instantiation ps_host ps_context ps_intent ps_command ps_dataset ps_recording
-    ps_registry ps_foundation Qt6::Core)
+    ps_registry ps_foundation Qt6::Widgets Qt6::Core)
 set_target_properties(ps_assembly PROPERTIES AUTOMOC ON CXX_STANDARD 17)
 
 # 反证开关（A4a）：PS_DISABLE_MODULE 接受分号分隔的 target 名列表，装配时剔除。
