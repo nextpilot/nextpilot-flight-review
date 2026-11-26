@@ -18,7 +18,7 @@
 
 `ps_gui` 的 PUBLIC 依赖里已不含任何 `ps_module_*` / `ps_toolbox_*`：
 
-```
+```cmake
 target_link_libraries(ps_gui PUBLIC ps_host ps_context ps_gui_theme ps_gui_transform
                                     ps_command ps_protocol fastplot Qt6::...)
 ```
@@ -30,10 +30,10 @@ target_link_libraries(ps_gui PUBLIC ps_host ps_context ps_gui_theme ps_gui_trans
 
 协议域的**两个对话框仍编在 `ps_gui` 里**，且由壳直接调用：
 
-| 文件 | 归属应为 | 现状 |
-|---|---|---|
+| 文件                                                        | 归属应为                                      | 现状                                    |
+| ----------------------------------------------------------- | --------------------------------------------- | --------------------------------------- |
 | `src/application/gui/shell/ProtocolInspectorDialog.{h,cpp}` | 协议模块的 GUI 侧（`ps_module_protocol_gui`） | 编进 `ps_gui`（`CMakeLists.txt:79-82`） |
-| `src/application/gui/shell/ProtocolEditorDialog.{h,cpp}` | 同上 | 同上 |
+| `src/application/gui/shell/ProtocolEditorDialog.{h,cpp}`    | 同上                                          | 同上                                    |
 
 壳里的调用点：
 
@@ -49,7 +49,7 @@ ProtocolEditorDialog::run(this, &m_appCtx, m_host);       // :950
 
 **处置**：不在本轮硬搬（搬动要连带 `m_appCtx.toolbox()` 的协议面板工厂注册与命令入口，属 c9 之后的独立项）。记欠账，判据写死：
 
-```
+```bash
 grep -rn "ProtocolInspectorDialog\|ProtocolEditorDialog" src/application/gui → 0
 ```
 
@@ -64,7 +64,7 @@ grep -rn "ProtocolInspectorDialog\|ProtocolEditorDialog" src/application/gui →
 
 机械判据：
 
-```
+```bash
 grep -rn "ProtocolInspectorDialog\|ProtocolEditorDialog" src/application/gui/shell → 0
 ```
 
@@ -74,15 +74,15 @@ grep -rn "ProtocolInspectorDialog\|ProtocolEditorDialog" src/application/gui/she
 
 **结论：已达标。** 壳不得知道"这个产品叫什么"，身份文案全部由组合根注入的 `ProductSpec` 提供。
 
-| 身份文案 | 取值来源 | 代码位置 |
-|---|---|---|
-| 窗口标题 | `m_spec.displayName` | `MainWindow.cpp:98` 前后 |
-| 关于对话框产品名/版本 | `m_spec.displayName` / `m_spec.version` | 关于入口 |
-| 关于页用途说明 | `m_spec.aboutText`，空则整段不显示 | `MainWindow.cpp:601`，字段在 `ProductSpec.h:47` |
-| 报告标题（导出） | `m_spec.reportTitle`，空则回落 `displayName` | `MainWindow.cpp:368/523` |
-| 应用名/设置路径 | `m_spec.id` | 组合根 `setApplicationName` |
-| 默认面板布局 | `m_spec.defaultPanels` | `MainWindow.cpp:457` |
-| 模块清单 | `m_spec.moduleIds` | 装配层 |
+| 身份文案              | 取值来源                                     | 代码位置                                        |
+| --------------------- | -------------------------------------------- | ----------------------------------------------- |
+| 窗口标题              | `m_spec.displayName`                         | `MainWindow.cpp:98` 前后                        |
+| 关于对话框产品名/版本 | `m_spec.displayName` / `m_spec.version`      | 关于入口                                        |
+| 关于页用途说明        | `m_spec.aboutText`，空则整段不显示           | `MainWindow.cpp:601`，字段在 `ProductSpec.h:47` |
+| 报告标题（导出）      | `m_spec.reportTitle`，空则回落 `displayName` | `MainWindow.cpp:368/523`                        |
+| 应用名/设置路径       | `m_spec.id`                                  | 组合根 `setApplicationName`                     |
+| 默认面板布局          | `m_spec.defaultPanels`                       | `MainWindow.cpp:457`                            |
+| 模块清单              | `m_spec.moduleIds`                           | 装配层                                          |
 
 机械判据（验收 19）：`grep -rn "PlotScope" src/application/gui/shell` → 0（只允许命名空间声明行）。
 `ps_shell_bare` 用另一份 spec 起第二个产品，实测窗口标题/关于/报告标题随之全变，说明没有"产品常量分支"。
@@ -93,13 +93,13 @@ grep -rn "ProtocolInspectorDialog\|ProtocolEditorDialog" src/application/gui/she
 
 **结论：已达标，并把边界写死在这里，防止以后有人往 `ProductSpec` 里塞业务文案。**
 
-| 文案类别 | 归属 | 例子 |
-|---|---|---|
-| 面板标题 | 面板自注册的 `PanelSpec.title`（包内 `gui/` 注册） | `dataset-tree` → "数据源" |
-| 命令标签 / Ribbon 分组名 | 模块 `contributes().actions` / `.ribbonGroups` | "绘图"、"导出" |
-| 状态栏项文案 | 模块 `contributes().statuses` + `updateStatus` | "游标: 12.40 s" |
-| Activity 标签 | 模块 `contributes().activities` | "脚本" |
-| 空态/错误提示 | 模块或壳的通用诊断（不含业务名词） | "未装载任何数据源" |
+| 文案类别                 | 归属                                               | 例子                      |
+| ------------------------ | -------------------------------------------------- | ------------------------- |
+| 面板标题                 | 面板自注册的 `PanelSpec.title`（包内 `gui/` 注册） | `dataset-tree` → "数据源" |
+| 命令标签 / Ribbon 分组名 | 模块 `contributes().actions` / `.ribbonGroups`     | "绘图"、"导出"            |
+| 状态栏项文案             | 模块 `contributes().statuses` + `updateStatus`     | "游标: 12.40 s"           |
+| Activity 标签            | 模块 `contributes().activities`                    | "脚本"                    |
+| 空态/错误提示            | 模块或壳的通用诊断（不含业务名词）                 | "未装载任何数据源"        |
 
 **规则**：`ProductSpec` 只承载**身份 + 装配**（id / displayName / version / reportTitle / aboutText / defaultPanels / moduleIds）。
 `aboutText` 是"这个产品是干什么用的"身份描述，属 19a；`ps_shell_bare` 留空即不带出，实测成立。
@@ -136,6 +136,6 @@ grep -A3 "target_link_libraries(ps_gui PUBLIC" src/application/gui/CMakeLists.tx
 
 机械判据：
 
-```
+```bash
 grep -rn "progressChanged" src/libs/context src/application/modules/data → 两处信号定义 + 一处订阅
 ```

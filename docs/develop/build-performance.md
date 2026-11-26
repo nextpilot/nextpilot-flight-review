@@ -5,12 +5,12 @@
 
 ## 1. 结论速览
 
-| 组合 | 冷构建 | 热全量 | 单文件增量 | 判定 |
-|---|---|---|---|---|
-| 仅 ccache（默认现状） | 461 s | 103 s | 20 s | 基准 |
-| 仅 PCH | **141 s** | 141 s（无缓存） | 8 s | 冷编最优，热编全废 |
-| PCH + ccache（默认 sloppiness） | 148 s | 136 s | — | **净负收益** |
-| PCH + ccache + `sloppiness` | 179 s | 103 s | 5 s | 可用，但热路径无增量收益 |
+| 组合                            | 冷构建    | 热全量          | 单文件增量 | 判定                     |
+| ------------------------------- | --------- | --------------- | ---------- | ------------------------ |
+| 仅 ccache（默认现状）           | 461 s     | 103 s           | 20 s       | 基准                     |
+| 仅 PCH                          | **141 s** | 141 s（无缓存） | 8 s        | 冷编最优，热编全废       |
+| PCH + ccache（默认 sloppiness） | 148 s     | 136 s           | —          | **净负收益**             |
+| PCH + ccache + `sloppiness`     | 179 s     | 103 s           | 5 s        | 可用，但热路径无增量收益 |
 
 三条硬结论：
 
@@ -79,12 +79,12 @@ cmake --build build -j"$(nproc)"
 
 三项都针对"缓存明明开着、却在换场景时全 miss"，彼此不是可选优化，缺一项就漏一段收益。
 
-| 配置 | 位置 | 解决什么 |
-|---|---|---|
-| `hash_dir = false` | `$CCACHE_DIR/ccache.conf` | `build/` 与 `build-debug/` 共用缓存，切 preset 不再从零编 |
-| `depend_mode = true` | 同上 | 用 `-MD` 的依赖信息判命中，跳过完整预处理；命中判断更准也更快 |
-| `CCACHE_BASEDIR` | `CMakePresets.json` → `environment` | 换 checkout 目录后仍命中；由 `${sourceDir}` 动态展开，换机器不用改配置 |
-| `-ffile-prefix-map` | 根 `CMakeLists.txt` 全局 | 抹平 `-I`/`-o`/`__FILE__`/DWARF 里的绝对前缀，`BASEDIR` 之外的那部分 |
+| 配置                 | 位置                                | 解决什么                                                               |
+| -------------------- | ----------------------------------- | ---------------------------------------------------------------------- |
+| `hash_dir = false`   | `$CCACHE_DIR/ccache.conf`           | `build/` 与 `build-debug/` 共用缓存，切 preset 不再从零编              |
+| `depend_mode = true` | 同上                                | 用 `-MD` 的依赖信息判命中，跳过完整预处理；命中判断更准也更快          |
+| `CCACHE_BASEDIR`     | `CMakePresets.json` → `environment` | 换 checkout 目录后仍命中；由 `${sourceDir}` 动态展开，换机器不用改配置 |
+| `-ffile-prefix-map`  | 根 `CMakeLists.txt` 全局            | 抹平 `-I`/`-o`/`__FILE__`/DWARF 里的绝对前缀，`BASEDIR` 之外的那部分   |
 
 为什么这样分层：与路径无关的策略写进 `ccache.conf`，`$CCACHE_DIR` 指到哪它就跟到哪，CI 与 IDE 都认；与仓库绝对路径绑定的 `base_dir` 只能交给 `CMakePresets.json`，用 `${sourceDir}` 展开；而编译期真正写进产物的路径，必须靠编译选项抹平——`BASEDIR` 管不到这一层。
 
@@ -125,11 +125,11 @@ cmake --build build -j"$(nproc)"
 Make 是递归生成：每个子目录一份 Makefile，跨目录目标要逐层解析。
 **这笔开销与"编不编东西"无关**，是每次构建的固定税：
 
-| 项 | Unix Makefiles | Ninja |
-|---|---:|---:|
+| 项                                                 | Unix Makefiles |               Ninja |
+| -------------------------------------------------- | -------------: | ------------------: |
 | 构建图解析（`make help` / `ninja -t targets all`） | 4713 / 5678 ms | **55 / 58 / 76 ms** |
-| `ps_command_autogen`（0 moc 汇总） | 800 ms | **108–124 ms** |
-| `ps_host_autogen`（1 moc） | 4752 ms | **467–476 ms** |
+| `ps_command_autogen`（0 moc 汇总）                 |         800 ms |      **108–124 ms** |
+| `ps_host_autogen`（1 moc）                         |        4752 ms |      **467–476 ms** |
 
 autogen 那 4.75 s 的主体不是 moc，而是递归解析：`make -n ps_host_autogen`
 单独测 1.50–1.74 s，`make help` 4.71–5.68 s。

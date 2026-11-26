@@ -19,22 +19,22 @@ psproto 描述**字节流 / 文本流怎么变成通道**。它不管绘图、�
 
 ## 1. 顶层 14 键
 
-| 键 | 必填 | 说明 |
-|---|---|---|
-| `name` | ✓ | 协议名。通道前缀固定取 `frame.`，与协议名无关 |
-| `mode` | ✓ | `bin` / `text`，必填，无 mixed |
-| `segments` | ✓ | 段表，至少一段 |
-| `description` | | 人类可读说明 |
-| `layout` | | `sequential`（默认，顺序读） |
-| `endian` | | `little`（默认）/ `big`。只跟顶层走，段级不再有 endian |
-| `maxsize` | | 单帧字节上限，默认 4096 |
-| `term` | | 帧尾候选集（字符串或数组）；写了就硬校验 |
-| `terminator` | | `term` 的同义写法；两者同时出现时 `term` 优先 |
-| `blocks` | | 块定义表，见 §4 |
-| `derived` | | 派生量，见 §5 |
-| `series` | | 变体分发（`selector` + `variants`） |
-| `types` | | 类型别名：`type/unit/transform/expect` 的复用 |
-| `timestamp` | | 时间戳提取（`expr`/`unit`/`origin`/`raw`/`fallback`） |
+| 键            | 必填 | 说明                                                   |
+| ------------- | ---- | ------------------------------------------------------ |
+| `name`        | ✓    | 协议名。通道前缀固定取 `frame.`，与协议名无关          |
+| `mode`        | ✓    | `bin` / `text`，必填，无 mixed                         |
+| `segments`    | ✓    | 段表，至少一段                                         |
+| `description` |      | 人类可读说明                                           |
+| `layout`      |      | `sequential`（默认，顺序读）                           |
+| `endian`      |      | `little`（默认）/ `big`。只跟顶层走，段级不再有 endian |
+| `maxsize`     |      | 单帧字节上限，默认 4096                                |
+| `term`        |      | 帧尾候选集（字符串或数组）；写了就硬校验               |
+| `terminator`  |      | `term` 的同义写法；两者同时出现时 `term` 优先          |
+| `blocks`      |      | 块定义表，见 §4                                        |
+| `derived`     |      | 派生量，见 §5                                          |
+| `series`      |      | 变体分发（`selector` + `variants`）                    |
+| `types`       |      | 类型别名：`type/unit/transform/expect` 的复用          |
+| `timestamp`   |      | 时间戳提取（`expr`/`unit`/`origin`/`raw`/`fallback`）  |
 
 没有 `psproto`、`version` 键。二者都算未知键。
 
@@ -42,7 +42,7 @@ psproto 描述**字节流 / 文本流怎么变成通道**。它不管绘图、�
 
 ## 2. bin 段：只允许 10 个键
 
-```
+```text
 name / description / unit / output / type / count / transform / expect / on_mismatch / if
 ```
 
@@ -68,11 +68,11 @@ name / description / unit / output / type / count / transform / expect / on_mism
 
 ### 3.1 `count` 三态
 
-| 写法 | 含义 |
-|---|---|
-| 整数 `3` | 恰好 3 个元素 |
-| 字符串表达式 `n` / `hdr.len` | 运行期求值 |
-| `"*"` | 读到帧尾；**全局唯一**，其后只允许固定长度的尾部段（给帧尾 CRC 留位） |
+| 写法                         | 含义                                                                  |
+| ---------------------------- | --------------------------------------------------------------------- |
+| 整数 `3`                     | 恰好 3 个元素                                                         |
+| 字符串表达式 `n` / `hdr.len` | 运行期求值                                                            |
+| `"*"`                        | 读到帧尾；**全局唯一**，其后只允许固定长度的尾部段（给帧尾 CRC 留位） |
 
 段占字节数 = `count × type 字节宽`（位域段恒为 0）。
 
@@ -118,11 +118,11 @@ name / description / unit / output / type / count / transform / expect / on_mism
 "segments": [ {"name": "payload", "type": "rec"}, {"name": "f", "type": "flags"} ]
 ```
 
-| 形态 | 判定 | 行为 |
-|---|---|---|
-| 顺序块 | 无 `of` | 字段按序读字节；每个字段必须**定长** |
-| 位域块 | 有 `of` | 先读一个 `of` 类型的容器值，再按字段 `宽@偏移` 切位；**偏移相对容器起点** |
-| 组重复 | 有 `repeater:"*"` | 这组字段整体重复到帧尾；组宽 = 块内字段定长之和（位域块为容器宽度） |
+| 形态   | 判定              | 行为                                                                      |
+| ------ | ----------------- | ------------------------------------------------------------------------- |
+| 顺序块 | 无 `of`           | 字段按序读字节；每个字段必须**定长**                                      |
+| 位域块 | 有 `of`           | 先读一个 `of` 类型的容器值，再按字段 `宽@偏移` 切位；**偏移相对容器起点** |
+| 组重复 | 有 `repeater:"*"` | 这组字段整体重复到帧尾；组宽 = 块内字段定长之和（位域块为容器宽度）       |
 
 规则：
 
@@ -153,16 +153,16 @@ name / description / unit / output / type / count / transform / expect / on_mism
 
 1. **字符串表达式**，`self` 指本段原始值：
 
-```jsonc
-{"name": "rpm", "transform": "self*0.25"}
-{"name": "t",   "transform": "(self-32)*5/9"}
-```
+   ```jsonc
+   {"name": "rpm", "transform": "self*0.25"}
+   {"name": "t",   "transform": "(self-32)*5/9"}
+   ```
 
 2. **算子数组**（多步组合）：
 
-```jsonc
-"transform": [ {"op": "scale", "k": 0.25}, {"op": "clamp", "min": 0, "max": 8000} ]
-```
+   ```jsonc
+   "transform": [ {"op": "scale", "k": 0.25}, {"op": "clamp", "min": 0, "max": 8000} ]
+   ```
 
 关键语义：
 
@@ -185,14 +185,14 @@ name / description / unit / output / type / count / transform / expect / on_mism
 
 ### 7.1 界面写法 → 结构
 
-| 写法 | 含义 | 落成 |
-|---|---|---|
-| `53` | 等于 53 | `{op:"eq", value:53}` |
-| `>63` `<10` `>=1` `<=9` | 单侧比较 | `gt/lt/ge/le` |
-| `[36,427)` | 区间（左闭右开） | 拆 `ge` + `lt` **两条** |
-| `{1,3,5}` | 枚举集合 | `{op:"in", values:[...]}` |
-| `self+3` | 与本段值比较（省略左操作数默认 `self`） | 表达式比较 |
-| `{1=OFF,2=ON}` | 带标签的枚举 | `{op:"in", values, labels}` |
+| 写法                    | 含义                                    | 落成                        |
+| ----------------------- | --------------------------------------- | --------------------------- |
+| `53`                    | 等于 53                                 | `{op:"eq", value:53}`       |
+| `>63` `<10` `>=1` `<=9` | 单侧比较                                | `gt/lt/ge/le`               |
+| `[36,427)`              | 区间（左闭右开）                        | 拆 `ge` + `lt` **两条**     |
+| `{1,3,5}`               | 枚举集合                                | `{op:"in", values:[...]}`   |
+| `self+3`                | 与本段值比较（省略左操作数默认 `self`） | 表达式比较                  |
+| `{1=OFF,2=ON}`          | 带标签的枚举                            | `{op:"in", values, labels}` |
 
 **没有 `range` 这个 op**：开闭区间一律拆成 `ge/lt`。
 
@@ -208,11 +208,11 @@ name / description / unit / output / type / count / transform / expect / on_mism
 
 ## 8. 通道命名
 
-| 场景 | 名字 |
-|---|---|
-| 普通段 | `frame.<段名>` |
-| 段有多个元素 | `frame.<段名>[i]` |
-| 块内字段 | `frame.<实例>.<字段>` |
+| 场景              | 名字                     |
+| ----------------- | ------------------------ |
+| 普通段            | `frame.<段名>`           |
+| 段有多个元素      | `frame.<段名>[i]`        |
+| 块内字段          | `frame.<实例>.<字段>`    |
 | 组重复块的第 i 轮 | `frame.<实例>[i].<字段>` |
 
 索引插在**块实例名之后、字段名之前**：`payload[0].a`，不是 `payload.a[0]`。
@@ -244,20 +244,20 @@ text 段按 **扩展 scanf** 方式顺序消费：段与段共用同一条字符
 
 ### 10.1 `format` 语法
 
-| 写法 | 含义 |
-|---|---|
-| `%d` `%u` | 十进制有/无符号 |
-| `%x` `%X` | 十六进制（可带 `0x`） |
-| `%o` | 八进制 |
-| `%b` | 二进制 |
-| `%f` `%e` `%g` | 浮点；`%e`/`%g` 收科学计数 |
-| `%c` | 单字符，**不吃分隔符** |
-| `%s` | 读到 `delimiter` 或空白为止 |
-| `%[^,]` `%[^;\n]` | 自定义终止字符集 |
-| `%t` | 时间 `hh:mm:ss[.frac]` |
-| `%T` | ISO 时间 `yyyy-mm-ddThh:mm:ss` |
-| `%*d` `%*[^,]` | 读了但丢弃 |
-| `%5d` `%10s` | 定宽 |
+| 写法               | 含义                                 |
+| ------------------ | ------------------------------------ |
+| `%d` `%u`          | 十进制有/无符号                      |
+| `%x` `%X`          | 十六进制（可带 `0x`）                |
+| `%o`               | 八进制                               |
+| `%b`               | 二进制                               |
+| `%f` `%e` `%g`     | 浮点；`%e`/`%g` 收科学计数           |
+| `%c`               | 单字符，**不吃分隔符**               |
+| `%s`               | 读到 `delimiter` 或空白为止          |
+| `%[^,]` `%[^;\n]`  | 自定义终止字符集                     |
+| `%t`               | 时间 `hh:mm:ss[.frac]`               |
+| `%T`               | ISO 时间 `yyyy-mm-ddThh:mm:ss`       |
+| `%*d` `%*[^,]`     | 读了但丢弃                           |
+| `%5d` `%10s`       | 定宽                                 |
 | 普通字符 `$GPGGA,` | 必须逐字匹配，不匹配走 `on_mismatch` |
 
 ### 10.2 `count`
@@ -304,8 +304,7 @@ text 不是"在流里直接 scanf"：**必须先定位帧首才读**，否则垃
 text 的校验写在 `expect` 里，算的是**记录的连续原始字节**（含中间的逗号），不是字段值拼回去：
 
 ```json
-{"name":"check","format":"%x","output":"aux",
- "expect":[{"op":"xor8","over":"msgid:station"}]}
+{ "name": "check", "format": "%x", "output": "aux", "expect": [{ "op": "xor8", "over": "msgid:station" }] }
 ```
 
 - `over` 用 `a:b` 表示段区间，取 `[start(a), end(b))` 的原始字节；`$`、`*` 要排除就把区间写成
@@ -330,42 +329,42 @@ text 与 bin 共用同一套断言语义，**没有"text 不做断言"这回事*
 不再有 `literal`。段头用 `expect` 判等：
 
 ```json
-{"name":"tag","format":"$GPGGA,","output":"none"}
+{ "name": "tag", "format": "$GPGGA,", "output": "none" }
 ```
 
 或 `{"name":"tag","format":"%[^,]","expect":[{"op":"eq","value":"$GPGGA"}]}`。
 
 ### 10.6 已删除的词法键
 
-| 删除 | 替代 |
-|---|---|
-| `literal` | `expect` 的 `eq`，或 `format` 里直接写死字面 |
-| `key` | 不做 KV 形态（`a=1,b=2` 交上层拆） |
-| `width` | `%5d` / `%10s` 宽度，或 `%c` + `count` |
-| `rest` / `repeater` | `count:"*"` |
-| `base` | `%x` / `%o` / `%b` / `%d` |
-| `pattern` | `%[^,]` 或 `expect` |
-| `fixed` / `signed` / `sci` | `transform`（如 `self/1000`） |
-| `empty` | `on_mismatch` |
+| 删除                       | 替代                                         |
+| -------------------------- | -------------------------------------------- |
+| `literal`                  | `expect` 的 `eq`，或 `format` 里直接写死字面 |
+| `key`                      | 不做 KV 形态（`a=1,b=2` 交上层拆）           |
+| `width`                    | `%5d` / `%10s` 宽度，或 `%c` + `count`       |
+| `rest` / `repeater`        | `count:"*"`                                  |
+| `base`                     | `%x` / `%o` / `%b` / `%d`                    |
+| `pattern`                  | `%[^,]` 或 `expect`                          |
+| `fixed` / `signed` / `sci` | `transform`（如 `self/1000`）                |
+| `empty`                    | `on_mismatch`                                |
 
 ## 11. 与 v2 的差异
 
 v2 段级 35 个键里，8 个 fixture 45 段实际只用到 13 个，其余是纸面装饰。v3 删掉的键及替代：
 
-| 删除 | 替代 |
-|---|---|
-| `scale` / `offset` | `transform`（`self*0.25` 编译期折回 scale/offset） |
-| `range` | `expect` 的 `[a,b)` / `>x` |
-| `enum` | `expect` 的 `{1,3,5}` |
-| `checks` / `digest` | 统一并入 `expect` |
-| `bit`（对象） | `type:"bit"/"rbit"` + `count:"宽@偏移"` |
-| `repeat` / `until` | 块的 `repeater:"*"` / 段 `count:"*"` |
-| `length` | 删（长度由 `count × 类型宽` 推出） |
-| `derive`（段级） | 顶层 `derived` |
-| `as` | 用 `types` 别名 |
-| `emit` | `output` |
-| `hidden` / `plot` | `output` 三态 |
-| `role` | 删 |
-| `psproto` / `version` | 删（不做兼容层） |
+| 删除                  | 替代                                               |
+| --------------------- | -------------------------------------------------- |
+| `scale` / `offset`    | `transform`（`self*0.25` 编译期折回 scale/offset） |
+| `range`               | `expect` 的 `[a,b)` / `>x`                         |
+| `enum`                | `expect` 的 `{1,3,5}`                              |
+| `checks` / `digest`   | 统一并入 `expect`                                  |
+| `bit`（对象）         | `type:"bit"/"rbit"` + `count:"宽@偏移"`            |
+| `repeat` / `until`    | 块的 `repeater:"*"` / 段 `count:"*"`               |
+| `length`              | 删（长度由 `count × 类型宽` 推出）                 |
+| `derive`（段级）      | 顶层 `derived`                                     |
+| `as`                  | 用 `types` 别名                                    |
+| `emit`                | `output`                                           |
+| `hidden` / `plot`     | `output` 三态                                      |
+| `role`                | 删                                                 |
+| `psproto` / `version` | 删（不做兼容层）                                   |
 
 新增：`blocks`、`derived`、`expect`（数组）、`transform`（表达式）、`output`（三态）。

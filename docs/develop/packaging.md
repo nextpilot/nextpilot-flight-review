@@ -4,13 +4,13 @@ PlotScope 每个包都含**两个可执行文件**：`plotscope-gui`（GUI 主�
 
 ## 三平台产物
 
-| 平台 | 脚本 | 产物 | 形态 |
-|---|---|---|---|
-| Linux x86_64 | `tools/pack-appimage.sh` | `PlotScope-<ver>-linux-x86_64.AppImage` | 单文件，chmod +x 双击即用，Qt 闭包在包内 |
-| Linux amd64 | `tools/pack-deb.sh` | `PlotScope-<ver>-linux-amd64.deb` | apt 安装包，注册桌面条目与 `plotscope*` 命令 |
-| Linux x86_64 | `tools/pack-linux.sh` | `plotscope-<ver>-linux-x86_64.tar.gz` | 便携目录，无 FUSE 环境/服务器用 |
-| Windows x86_64 | `tools/pack-windows.ps1` | `PlotScope-<ver>-windows-x86_64-setup.exe` + `-portable.zip` | 安装器（开始菜单/卸载/版本信息）+ 便携 zip |
-| macOS arm64 / x86_64 | `tools/pack-macos.sh` | `PlotScope-<ver>-macOS-<arch>.dmg` | `.app` 拖拽安装 |
+| 平台                 | 脚本                     | 产物                                                         | 形态                                         |
+| -------------------- | ------------------------ | ------------------------------------------------------------ | -------------------------------------------- |
+| Linux x86_64         | `tools/pack-appimage.sh` | `PlotScope-<ver>-linux-x86_64.AppImage`                      | 单文件，chmod +x 双击即用，Qt 闭包在包内     |
+| Linux amd64          | `tools/pack-deb.sh`      | `PlotScope-<ver>-linux-amd64.deb`                            | apt 安装包，注册桌面条目与 `plotscope*` 命令 |
+| Linux x86_64         | `tools/pack-linux.sh`    | `plotscope-<ver>-linux-x86_64.tar.gz`                        | 便携目录，无 FUSE 环境/服务器用              |
+| Windows x86_64       | `tools/pack-windows.ps1` | `PlotScope-<ver>-windows-x86_64-setup.exe` + `-portable.zip` | 安装器（开始菜单/卸载/版本信息）+ 便携 zip   |
+| macOS arm64 / x86_64 | `tools/pack-macos.sh`    | `PlotScope-<ver>-macOS-<arch>.dmg`                           | `.app` 拖拽安装                              |
 
 三条命令（都在仓库根）：
 
@@ -33,6 +33,7 @@ cmake --build build --target plotscope-gui plotscope
 用 linuxdeploy + linuxdeploy-plugin-qt + appimagetool，与 PJ4 同一条工具链。脚本首次运行会把三个工具下载到 `<repo>/.tools` 并缓存（离线环境可预先放好）。
 
 做了什么：
+
 1. `linuxdeploy` 收集 GUI 与 CLI 的依赖并集，Qt 库、插件、平台插件一起进 `AppDir`；
 2. 覆写 `AppRun`：默认启动 GUI，`--cli` 转给 headless CLI，一个文件覆盖两种用法；
 3. `appimagetool` 打成 squashfs 单文件。
@@ -71,6 +72,7 @@ plotscope --help              # CLI
 ## Windows：安装器 + 便携包
 
 `tools/pack-windows.ps1` 的流程：
+
 1. 取 `plotscope-gui.exe` 与 `plotscope.exe`（自动兼容 MSVC 多配置的 `Release\` 与 Ninja 单配置）；
 2. `windeployqt --release` 同时扫两个 exe 部署 Qt 运行库与插件；
 3. 补拷 ADS 的 `ads.dll`（windeployqt 不认识）；
@@ -85,6 +87,7 @@ plotscope --help              # CLI
 ## macOS：.app + dmg
 
 `tools/pack-macos.sh` 只能在 macOS 上跑，产物架构跟随构建机（Apple Silicon 出 arm64，Intel 出 x86_64）。流程：
+
 1. 手工组装 `PlotScope.app`（`Contents/MacOS` 放两个二进制，`Contents/Info.plist` 见 `packaging/macos/Info.plist`）；
 2. 从 512 PNG 生成 `plotscope.icns`（`sips` + `iconutil`）；
 3. `macdeployqt -always-overwrite` 把 Qt 框架与插件装进 `Contents/Frameworks`；
@@ -94,21 +97,21 @@ plotscope --help              # CLI
 
 签名分两档：
 
-| 条件 | 行为 | 用户体验 |
-|---|---|---|
-| 设了 `MACOS_SIGNING_IDENTITY` + `APPLE_ID`/`APPLE_TEAM_ID`/`APPLE_APP_PASSWORD` | Developer ID 签名 + 公证 | 双击直接打开 |
-| 只有 ad-hoc（默认） | `codesign -s -` | 首次需右键「打开」，或 `xattr -dr com.apple.quarantine PlotScope.app` |
+| 条件                                                                            | 行为                     | 用户体验                                                              |
+| ------------------------------------------------------------------------------- | ------------------------ | --------------------------------------------------------------------- |
+| 设了 `MACOS_SIGNING_IDENTITY` + `APPLE_ID`/`APPLE_TEAM_ID`/`APPLE_APP_PASSWORD` | Developer ID 签名 + 公证 | 双击直接打开                                                          |
+| 只有 ad-hoc（默认）                                                             | `codesign -s -`          | 首次需右键「打开」，或 `xattr -dr com.apple.quarantine PlotScope.app` |
 
 脚本最后会跑一次 `Contents/MacOS/plotscope --help`，bundle 内依赖不全时直接失败，不会把坏包发出去。
 
 ## 图标与桌面集成
 
-| 文件 | 用途 |
-|---|---|
-| `packaging/linux/plotscope.svg` | 源图（512×512，可编辑） |
-| `packaging/linux/plotscope.png` / `-512.png` | AppImage 与 mac icns 的输入 |
-| `packaging/linux/plotscope.desktop` | AppImage 桌面条目（`Exec=plotscope-gui`、`StartupWMClass`） |
-| `packaging/windows/plotscope.ico` | 安装器与 exe 图标（16–256 六档） |
+| 文件                                         | 用途                                                        |
+| -------------------------------------------- | ----------------------------------------------------------- |
+| `packaging/linux/plotscope.svg`              | 源图（512×512，可编辑）                                     |
+| `packaging/linux/plotscope.png` / `-512.png` | AppImage 与 mac icns 的输入                                 |
+| `packaging/linux/plotscope.desktop`          | AppImage 桌面条目（`Exec=plotscope-gui`、`StartupWMClass`） |
+| `packaging/windows/plotscope.ico`            | 安装器与 exe 图标（16–256 六档）                            |
 
 图标是几何波形 + 游标的设计稿，换品牌时只改 SVG 再重跑生成命令即可。
 
@@ -125,16 +128,17 @@ plotscope --help              # CLI
 
 ## 体积与瘦身
 
-| 口径 | 大小 | 说明 |
-|---|---|---|
-| `plotscope-gui`（strip 后） | 约 12.8 MB | 未 strip 25.3 MB |
-| `plotscope` CLI（strip 后） | 约 7.7 MB | 只链 Core |
-| tar.gz（系统库外置） | 约 17 MB / 解压 50 MB | 要求目标机有图形栈 |
-| 全自包含 | 约 97 MB | Qt + 图形栈全打进去 |
+| 口径                        | 大小                  | 说明                |
+| --------------------------- | --------------------- | ------------------- |
+| `plotscope-gui`（strip 后） | 约 12.8 MB            | 未 strip 25.3 MB    |
+| `plotscope` CLI（strip 后） | 约 7.7 MB             | 只链 Core           |
+| tar.gz（系统库外置）        | 约 17 MB / 解压 50 MB | 要求目标机有图形栈  |
+| 全自包含                    | 约 97 MB              | Qt + 图形栈全打进去 |
 
 AppImage 走的是"全自包含 + squashfs 压缩"，分发体比 tar.gz 大，但**用户侧不需要装任何东西**，跨发行版不会因缺 xcb 库启动失败。这是与 PJ4 一致的选择。
 
 进一步瘦身的手段（按性价比）：
+
 1. 只带实际用到的 Qt 插件（linuxdeploy-plugin-qt 已按依赖裁剪）；
 2. 默认 strip（脚本已做）；
 3. 裁 ICU（Qt 6.2 的 `libicudata` 约 29 MB，需确认无中文/正则 Unicode 依赖，属产品决策）；

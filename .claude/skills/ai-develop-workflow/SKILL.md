@@ -13,15 +13,15 @@ main 是唯一长期分支，始终可发布、可回退。所有改动经短命
 
 `references/` 下的文件不会自动全文注入。到对应步骤时，必须 `Read` 对应文件后再执行。
 
-| 场景 | 必读 |
-|---|---|
-| 收到任何修改类指令，动手前 | `references/change-confirmation.md` |
-| 写代码注释、文档、提交信息、PR 描述、回复文字 | `.claude/rules/terse-writing.md` |
-| PM 建 issue / 更新 issue 正文 | `references/issue-authoring.md` |
-| issue 里要放截图、给 issue 配图 | `references/issue-image-hosting.md` |
-| Dev 领取、交接、PM 验收、关闭或重开 issue | `references/issue-lifecycle.md` |
-| 建分支、提交、rebase、推送、建 PR、合并 | `references/git-pr-delivery.md` |
-| 调用 Gitee API、排查平台错误 | `references/gitee-operations.md` |
+| 场景                                          | 必读                                |
+| --------------------------------------------- | ----------------------------------- |
+| 收到任何修改类指令，动手前                    | `references/change-confirmation.md` |
+| 写代码注释、文档、提交信息、PR 描述、回复文字 | `.claude/rules/terse-writing.md`    |
+| PM 建 issue / 更新 issue 正文                 | `references/issue-authoring.md`     |
+| issue 里要放截图、给 issue 配图               | `references/issue-image-hosting.md` |
+| Dev 领取、交接、PM 验收、关闭或重开 issue     | `references/issue-lifecycle.md`     |
+| 建分支、提交、rebase、推送、建 PR、合并       | `references/git-pr-delivery.md`     |
+| 调用 Gitee API、排查平台错误                  | `references/gitee-operations.md`    |
 
 **修改前确认的硬要求：** 先复述“改什么、怎么改、哪里含糊”，等用户明确同意后才动手。沉默、未回复、话题转移、仅提问都不算同意。
 
@@ -84,16 +84,16 @@ PM 建 issue
   → PM 校验闭环是否真的完成，缺失项手动兜底；Dev 删本地分支
 ```
 
-| 步骤 | 负责人 | 动作 | 完成标志 | 必读 |
-|---|---|---|---|---|
-| ① 建 issue | PM | 查重后写 issue | 拿到 issue 编号（如 `IKX6N2`） | `issue-authoring.md` |
-| ② 领取 | Dev | 在 issue 评论领取，声明分支和计划 | issue 状态为 `in-progress` | `issue-lifecycle.md` |
-| ③ 建分支 | Dev | 从最新 `main` 切出 `<类型>/<简述>` | 当前分支为特性分支 | `git-pr-delivery.md` |
-| ④ 开发验证 | Dev | 编码、编译、跑测试，全部通过 | 构建无 error，测试全绿 | — |
-| ⑤ 提交 PR | Dev | rebase 最新 main 后推送并建 PR | PR 创建成功，关联 issue | `git-pr-delivery.md`、`gitee-operations.md` |
-| ⑥ 评审验收 | PM | 按验收标准审查；不通过退回 | `in-review` → 通过或退回 | `issue-lifecycle.md` |
-| ⑦ 合并 | PM/用户 | 合并 PR，回填验收结论评论 | PR `merged`，issue 有验收评论 | `issue-lifecycle.md`、`gitee-operations.md` |
-| ⑧ 收尾校验 | PM/Dev | 关闭目标 issue、校验源分支已删；缺失项手动兜底，Dev 删本地分支 | issue `closed`，远端与本地分支均不存在 | `gitee-operations.md` |
+| 步骤       | 负责人  | 动作                                                           | 完成标志                               | 必读                                        |
+| ---------- | ------- | -------------------------------------------------------------- | -------------------------------------- | ------------------------------------------- |
+| ① 建 issue | PM      | 查重后写 issue                                                 | 拿到 issue 编号（如 `IKX6N2`）         | `issue-authoring.md`                        |
+| ② 领取     | Dev     | 在 issue 评论领取，声明分支和计划                              | issue 状态为 `in-progress`             | `issue-lifecycle.md`                        |
+| ③ 建分支   | Dev     | 从最新 `main` 切出 `<类型>/<简述>`                             | 当前分支为特性分支                     | `git-pr-delivery.md`                        |
+| ④ 开发验证 | Dev     | 编码、编译、跑测试，全部通过                                   | 构建无 error，测试全绿                 | —                                           |
+| ⑤ 提交 PR  | Dev     | rebase 最新 main 后推送并建 PR                                 | PR 创建成功，关联 issue                | `git-pr-delivery.md`、`gitee-operations.md` |
+| ⑥ 评审验收 | PM      | 按验收标准审查；不通过退回                                     | `in-review` → 通过或退回               | `issue-lifecycle.md`                        |
+| ⑦ 合并     | PM/用户 | 合并 PR，回填验收结论评论                                      | PR `merged`，issue 有验收评论          | `issue-lifecycle.md`、`gitee-operations.md` |
+| ⑧ 收尾校验 | PM/Dev  | 关闭目标 issue、校验源分支已删；缺失项手动兜底，Dev 删本地分支 | issue `closed`，远端与本地分支均不存在 | `gitee-operations.md`                       |
 
 **关键约束：**
 
@@ -191,13 +191,13 @@ Verification: <编译与测试结果>
 
 ## 7. Reference 索引
 
-| 文件 | 内容 |
-|---|---|
-| `references/change-confirmation.md` | 修改前复述、等待同意、执行流程、自查 |
-| `references/issue-authoring.md` | issue 载体、9 章节、模板、质量标准 |
+| 文件                                | 内容                                             |
+| ----------------------------------- | ------------------------------------------------ |
+| `references/change-confirmation.md` | 修改前复述、等待同意、执行流程、自查             |
+| `references/issue-authoring.md`     | issue 载体、9 章节、模板、质量标准               |
 | `references/issue-image-hosting.md` | issue 配图：图床仓库、目录约定、上传与引用、排错 |
-| `references/issue-lifecycle.md` | 状态机、交接模板、关闭与重开 |
-| `references/git-pr-delivery.md` | 分支、提交、rebase、推送、PR、合并门槛 |
-| `references/gitee-operations.md` | 令牌、API 端点、平台踩坑、合并后闭环校验 |
+| `references/issue-lifecycle.md`     | 状态机、交接模板、关闭与重开                     |
+| `references/git-pr-delivery.md`     | 分支、提交、rebase、推送、PR、合并门槛           |
+| `references/gitee-operations.md`    | 令牌、API 端点、平台踩坑、合并后闭环校验         |
 
 写作规范不在 `references/` 下，唯一正文是 `.claude/rules/terse-writing.md`。

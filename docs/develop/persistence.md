@@ -4,11 +4,11 @@
 
 ## 一、三分法：先分类，再选位置
 
-| 类别 | 判据 | 落点 |
-|---|---|---|
+| 类别     | 判据                                                   | 落点                                                     |
+| -------- | ------------------------------------------------------ | -------------------------------------------------------- |
 | **资产** | 知识、模板、配方：同一份内容被多处复用，换机器也要一致 | 仓库或安装目录的文件（`.psproto`、预设模板、解析器定义） |
-| **状态** | 一次工作现场：随时会变、关掉就要续上 | 作用域存储（`SettingsStore` 键值）或结构化状态 hub |
-| **喜好** | 用户偏好：跨会话唯一一份，跟具体工作区无关 | `SettingsStore` 的 `app/` 段 |
+| **状态** | 一次工作现场：随时会变、关掉就要续上                   | 作用域存储（`SettingsStore` 键值）或结构化状态 hub       |
+| **喜好** | 用户偏好：跨会话唯一一份，跟具体工作区无关             | `SettingsStore` 的 `app/` 段                             |
 
 判错的典型后果：把工作现场写进 `app/` 段，用户换工作区后旧布局还粘着；把偏好写进文档段，同一台机器上两个工作区各有各的主题。
 
@@ -52,10 +52,15 @@ appCtx.states().registerEntry(std::move(entry));
 一份按名字存的工作现场，可拷给别人：
 
 ```jsonc
-{ "version": 1, "kind": "preset", "name": "...", "savedAt": "ISO8601",
-  "sourceBinding": "bound",          // bound | generic
-  "sources": [ /* 源条目原文 */ ],
-  "plots":   { /* PlotDocumentSpec，含 datasetOrigin */ } }
+{
+  "version": 1,
+  "kind": "preset",
+  "name": "...",
+  "savedAt": "ISO8601",
+  "sourceBinding": "bound", // bound | generic
+  "sources": [/* 源条目原文 */],
+  "plots": {/* PlotDocumentSpec，含 datasetOrigin */},
+}
 ```
 
 - `bound`：源条目全量，含 `parserParams` 原文，打开时按原文重建解析配置。
@@ -79,12 +84,12 @@ appCtx.states().registerEntry(std::move(entry));
 
 ## 四、时机分离
 
-| 时机 | 动作 |
-|---|---|
-| 构造期 | `registerEntry`（只登记，不读不写） |
+| 时机                   | 动作                                              |
+| ---------------------- | ------------------------------------------------- |
+| 构造期                 | `registerEntry`（只登记，不读不写）               |
 | 启动（shell 显式触发） | 读快照 → 回填 config → `states().restore(hubDoc)` |
-| 运行中 | 各控件自己改内存状态，不主动落盘 |
-| 退出（`closeEvent`） | `states().collect()` → 原子写快照 |
+| 运行中                 | 各控件自己改内存状态，不主动落盘                  |
+| 退出（`closeEvent`）   | `states().collect()` → 原子写快照                 |
 
 启动恢复分三档（`app/startup.recovery`，默认 `layout`）：
 

@@ -2,13 +2,13 @@
 
 文档按用途分目录，和代码同仓维护。
 
-| 目录 | 放什么 | 读者 |
-|---|---|---|
-| [`manual/`](manual/README.md) | 安装后的使用说明、格式、绘图、变换、脚本与设置 | 用户 |
-| [`develop/`](develop/README.md) | 已成熟的开发指南、架构概览、协议规范 | 开发者 |
-| [`roadmap/`](roadmap/README.md) | 长期规划、路线分段、里程碑设计文档 | 所有人 |
-| [`screenshots/`](screenshots/) | 界面截图，按功能命名 | 所有人 |
-| [`prototype/`](prototype/) | 可评审的单文件 UI 原型 | 所有人 |
+| 目录                            | 放什么                                         | 读者   |
+| ------------------------------- | ---------------------------------------------- | ------ |
+| [`manual/`](manual/README.md)   | 安装后的使用说明、格式、绘图、变换、脚本与设置 | 用户   |
+| [`develop/`](develop/README.md) | 已成熟的开发指南、架构概览、协议规范           | 开发者 |
+| [`roadmap/`](roadmap/README.md) | 长期规划、路线分段、里程碑设计文档             | 所有人 |
+| [`screenshots/`](screenshots/)  | 界面截图，按功能命名                           | 所有人 |
+| [`prototype/`](prototype/)      | 可评审的单文件 UI 原型                         | 所有人 |
 
 ## 查看原型
 

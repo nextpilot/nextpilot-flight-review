@@ -4,14 +4,14 @@
 
 ## 结论（详见架构文档 §12「Ribbon / Dock spike」）
 
-| 项 | 实测 |
-|---|---|
-| 七页签 + 分组 + 大/小按钮 | 成立（`addCategoryPage` / `addPanel` / `addLargeAction` / `addSmallAction`） |
-| 右侧 qchip 位 | 成立（`ribbon->rightButtonGroup()->addAction`） |
-| 展开高度（CompactTwoRow、隐藏标题栏、tab 26 / panel 15 / 图标 32） | **97 px**（原型 74 px） |
-| 折叠高度（`setMinimumMode(true)`） | **28 px**（原型 32 px） |
-| 暗色主题 | 静态库必须 `Q_INIT_RESOURCE(SARibbonResource)`，否则静默回退浅色 QSS |
-| 观感 | Office 风格；贴原型需整体重写 QSS + 自绘 SVG 图标 |
+| 项                                                                 | 实测                                                                         |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| 七页签 + 分组 + 大/小按钮                                          | 成立（`addCategoryPage` / `addPanel` / `addLargeAction` / `addSmallAction`） |
+| 右侧 qchip 位                                                      | 成立（`ribbon->rightButtonGroup()->addAction`）                              |
+| 展开高度（CompactTwoRow、隐藏标题栏、tab 26 / panel 15 / 图标 32） | **97 px**（原型 74 px）                                                      |
+| 折叠高度（`setMinimumMode(true)`）                                 | **28 px**（原型 32 px）                                                      |
+| 暗色主题                                                           | 静态库必须 `Q_INIT_RESOURCE(SARibbonResource)`，否则静默回退浅色 QSS         |
+| 观感                                                               | Office 风格；贴原型需整体重写 QSS + 自绘 SVG 图标                            |
 
 ## 跑法
 

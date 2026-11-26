@@ -6,43 +6,43 @@
 
 ## 1. 结构类（workbench 布局与控件）
 
-| 本项目 | VSCode 对位 | 出处（VSCode 仓 `src/` 下） | 状态 |
-|---|---|---|---|
-| `Part` | `Part` | `vs/workbench/browser/part.ts` | ✅ |
-| `WorkbenchLayout` | `Layout`（类名无前缀；本项目加前缀属仓内习惯） | `vs/workbench/browser/layout.ts` | ✅（前缀差异已知） |
-| `EditorPart` | `EditorPart` | `vs/workbench/browser/parts/editor/editorPart.ts` | ✅ |
-| `SidebarPart` | `SidebarPart` | `vs/workbench/browser/parts/sidebar/sidebarPart.ts` | ✅ |
-| `ActivitybarPart` | `ActivitybarPart` | `vs/workbench/browser/parts/activitybar/activitybarPart.ts` | ✅ |
-| `StatusbarPart` | `StatusbarPart` | `vs/workbench/browser/parts/statusbar/statusbarPart.ts` | ✅ |
-| `CompositeBar` | `CompositeBar` | `vs/workbench/browser/parts/compositeBar.ts` | ✅ |
-| `ViewPane` | `ViewPane` | `vs/workbench/browser/parts/views/viewPane.ts` | ✅ |
-| `PaneView` | `PaneView` | `vs/base/browser/ui/splitview/paneview.ts`（新版可能移到 `paneview/paneview.ts`） | ⚠️ |
-| `ViewContainerModel` | `ViewContainerModel` | `vs/workbench/browser/parts/views/viewContainerModel.ts` 或 `services/views/…` | ⚠️ |
-| `ActivityAction` | `ActivityAction` | `vs/workbench/browser/parts/activitybar/activityAction.ts` | ⚠️ |
-| `NumberBadge` | `NumberBadge` | `vs/base/browser/ui/badge/badge.ts` | ⚠️ |
-| `ActionBar` | `ActionBar` | `vs/base/browser/ui/actionbar/actionbar.ts` | ✅ |
-| `MenuId` / `MenuRegistry` | 同名 | `vs/platform/actions/common/actions.ts` | ✅ |
+| 本项目                    | VSCode 对位                                    | 出处（VSCode 仓 `src/` 下）                                                       | 状态               |
+| ------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------- | ------------------ |
+| `Part`                    | `Part`                                         | `vs/workbench/browser/part.ts`                                                    | ✅                 |
+| `WorkbenchLayout`         | `Layout`（类名无前缀；本项目加前缀属仓内习惯） | `vs/workbench/browser/layout.ts`                                                  | ✅（前缀差异已知） |
+| `EditorPart`              | `EditorPart`                                   | `vs/workbench/browser/parts/editor/editorPart.ts`                                 | ✅                 |
+| `SidebarPart`             | `SidebarPart`                                  | `vs/workbench/browser/parts/sidebar/sidebarPart.ts`                               | ✅                 |
+| `ActivitybarPart`         | `ActivitybarPart`                              | `vs/workbench/browser/parts/activitybar/activitybarPart.ts`                       | ✅                 |
+| `StatusbarPart`           | `StatusbarPart`                                | `vs/workbench/browser/parts/statusbar/statusbarPart.ts`                           | ✅                 |
+| `CompositeBar`            | `CompositeBar`                                 | `vs/workbench/browser/parts/compositeBar.ts`                                      | ✅                 |
+| `ViewPane`                | `ViewPane`                                     | `vs/workbench/browser/parts/views/viewPane.ts`                                    | ✅                 |
+| `PaneView`                | `PaneView`                                     | `vs/base/browser/ui/splitview/paneview.ts`（新版可能移到 `paneview/paneview.ts`） | ⚠️                 |
+| `ViewContainerModel`      | `ViewContainerModel`                           | `vs/workbench/browser/parts/views/viewContainerModel.ts` 或 `services/views/…`    | ⚠️                 |
+| `ActivityAction`          | `ActivityAction`                               | `vs/workbench/browser/parts/activitybar/activityAction.ts`                        | ⚠️                 |
+| `NumberBadge`             | `NumberBadge`                                  | `vs/base/browser/ui/badge/badge.ts`                                               | ⚠️                 |
+| `ActionBar`               | `ActionBar`                                    | `vs/base/browser/ui/actionbar/actionbar.ts`                                       | ✅                 |
+| `MenuId` / `MenuRegistry` | 同名                                           | `vs/platform/actions/common/actions.ts`                                           | ✅                 |
 
 ## 2. 服务与契约
 
-| 本项目 | VSCode 对位 | 出处 | 状态 |
-|---|---|---|---|
-| `IEditorService` | `IEditorService` | `vs/workbench/services/editor/common/editorService.ts` | ✅ |
-| `IEditorResolverService` | 同名 | `vs/workbench/services/editor/common/editorResolverService.ts` | ⚠️ |
-| `IStatusbarService` | 同名 | `vs/workbench/services/statusbar/browser/statusbarService.ts` | ⚠️（路径在 browser/common 间搬过） |
-| `IViewDescriptorService` | 同名 | `vs/workbench/services/views/common/viewDescriptorService.ts` | ⚠️ |
-| `StatusBarItem` / `createStatusBarItem` | `vscode.StatusBarItem` / `vscode.window.createStatusBarItem` | 《API 参考》StatusBarItem | ✅ |
-| `contributes.customEditors` | 同名 | 《扩展清单》`contributes.customEditors`（`viewType`/`displayName`/`selector` 均必填） | ✅ |
-| `CustomEditorProvider` / `registerCustomEditorProvider` | 同名 | 《API 参考》CustomEditorProvider | ✅ |
-| `IDisposable` / `Disposable` / `toDisposable` | 同名 | `vs/base/common/lifecycle.ts` | ✅ |
+| 本项目                                                  | VSCode 对位                                                  | 出处                                                                                  | 状态                               |
+| ------------------------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------- | ---------------------------------- |
+| `IEditorService`                                        | `IEditorService`                                             | `vs/workbench/services/editor/common/editorService.ts`                                | ✅                                 |
+| `IEditorResolverService`                                | 同名                                                         | `vs/workbench/services/editor/common/editorResolverService.ts`                        | ⚠️                                 |
+| `IStatusbarService`                                     | 同名                                                         | `vs/workbench/services/statusbar/browser/statusbarService.ts`                         | ⚠️（路径在 browser/common 间搬过） |
+| `IViewDescriptorService`                                | 同名                                                         | `vs/workbench/services/views/common/viewDescriptorService.ts`                         | ⚠️                                 |
+| `StatusBarItem` / `createStatusBarItem`                 | `vscode.StatusBarItem` / `vscode.window.createStatusBarItem` | 《API 参考》StatusBarItem                                                             | ✅                                 |
+| `contributes.customEditors`                             | 同名                                                         | 《扩展清单》`contributes.customEditors`（`viewType`/`displayName`/`selector` 均必填） | ✅                                 |
+| `CustomEditorProvider` / `registerCustomEditorProvider` | 同名                                                         | 《API 参考》CustomEditorProvider                                                      | ✅                                 |
+| `IDisposable` / `Disposable` / `toDisposable`           | 同名                                                         | `vs/base/common/lifecycle.ts`                                                         | ✅                                 |
 
 ## 3. 无 VSCode 对位（仓内类型，注释里必须标注“无 VSCode 对位”）
 
-| 本项目 | 说明 |
-|---|---|
-| `ResourceRef` | VSCode 用 `URI` + `IEditorInput`；本仓以单个 ref 代替，属**适配层**，不是照抄 |
-| `Subscription` | 事件退订的仓内映射（`= QMetaObject::Connection`）；VSCode 的事件订阅同样返回 `Disposable`，映射差异见 §5 |
-| `ToolboxHub` / `StatusHub` / `ContributionParser` / `PanelFactoryHub` / `DialogLauncherHub` | 数据层/装配层，VSCode 无对应类；`ToolboxHub`、`PanelFactoryHub`、`DialogLauncherHub` 随壳布局统一移除 |
+| 本项目                                                                                      | 说明                                                                                                     |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `ResourceRef`                                                                               | VSCode 用 `URI` + `IEditorInput`；本仓以单个 ref 代替，属**适配层**，不是照抄                            |
+| `Subscription`                                                                              | 事件退订的仓内映射（`= QMetaObject::Connection`）；VSCode 的事件订阅同样返回 `Disposable`，映射差异见 §5 |
+| `ToolboxHub` / `StatusHub` / `ContributionParser` / `PanelFactoryHub` / `DialogLauncherHub` | 数据层/装配层，VSCode 无对应类；`ToolboxHub`、`PanelFactoryHub`、`DialogLauncherHub` 随壳布局统一移除    |
 
 ## 4. 值域字符串
 
@@ -52,11 +52,11 @@
 
 ## 5. 撤销三件套（边界写死，不许互相替代）
 
-| 场景 | 类型 | 谁负责 |
-|---|---|---|
-| 运行层注册（provider、状态栏条目） | `IDisposable`（`std::unique_ptr`，`dispose()` 幂等） | 注册者持有；owner 卸载时宿主代撤 |
-| 事件退订 | `workbench::Subscription`（`QMetaObject::Connection`） | `ISubscriptions::add` / `disposeAll` |
-| owner 整批撤 | `unregisterOwner(owner)` | registry 表自身 |
+| 场景                               | 类型                                                   | 谁负责                               |
+| ---------------------------------- | ------------------------------------------------------ | ------------------------------------ |
+| 运行层注册（provider、状态栏条目） | `IDisposable`（`std::unique_ptr`，`dispose()` 幂等）   | 注册者持有；owner 卸载时宿主代撤     |
+| 事件退订                           | `workbench::Subscription`（`QMetaObject::Connection`） | `ISubscriptions::add` / `disposeAll` |
+| owner 整批撤                       | `unregisterOwner(owner)`                               | registry 表自身                      |
 
 禁止：三者互相替代；`IDisposable` 自带 owner 撤销（第二套聚合）；拿 `Subscription` 当注册句柄。
 
@@ -66,21 +66,21 @@
 
 ### 可借鉴（只取结构，采用前先核源码）
 
-| 来源 | 借什么 | 对应本仓 |
-|---|---|---|
-| ADS `examples/centralwidget` | 编辑区作为**永久中央区**，不走普通 dock 的关/浮逻辑 | 中央区 `EditorPart` |
-| ADS Perspective 保存/恢复 | 布局二进制流 + 恢复顺序 | `Layout::saveState/applyState`（现由 `MainWindow::saveState` 与 `ShellBinder::applyState` 分散持有，应统一收进 `WorkbenchLayout`） |
-| ADS `examples/dockindock` | **只看不取**：嵌套分组属于“面板再嵌面板”，本仓视图层级只到 `sidebar / panel / auxiliary`，不引入第四层 | — |
-| 通用命令面板实现（QuickOpen） | 搜索框 + 模糊匹配 + 最近项 | `workbench.action.showCommands`（内建命令最小集）；**候选来源必须是 `commands` / `MenuRegistry` 贡献，壳不许自带命令表** |
+| 来源                          | 借什么                                                                                                 | 对应本仓                                                                                                                           |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| ADS `examples/centralwidget`  | 编辑区作为**永久中央区**，不走普通 dock 的关/浮逻辑                                                    | 中央区 `EditorPart`                                                                                                                |
+| ADS Perspective 保存/恢复     | 布局二进制流 + 恢复顺序                                                                                | `Layout::saveState/applyState`（现由 `MainWindow::saveState` 与 `ShellBinder::applyState` 分散持有，应统一收进 `WorkbenchLayout`） |
+| ADS `examples/dockindock`     | **只看不取**：嵌套分组属于“面板再嵌面板”，本仓视图层级只到 `sidebar / panel / auxiliary`，不引入第四层 | —                                                                                                                                  |
+| 通用命令面板实现（QuickOpen） | 搜索框 + 模糊匹配 + 最近项                                                                             | `workbench.action.showCommands`（内建命令最小集）；**候选来源必须是 `commands` / `MenuRegistry` 贡献，壳不许自带命令表**           |
 
 ### 明确否决
 
-| 项目/方案 | 否决理由 |
-|---|---|
+| 项目/方案                                            | 否决理由                                                                                                                 |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | Perseus IDE（C++23 + Qt6 + Qt WebEngine + xterm.js） | 技术栈方向不同：我们要绘图分析工作台，不是 IDE；WebEngine 与终端会显著抬高构建/打包成本（CI 三平台），且本项目无终端需求 |
-| CodeAstra / CodeWizard（tree-sitter、LSP） | 成熟度与规范不足；LSP/tree-sitter 不属于编辑器契约层，也不属于布局层 |
-| QCodeEditor | Qt5 时代产物，Qt6 适配与维护成本高；高亮需求用 `QSyntaxHighlighter` 自写规则即可 |
-| CodeMirror / Monaco / 任何嵌入式编辑器内核 | 浏览器栈与本项目 Qt Widgets + SARibbon + ADS 的 UI 栈冲突，体积与 IPC 成本不可接受 |
+| CodeAstra / CodeWizard（tree-sitter、LSP）           | 成熟度与规范不足；LSP/tree-sitter 不属于编辑器契约层，也不属于布局层                                                     |
+| QCodeEditor                                          | Qt5 时代产物，Qt6 适配与维护成本高；高亮需求用 `QSyntaxHighlighter` 自写规则即可                                         |
+| CodeMirror / Monaco / 任何嵌入式编辑器内核           | 浏览器栈与本项目 Qt Widgets + SARibbon + ADS 的 UI 栈冲突，体积与 IPC 成本不可接受                                       |
 
 ### 第三方依赖白名单
 

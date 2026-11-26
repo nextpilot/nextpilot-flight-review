@@ -64,7 +64,7 @@ PS_JOBS=2 cmake --build --preset default
 > **生成器是 Ninja**（`CMakePresets.json` 里 `"generator": "Ninja"`）。从 Unix
 > Makefiles 切换过来时，旧的 `build/`、`build-debug/` 必须删掉重建：CMake 会拒绝
 > 在生成器不同的目录上 configure（报 `Generator ... does not match the generator
-> used previously`）。缓存本身仍然有效，Ninja 下 ccache 增量命中实测 100%，
+used previously`）。缓存本身仍然有效，Ninja 下 ccache 增量命中实测 100%，
 > 数据与机制见 `build-performance.md` §9。
 
 `~/.ps-deps` 不完整时 configure 会报找不到 Qt6，先跑 `tools/ubuntu-setup.sh --install --qt`。
@@ -72,9 +72,23 @@ PS_JOBS=2 cmake --build --preset default
 非交互 shell（agent、CI 里的一次性 `bash -c`、IDE 的外部工具）不读 `~/.bashrc`，所以 `PATH` 里常常没有 `$PS_DEPS_ROOT/toolchain/ccache/bin`——`find_program(ccache)` 探不到时缓存会被静默旁路。`--install` 会落一份 `$PS_DEPS_ROOT/env.sh`，这类进程先 `. "$PS_DEPS_ROOT/env.sh"` 再 configure；判断缓存是否真的挂上，看 configure 的 `[ccache] 已启用：…` 行，或 `grep -c ccache build/build.ninja`。验收机/CI 加 `-DPS_REQUIRE_CCACHE=ON`，探不到即在配置期硬失败，避免「以为开了、实际直连编译器」。`tools/ubuntu-setup.sh --check` 也会把「持久副本存在但 PATH 探不到」标成 ✗。
 Lua 由仓库内 `src/3rdparty/lua-5.4` 源码编静态库，不依赖系统 Lua。
 
-## 格式化（只改变更行）
+## 格式化（C/C++ 变更行、Markdown、Python）
 
-`.clang-format` 只对**变更行**生效：整文件重排会改写约 15% 的行、毁掉 git blame，明确不在范围内。三种用法：
+三类口径一致：**首次已全量，之后只处理改动文件**。格式化只在开发机侧修复，CI 只检查、不改写——构建期自动改写会让门禁永远绿。
+
+统一入口是 `tools/format.sh`，三类一把过：
+
+```bash
+tools/format.sh --staged              # 修复暂存区改动（pre-commit hook 调的就是它）
+tools/format.sh --check origin/main   # 校验改动相对基线（CI 调它；不给 base 默认 HEAD~1）
+tools/format.sh --all                 # 全量：Markdown + Python
+tools/format.sh --all --cpp           # 全量再加 C/C++ 整树（慎用，见下）
+tools/format.sh --check HEAD~1 --only py   # 只查一类（CI 按类型拆 job 用）
+```
+
+### C/C++：只改变更行，不做整树重排
+
+`.clang-format` 只对**变更行**生效：整文件重排会改写约 15% 的行、毁掉 git blame，明确不在范围内（`--all` 默认跳过 C/C++，必须显式加 `--cpp` 才会整树重排）。三种用法：
 
 ```bash
 # 1) 显式目标，默认以 origin/main 为基线
@@ -88,24 +102,40 @@ cmake --build build --target format
 git config core.hooksPath .githooks
 ```
 
-hook 只格式化暂存区的 C++ 变更行，并把结果重新暂存（不会改动未暂存的文件）。CI 的 `lint.yml` 里 `format` job **只检查、不修复**——构建期自动改写会让门禁永远绿，所以格式化始终是开发机侧的动作。本地 clang-format 版本要与 CI 的 `23.1.5` 对齐，否则会出现"本地已格式化、CI 仍报 diff"。
+hook 只格式暂存区的内容并把结果重新暂存（不会改动未暂存的文件），三类各管一段：C++ 变更行、Markdown、Python。CI 的 `lint.yml` 里对应 job **只检查、不修复**——构建期自动改写会让门禁永远绿，所以格式化始终是开发机侧的动作。
 
-两个容易踩的边界：
+### Markdown：prettier + markdownlint-cli2
 
-- **临时绕过**：`git commit --no-verify` 只跳过这一次；要彻底关掉用 `git config --unset core.hooksPath`（恢复就重新 `git config core.hooksPath .githooks`）。绕过不改变 CI 的判定——`format` job 照样会拦。
-- **hook 只看已暂存内容**：`git add` 之后又改了文件，hook 处理的是改之前的那版；提交前请重新 `add`，或直接跑一次 `--target format`。另外 hook 只做格式，**不跑 clang-tidy**——tidy 只在 CI 的 `lint.yml` 里以 report-only 方式跑（见该 workflow 的 `tidy` job），本地想提前看结果需自行执行 `clang-tidy -p build <file>`。
+- **格式化** `prettier@3.10.1`，配置 `.prettierrc.json`：`proseWrap: preserve` 保留人工折行，表格按中文显示宽度对齐，`---` 分隔线原样保留（这就是没用 mdformat 的原因，它会把这 40 处 `---` 改写成下划线）。
+- **结构检查** `markdownlint-cli2@0.19.1`，配置 `.markdownlint-cli2.jsonc`。规则只留真会坏掉的东西：标题跳级、代码块缺语言、表格列数不匹配、空链接、重复标题。关掉 MD013（中文文档按 80 列判长纯噪音），MD060 固定 `leading_and_trailing`——这是 prettier 的输出风格，不固定两个工具会互相打架。
+- `src/3rdparty/**` 排除：上游文档保持原样。
 
-工具不用单独装：`clang-format==23.1.5` 已写进 `tools/requirements.txt`，`tools/ubuntu-setup.sh --install --python` 会把它装进 `$PS_DEPS_ROOT/toolchain/python/venv`，该 venv 的 `bin` 目录本来就在编写的 shell 块 PATH 里（脚本不做 `source activate`，而是直接注入 PATH），因此 `clang-format`、`git-clang-format`、`clang-format-diff.py` 三个入口开箱可用。手动装的话：`$PS_DEPS_ROOT/toolchain/python/venv/bin/pip install -r tools/requirements.txt`。
+首次全量已在仓库落地；之后 CI 的 `markdown` job 只对改动的 `.md` 跑 `prettier --check` + `markdownlint`。
+
+### Python：ruff
+
+- `ruff@0.14.6` 一个工具做 format + check，不需要 black + flake8 + isort 三件套；配置在仓库根 `ruff.toml`。
+- 规则集 `E4/E7/E9`（pycodestyle 真错误）、`F`（pyflakes）、`I`（import 排序）、`UP`（过时写法）、`B`（bugbear 陷阱）。`line-length = 120` 与 C++ 的 `ColumnLimit` 对齐，避免同一仓库两套行宽。
+- 版本只在 `tools/requirements.txt` 写一次，CI 的 `python` job 直接读那里。
+
+四个容易踩的边界：
+
+- **版本必须对齐**：clang-format `23.1.5`、prettier `3.10.1`、markdownlint-cli2 `0.19.1`、ruff `0.14.6`。任何一个版本漂移，都会出现"本地已格式化、CI 仍报 diff"的来回拉扯。prettier/markdownlint 走 `npx` 固定版本，不引入 `package.json` 与 `node_modules`。
+- **临时绕过**：`git commit --no-verify` 只跳过这一次；要彻底关掉用 `git config --unset core.hooksPath`（恢复就重新 `git config core.hooksPath .githooks`）。绕过不改变 CI 的判定——对应 job 照样会拦。
+- **hook 只看已暂存内容**：`git add` 之后又改了文件，hook 处理的是改之前的那版；提交前请重新 `add`，或直接跑一次 `--staged`。
+- **hook 不跑 clang-tidy**：tidy 只在 CI 的 `lint.yml` 里以 report-only 方式跑（见该 workflow 的 `tidy` job），本地想提前看结果需自行执行 `clang-tidy -p build <file>`。
+
+工具安装：`clang-format==23.1.5` 与 `ruff==0.14.6` 都在 `tools/requirements.txt`，`tools/ubuntu-setup.sh --install --python` 会装进 `$PS_DEPS_ROOT/toolchain/python/venv`，该 venv 的 `bin` 本来就在 shell 块 PATH 里（脚本不做 `source activate`，而是直接注入 PATH），因此 `clang-format`、`git-clang-format`、`clang-format-diff.py`、`ruff` 开箱可用。手动装：`$PS_DEPS_ROOT/toolchain/python/venv/bin/pip install -r tools/requirements.txt`。prettier 与 markdownlint 不需要安装，`tools/format.sh` 用 `npx --yes <pkg>@<version>` 现取。
 
 ## 构建加速开关
 
 开关的作用与实测数据见 `build-performance.md`，这里只列默认值与适用场景。**三个开关的默认值都偏向"日常热迭代"**：缓存与增量优先，冷建优化留给 CI。
 
-| 开关 | 默认 | 作用 | 适用场景 |
-|---|---|---|---|
-| `PS_USE_CCACHE` | `ON` | 以 `CMAKE_CXX_COMPILER_LAUNCHER` 接入 ccache，命中即跳过整段编译 | 所有日常构建。PATH 里找不到 ccache 时只打印一行提示并直连编译器，不会失败 |
-| `PS_USE_PCH` + `PS_PCH_TARGETS` | `OFF` / 空 | 给指定 target 挂 `cmake/pch.hpp` 预编译头（分号分隔 target 名） | **只建议 CI 冷构建**。与 ccache 同开时，默认 sloppiness 下 ccache 会把全部调用判为不可缓存并整体旁路（实测 `Hits 0/0`），净负收益；确需同开必须放行 `CCACHE_SLOPPINESS=pch_defines,time_macros`，且热全量与"仅 ccache"打平 |
-| `PS_BUILD_TESTS` | `ON` | 是否构建测试目标 | 只编主程序时用 `cmake --preset fast`（已设 OFF） |
+| 开关                            | 默认       | 作用                                                             | 适用场景                                                                                                                                                                                                                   |
+| ------------------------------- | ---------- | ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PS_USE_CCACHE`                 | `ON`       | 以 `CMAKE_CXX_COMPILER_LAUNCHER` 接入 ccache，命中即跳过整段编译 | 所有日常构建。PATH 里找不到 ccache 时只打印一行提示并直连编译器，不会失败                                                                                                                                                  |
+| `PS_USE_PCH` + `PS_PCH_TARGETS` | `OFF` / 空 | 给指定 target 挂 `cmake/pch.hpp` 预编译头（分号分隔 target 名）  | **只建议 CI 冷构建**。与 ccache 同开时，默认 sloppiness 下 ccache 会把全部调用判为不可缓存并整体旁路（实测 `Hits 0/0`），净负收益；确需同开必须放行 `CCACHE_SLOPPINESS=pch_defines,time_macros`，且热全量与"仅 ccache"打平 |
+| `PS_BUILD_TESTS`                | `ON`       | 是否构建测试目标                                                 | 只编主程序时用 `cmake --preset fast`（已设 OFF）                                                                                                                                                                           |
 
 PCH 与 ccache 互斥会被 configure 拦住：开了 `PS_USE_PCH` 而 `CCACHE_SLOPPINESS` 不含 `pch_defines` 时直接 `FATAL_ERROR`，并给出两条出路。CI 冷建通常不用缓存，关掉 ccache 最省事：
 
@@ -142,11 +172,11 @@ Debug / Release 两种配置都要过。测试用 `assert` 驱动，多配置生
 
 ## 构建产物
 
-| 产物 | 路径 |
-|---|---|
-| CLI（headless） | `build/src/application/app/plotscope` |
-| GUI | `build/src/application/assembly/plotscope-gui` |
-| 测试 | `build/tests/ps_test_*` |
+| 产物            | 路径                                           |
+| --------------- | ---------------------------------------------- |
+| CLI（headless） | `build/src/application/app/plotscope`          |
+| GUI             | `build/src/application/assembly/plotscope-gui` |
+| 测试            | `build/tests/ps_test_*`                        |
 
 ## 出发布包
 

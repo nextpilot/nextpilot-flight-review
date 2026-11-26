@@ -31,17 +31,17 @@ handler 是 IIntentHandler 实现（意图执行），不是 UI action 回调。
 
 现状清单（新增 op 时在此登记）：
 
-| 位置 | 意图族 |
-|---|---|
-| host：DataLoadHandler | `data.load / remove / reload / recent / series / state` 等数据面入口 |
+| 位置                      | 意图族                                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| host：DataLoadHandler     | `data.load / remove / reload / recent / series / state` 等数据面入口                                          |
 | host：DataCommandsHandler | `data.connect / export / exportSnapshot / record.* / workspace.* / cache / transform / time.align` 等系统命令 |
-| host：AIToolsHandler | `ai.status / ai.tools.list / ai.tool.call` |
-| modules/plot | `plot.*` |
-| modules/script | `script.*`（含 py.*/batch） |
-| modules/settings | `settings.* / theme.*` |
-| modules/analysis | `analysis.*` |
-| modules/protocol | `protocol.*` |
-| modules/report | `report.*` |
+| host：AIToolsHandler      | `ai.status / ai.tools.list / ai.tool.call`                                                                    |
+| modules/plot              | `plot.*`                                                                                                      |
+| modules/script            | `script.*`（含 py.*/batch）                                                                                   |
+| modules/settings          | `settings.* / theme.*`                                                                                        |
+| modules/analysis          | `analysis.*`                                                                                                  |
+| modules/protocol          | `protocol.*`                                                                                                  |
+| modules/report            | `report.*`                                                                                                    |
 
 ## 动手前自查
 

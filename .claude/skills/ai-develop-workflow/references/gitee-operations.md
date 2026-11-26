@@ -44,21 +44,21 @@ curl -s -H "Authorization: token <TOKEN>" "https://gitee.com/api/v5/repos/..."
 
 ## 关键 API 端点（均已验证）
 
-| 操作 | 方法 + 路径 | 备注 |
-|---|---|---|
-| 建 issue | `POST /api/v5/repos/nextpilot/issues` | 表单参数：`repo=nextpilot-advance-plotscope` + `title`/`body` + `issue_type=任务`（企业扁平路径，**路径里不带仓库名**） |
-| 读/列 issue | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues` | `number` 形如 `IKX6N2` |
-| 追加评论（回填） | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues/<num>/comments` | 表单参数 `body`（Markdown） |
-| 读评论 | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues/<num>/comments` | enterprises 路径会因仓库级令牌报 403，用 repos 路径 |
-| 建 PR | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls` | JSON body：`head`/`base`/`title`/`body`/`close_related_issue`（**必须显式传 `0`**，见「issue 关闭由 AI 执行」） |
-| 更新 PR 描述 | `PATCH /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>` | JSON body：`body`（新描述全文，**整段替换**）；首行写 `Closes #IKxxxxx`；分支每新增提交都要刷新，多提交需全列 |
-| 审批 PR | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/review` | body 带 `event=APPROVE`；成功返回 204 |
-| 查 PR 状态 | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>` | 看 `state`（`open`/`merged`/`closed`）、`mergeable`、**`close_related_issue`** |
-| 合并 PR | `PUT /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/merge` | body 带 `merge_method=squash`（**参数名是 `merge_method`，不是 `merge_style`**）；**须先过 review + testers + test 三道门禁**（见下） |
-| 指定测试人 | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/testers` | body 带 `testers=<用户名>`（复数）；成功返回 201 |
-| 提交测试通过 | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/test` | body 带 `event=APPROVE`；成功返回 204 |
-| 关闭 issue | `PATCH /api/v5/repos/nextpilot/issues/<num>` | **由 AI 显式执行**：表单参数必须带 `repo=nextpilot-advance-plotscope` + `state=closed`；只关目标 issue |
-| 删文件（免强推） | `DELETE /api/v5/repos/nextpilot/nextpilot-advance-plotscope/contents/<path>` | body 带 `sha`/`branch`/`message`；清理误传文件用，绕过保护分支 |
+| 操作             | 方法 + 路径                                                                      | 备注                                                                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 建 issue         | `POST /api/v5/repos/nextpilot/issues`                                            | 表单参数：`repo=nextpilot-advance-plotscope` + `title`/`body` + `issue_type=任务`（企业扁平路径，**路径里不带仓库名**）               |
+| 读/列 issue      | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues`                 | `number` 形如 `IKX6N2`                                                                                                                |
+| 追加评论（回填） | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues/<num>/comments` | 表单参数 `body`（Markdown）                                                                                                           |
+| 读评论           | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/issues/<num>/comments`  | enterprises 路径会因仓库级令牌报 403，用 repos 路径                                                                                   |
+| 建 PR            | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls`                 | JSON body：`head`/`base`/`title`/`body`/`close_related_issue`（**必须显式传 `0`**，见「issue 关闭由 AI 执行」）                       |
+| 更新 PR 描述     | `PATCH /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>`            | JSON body：`body`（新描述全文，**整段替换**）；首行写 `Closes #IKxxxxx`；分支每新增提交都要刷新，多提交需全列                         |
+| 审批 PR          | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/review`      | body 带 `event=APPROVE`；成功返回 204                                                                                                 |
+| 查 PR 状态       | `GET /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>`              | 看 `state`（`open`/`merged`/`closed`）、`mergeable`、**`close_related_issue`**                                                        |
+| 合并 PR          | `PUT /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/merge`        | body 带 `merge_method=squash`（**参数名是 `merge_method`，不是 `merge_style`**）；**须先过 review + testers + test 三道门禁**（见下） |
+| 指定测试人       | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/testers`     | body 带 `testers=<用户名>`（复数）；成功返回 201                                                                                      |
+| 提交测试通过     | `POST /api/v5/repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/test`        | body 带 `event=APPROVE`；成功返回 204                                                                                                 |
+| 关闭 issue       | `PATCH /api/v5/repos/nextpilot/issues/<num>`                                     | **由 AI 显式执行**：表单参数必须带 `repo=nextpilot-advance-plotscope` + `state=closed`；只关目标 issue                                |
+| 删文件（免强推） | `DELETE /api/v5/repos/nextpilot/nextpilot-advance-plotscope/contents/<path>`     | body 带 `sha`/`branch`/`message`；清理误传文件用，绕过保护分支                                                                        |
 
 ## 平台踩坑
 
@@ -81,10 +81,12 @@ curl -s -H "Authorization: token <TOKEN>" "https://gitee.com/api/v5/repos/..."
      curl -s -X POST ".../pulls/<n>/testers" \
        -H "Content-Type: application/json" -d '{"testers":["latercomer"]}'
      ```
+
   3. `POST /repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/test`（body 带 `event=APPROVE`）→ 204
   4. `PUT /repos/nextpilot/nextpilot-advance-plotscope/pulls/<n>/merge`（body 带 `merge_method=squash`）→ 200
 
   三道门禁的报错分别是 405「未通过设置的审查」（缺第 1 步）、405「未通过设置的测试」（缺第 2 或第 3 步）。第 2 步是「指定测试人」、第 3 步是「测试通过」，**两者都要做**，只做其一时 `can_merge_check` 仍为 `False`。
+
 - **合并参数名是 `merge_method`，不是 `merge_style`**：写 `merge_style=squash` / `merge_style=rebase` / `merge_style=fast-forward` 一律返回 405「当前仓库 Pull Request 已关闭 merge 合并，请使用其他合并方式」。正确写法是 `merge_method=squash`，返回 200 与 `merged: true`。
 - **本仓库已关闭 merge 合并方式**：仓库「功能设置」只开放 squash 与 rebase。传 `merge_method=merge` 同样被 405 拦下。当前用 `merge_method=squash`。
 - **squash 会把各提交的 `Refs:` footer 吃掉**：合并后 main 上是单个压缩提交，历史里查不到原始提交的 `Refs:`。追溯线索因此必须由 PR 描述的「提交清单」承载，commit footer 只作过程记录。同理不要为补 `PR:` footer 而 amend 已推送的提交。
@@ -114,6 +116,7 @@ curl -s -H "Authorization: token <TOKEN>" "https://gitee.com/api/v5/repos/..."
   ```
 
   **合并后必须复查**：目标 issue 的 `state` 确认为 `closed`；描述里引用过的其他 issue 确认仍为 `open`。
+
 - **源分支自动删除看仓库设置**：设置「合并后删除源分支」开启才会自动删；未开启时远端分支仍在，需手动 `git push origin --delete`。本地分支任何情况下都手动删。
 - **删远端分支用 git，不用 API**：`DELETE /api/v5/repos/<org>/<repo>/branches/<分支名>` 返回 405 `Not Allowed`。改用 `git push <远端URL> --delete <分支名>`，实测正常。
 - **`review` / `test` 成功时返回 204 无 body**：不要对这俩响应做 JSON 解析，否则会误判成失败。判成功看 HTTP 状态码（204）。

@@ -6,17 +6,17 @@
 
 ## 1. 字段通用属性
 
-| 属性 | 类型 | 适用 | 说明 |
-|---|---|---|---|
-| `name` | string | 全部 | 唯一标识；数据字段支持点路径 `time.mode`，收集时写成嵌套 JSON |
-| `type` | string | 全部 | 字段类型，见 §2 |
-| `label` | string | 全部 | UI 上显示的文字（如"文件名"）；布局字段作标题/标签名；缺省由 name 生成 |
-| `options` | object | select | 候选值，见 §4 |
-| `default` | value \| object | 数据字段 | 默认值或其来源，见 §5 |
-| `flags` | string \| object | 全部 | 字段属性，见 §6 |
-| `unit` | string | number | 单位，显示在控件右侧 |
-| `description` | string | 全部 | 说明，作控件 tooltip |
-| `fields` | array | 布局字段 | 子字段数组，递归，见 §3 |
+| 属性          | 类型             | 适用     | 说明                                                                   |
+| ------------- | ---------------- | -------- | ---------------------------------------------------------------------- |
+| `name`        | string           | 全部     | 唯一标识；数据字段支持点路径 `time.mode`，收集时写成嵌套 JSON          |
+| `type`        | string           | 全部     | 字段类型，见 §2                                                        |
+| `label`       | string           | 全部     | UI 上显示的文字（如"文件名"）；布局字段作标题/标签名；缺省由 name 生成 |
+| `options`     | object           | select   | 候选值，见 §4                                                          |
+| `default`     | value \| object  | 数据字段 | 默认值或其来源，见 §5                                                  |
+| `flags`       | string \| object | 全部     | 字段属性，见 §6                                                        |
+| `unit`        | string           | number   | 单位，显示在控件右侧                                                   |
+| `description` | string           | 全部     | 说明，作控件 tooltip                                                   |
+| `fields`      | array            | 布局字段 | 子字段数组，递归，见 §3                                                |
 
 数据属性（default/unit/description）在顶层，不进 flags——它们是值语义。
 
@@ -26,23 +26,23 @@
 
 ### 数据字段（叶子，产生值）
 
-| type | UI 控件 | 说明 |
-|---|---|---|
-| `string` | 单行文本框 `QLineEdit` | 文本 |
-| `text` | 多行文本框 `QPlainTextEdit` | 长文本 |
+| type     | UI 控件                              | 说明                                             |
+| -------- | ------------------------------------ | ------------------------------------------------ |
+| `string` | 单行文本框 `QLineEdit`               | 文本                                             |
+| `text`   | 多行文本框 `QPlainTextEdit`          | 长文本                                           |
 | `number` | 数字框 `QSpinBox` / `QDoubleSpinBox` | 整数或浮点，由 default 值类型或 `precision` 决定 |
-| `bool` | 勾选框 `QCheckBox` | 布尔 |
-| `select` | 下拉框 `QComboBox` | 单选；显示 label，回传 value |
-| `file` | 文本框 + 浏览按钮 | 文件路径，`flags.fileFilter` 定过滤器 |
+| `bool`   | 勾选框 `QCheckBox`                   | 布尔                                             |
+| `select` | 下拉框 `QComboBox`                   | 单选；显示 label，回传 value                     |
+| `file`   | 文本框 + 浏览按钮                    | 文件路径，`flags.fileFilter` 定过滤器            |
 
 ### 布局字段（容器，不产生值）
 
-| type | UI 容器 | 说明 |
-|---|---|---|
-| `tab` | `QTabWidget` | 每个 tab 是 `label` 命名的一页，`fields` 是该页内容 |
-| `section` | `QGroupBox` | 带 `label` 标题的分组框，`fields` 是组内内容 |
-| `horizontal` | `QHBoxLayout` | 子字段水平排成一行 |
-| `vertical` | `QVBoxLayout` | 子字段垂直堆叠 |
+| type         | UI 容器       | 说明                                                |
+| ------------ | ------------- | --------------------------------------------------- |
+| `tab`        | `QTabWidget`  | 每个 tab 是 `label` 命名的一页，`fields` 是该页内容 |
+| `section`    | `QGroupBox`   | 带 `label` 标题的分组框，`fields` 是组内内容        |
+| `horizontal` | `QHBoxLayout` | 子字段水平排成一行                                  |
+| `vertical`   | `QVBoxLayout` | 子字段垂直堆叠                                      |
 
 布局字段用 `fields` 明确装哪些子字段，可任意嵌套（如 tab 里放 section，section 里放 horizontal）。不使用扁平标记项——水平/垂直布局必须知道边界。
 
@@ -110,17 +110,17 @@
 "flags": { "readonly": true, "nonNegative": true, "min": 0 }  // 对象型：带参数
 ```
 
-| flag | 参数 | 说明 |
-|---|---|---|
-| `required` | — | 必填 |
-| `readonly` | — | 只读 |
-| `hidden` | — | 恒隐藏 |
-| `nonNegative` | — | 数值禁止负值 |
-| `dependsOn` | `{name, equals}` | 依赖：name 字段回传值等于 equals 时才启用 |
-| `min` / `max` | number | 数值范围 |
-| `precision` | int | 小数位；缺省视为整数 |
-| `fileFilter` | string | file 字段的文件过滤器 |
-| `columns` | int | horizontal 的分栏数（缺省按子字段数均分） |
+| flag          | 参数             | 说明                                      |
+| ------------- | ---------------- | ----------------------------------------- |
+| `required`    | —                | 必填                                      |
+| `readonly`    | —                | 只读                                      |
+| `hidden`      | —                | 恒隐藏                                    |
+| `nonNegative` | —                | 数值禁止负值                              |
+| `dependsOn`   | `{name, equals}` | 依赖：name 字段回传值等于 equals 时才启用 |
+| `min` / `max` | number           | 数值范围                                  |
+| `precision`   | int              | 小数位；缺省视为整数                      |
+| `fileFilter`  | string           | file 字段的文件过滤器                     |
+| `columns`     | int              | horizontal 的分栏数（缺省按子字段数均分） |
 
 开关型（required/readonly/hidden/nonNegative）可写进管道串；带参数的只能写对象。
 

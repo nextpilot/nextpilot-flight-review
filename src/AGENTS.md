@@ -4,8 +4,8 @@
 >
 > **各层目录内有本层 `AGENTS.md`**（libs/ · libs/context/ · application/ · toolbox/ 等）——进入子目录工作前必读对应文件；子目录 AGENTS.md 与 LAYERS.md 冲突时以 LAYERS.md 为准并回改子文件。
 >
-> **术语以 `LAYERS.md` 词表为准，全库唯一**：Module=模块（app 基底功能，无业务，编译期固定）；Toolbox=工具箱（内部扩展，原厂，运行时 mount/unmount）；Plugin=插件（外部扩展，第三方 C ABI，扫描注册）；Toolbox+Plugin 统称**扩展**——扩展既是业务承载者也是内容单元，一份纯数据清单 + 解析器（代码载体为 `Pack` 结构与 `PS_REGISTER_PACK` 宏）。文档与代码注释禁止另造同义词。**命名亦然**："Registry" 前后缀归机制层专用（RegistryTree/RegistryNode/TypedRegistry/Registry<T>）；业务保管类一律 `<域>Hub : RegistryNode/TypedRegistry`，禁止 Store/Repo/List/Manager 等同义后缀——判定句见 `LAYERS.md` 命名定标表。
-
+> **术语以 `LAYERS.md` 词表为准，全库唯一**：Module=模块（app 基底功能，无业务，编译期固定）；Toolbox=工具箱（内部扩展，原厂，运行时 mount/unmount）；Plugin=插件（外部扩展，第三方 C ABI，扫描注册）；Toolbox+Plugin 统称**扩展**——扩展既是业务承载者也是内容单元，一份纯数据清单 + 解析器（代码载体为 `Pack` 结构与 `PS_REGISTER_PACK` 宏）。文档与代码注释禁止另造同义词。**命名亦然**："Registry" 前后缀归机制层专用（RegistryTree/RegistryNode/`TypedRegistry/Registry<T>`）；业务保管类一律 `<域>Hub : RegistryNode/TypedRegistry`，禁止 Store/Repo/List/Manager 等同义后缀——判定句见 `LAYERS.md` 命名定标表。
+>
 > `ARCHITECTURE.md` 回答「应该怎么设计」——分层、核心抽象、模块与扩展、意图管道；
 > 本文件只记录现状判定与边界红线，不重复机制描述。两者冲突时：机制描述以 `ARCHITECTURE.md` 为准，
 > 现状与边界判定以本文件为准。
@@ -37,13 +37,13 @@
 
 ## 1. 现状要点
 
-| 条目 | 事实 |
-|---|---|
-| 单工程 | 仓库顶层薄壳 CMakeLists 只做 `project(PlotScope)` + 守卫 + `add_subdirectory`；`src/` 为唯一工程 |
+| 条目     | 事实                                                                                                                                                   |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 单工程   | 仓库顶层薄壳 CMakeLists 只做 `project(PlotScope)` + 守卫 + `add_subdirectory`；`src/` 为唯一工程                                                       |
 | 物理布局 | `src/application/{shell,gui,host,modules}` 为 App 基底；`src/libs`、`src/kernel`、`src/toolbox` 为机制/内核/扩展；`tests/`、`cmake/`、`deps/` 在仓库根 |
-| 格式通路 | 每种格式只有一份解析器实现，统一走 SPI 管道（设计见 `ARCHITECTURE.md` §3.2/§3.7） |
-| 格式实作 | ulog / csv / pspx / apbin / blf / mdf4 / rosbag2 / can.asc 等已在 toolbox 领域包内 |
-| 测试基线 | ctest 35/35 全绿（Debug） |
+| 格式通路 | 每种格式只有一份解析器实现，统一走 SPI 管道（设计见 `ARCHITECTURE.md` §3.2/§3.7）                                                                      |
+| 格式实作 | ulog / csv / pspx / apbin / blf / mdf4 / rosbag2 / can.asc 等已在 toolbox 领域包内                                                                     |
+| 测试基线 | ctest 35/35 全绿（Debug）                                                                                                                              |
 
 ## 2. 待办问题清单
 
@@ -58,22 +58,22 @@
 时标/书签这类文档级状态，`Intent`/`Dataset` 里没有明确位置；也没有 Document / Project 边界。
 处置：四类状态四个归宿，**不新增第五个概念**：
 
-| 状态 | 归属 | 生存期 |
-|---|---|---|
-时标 / 书签 | 工程文档 | 随工程 |
-活动通道 | 会话 | 随会话 |
-缩放 / 平移 / 选中 | 视图实例 | 随视图，序列化成 Spec |
-dock / ribbon 布局 | 工作区 | 跨会话 |
+| 状态               | 归属     | 生存期                |
+| ------------------ | -------- | --------------------- |
+| 时标 / 书签        | 工程文档 | 随工程                |
+| 活动通道           | 会话     | 随会话                |
+| 缩放 / 平移 / 选中 | 视图实例 | 随视图，序列化成 Spec |
+| dock / ribbon 布局 | 工作区   | 跨会话                |
 
 ### P1 —— 名实不符或埋雷
 
-| 编号 | 问题 | 说明 |
-|---|---|---|
-P1-1 | **外部插件只有入口** | `PluginScanner` 尚无 dlopen 与 ABI 校验。「插件可自定义格式」暂时是空的 |
-P1-2 | **Intent 无 schema** | `op` 是裸字符串、payload 是 `QVariant`，拼错只能运行时失败，无 op 白名单 |
-P1-3 | **`QWidget*` 是唯一耦合后门** | `requestPanel` 返回 `QWidget*`，模块一旦 `qobject_cast` 成具体视图类，耦合复活。**测试里可以，生产代码禁止** |
-P1-4 | **面板类型字符串静默失败** | 找不到工厂时 `requestPanel` 返回 `nullptr`，无日志无断言；类型名与模块声明之间没有对账机制 |
-P1-6 | **幂等声明会静默丢弃后声明者** | `contributes().ribbonPages/ribbonGroups` 声明是"先到者为准"。任何新增的幂等声明接口都要问"谁先谁后，后来的会不会被吞" |
+| 编号 | 问题                           | 说明                                                                                                                  |
+| ---- | ------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
+| P1-1 | **外部插件只有入口**           | `PluginScanner` 尚无 dlopen 与 ABI 校验。「插件可自定义格式」暂时是空的                                               |
+| P1-2 | **Intent 无 schema**           | `op` 是裸字符串、payload 是 `QVariant`，拼错只能运行时失败，无 op 白名单                                              |
+| P1-3 | **`QWidget*` 是唯一耦合后门**  | `requestPanel` 返回 `QWidget*`，模块一旦 `qobject_cast` 成具体视图类，耦合复活。**测试里可以，生产代码禁止**          |
+| P1-4 | **面板类型字符串静默失败**     | 找不到工厂时 `requestPanel` 返回 `nullptr`，无日志无断言；类型名与模块声明之间没有对账机制                            |
+| P1-6 | **幂等声明会静默丢弃后声明者** | `contributes().ribbonPages/ribbonGroups` 声明是"先到者为准"。任何新增的幂等声明接口都要问"谁先谁后，后来的会不会被吞" |
 
 ---
 
@@ -95,17 +95,17 @@ P1-6 | **幂等声明会静默丢弃后声明者** | `contributes().ribbonPages/
 
 > **libs 是无隐藏运行时状态的能力提供者——谁要用谁在上层实例化，生命周期归组合根。**
 
-| 类别 | 判定 |
-|---|---|
-| 函数 / 算法 / 模板、class/struct **定义**（含成员）、常量 / 枚举 / 别名 | 允许 |
-| **static 自注册对象**（OBJECT 库的 PS_REGISTER_*） | 允许——唯一的活实例例外 |
-| class 的成员对象（如 AppContext 的 `m_repo`，随实例生死） | 允许——不是独立存活 |
-| 命名空间级全局对象实例（跨调用存活的状态） | 禁止 |
-| 单例（Meyers、函数内 static 实例） | 禁止 |
-| 服务定位器式活实例被任意 include 取用 | 禁止 |
-| libs 内部 `new` / 持有跨调用存活对象 | 禁止 |
-| libs 依赖上层（application / toolbox 等） | 禁止——只能向下依赖 foundation / Qt / 系统库 |
-| libs 内 `#include "../"` 逃逸出库目录 | 禁止——物理隔离是硬线 |
+| 类别                                                                    | 判定                                        |
+| ----------------------------------------------------------------------- | ------------------------------------------- |
+| 函数 / 算法 / 模板、class/struct **定义**（含成员）、常量 / 枚举 / 别名 | 允许                                        |
+| **static 自注册对象**（OBJECT 库的 PS_REGISTER_*）                      | 允许——唯一的活实例例外                      |
+| class 的成员对象（如 AppContext 的 `m_repo`，随实例生死）               | 允许——不是独立存活                          |
+| 命名空间级全局对象实例（跨调用存活的状态）                              | 禁止                                        |
+| 单例（Meyers、函数内 static 实例）                                      | 禁止                                        |
+| 服务定位器式活实例被任意 include 取用                                   | 禁止                                        |
+| libs 内部 `new` / 持有跨调用存活对象                                    | 禁止                                        |
+| libs 依赖上层（application / toolbox 等）                               | 禁止——只能向下依赖 foundation / Qt / 系统库 |
+| libs 内 `#include "../"` 逃逸出库目录                                   | 禁止——物理隔离是硬线                        |
 
 **AppContext 特别规定**：定义在 `libs/context`、唯一实例在组合根 `App`、`host/gui/modules` 一律**构造注入**拿引用，不许 include 全局 ctx。**不进 app/shell 文件夹**（可执行目标会被依赖倒挂）。
 

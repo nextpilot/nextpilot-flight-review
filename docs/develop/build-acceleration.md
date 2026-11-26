@@ -8,12 +8,12 @@
 
 解决办法是把这些依赖镜像到 Gitee 的 `nphelper` 组织下，构建时从 Gitee 拉包：
 
-| 依赖 | 镜像仓库 | 拉取形态 |
-|---|---|---|
-| zlib | `gitee.com/nphelper/zlib` | `repository/archive/<tag>.zip` |
-| zstd | `gitee.com/nphelper/zstd` | 同上 |
-| lz4 | `gitee.com/nphelper/lz4` | 同上 |
-| nanoarrow | `gitee.com/nphelper/nanoarrow` | 同上 |
+| 依赖      | 镜像仓库                       | 拉取形态                       |
+| --------- | ------------------------------ | ------------------------------ |
+| zlib      | `gitee.com/nphelper/zlib`      | `repository/archive/<tag>.zip` |
+| zstd      | `gitee.com/nphelper/zstd`      | 同上                           |
+| lz4       | `gitee.com/nphelper/lz4`       | 同上                           |
+| nanoarrow | `gitee.com/nphelper/nanoarrow` | 同上                           |
 
 ## 镜像仓库的建法
 
@@ -71,10 +71,10 @@ set(PS_DEPS_NANOARROW_URL
 
 `PS_DEPS_FETCH` 之外还有两层加速：
 
-| 手段 | 开关 / 入口 | 说明 |
-|---|---|---|
-| ccache | `PS_USE_CCACHE`（默认 ON） | 根 `CMakeLists.txt` 裸 `find_program(ccache)`，命中即设 `CMAKE_CXX_COMPILER_LAUNCHER`；探测不到就静默直连 |
-| 测试目标裁剪 | `PS_BUILD_TESTS`（默认 ON） | 关闭后不编测试目标，显著缩短日常迭代构建；此时 ctest 无用例可跑，属预期 |
+| 手段         | 开关 / 入口                 | 说明                                                                                                      |
+| ------------ | --------------------------- | --------------------------------------------------------------------------------------------------------- |
+| ccache       | `PS_USE_CCACHE`（默认 ON）  | 根 `CMakeLists.txt` 裸 `find_program(ccache)`，命中即设 `CMAKE_CXX_COMPILER_LAUNCHER`；探测不到就静默直连 |
+| 测试目标裁剪 | `PS_BUILD_TESTS`（默认 ON） | 关闭后不编测试目标，显著缩短日常迭代构建；此时 ctest 无用例可跑，属预期                                   |
 
 ccache 本身由 `tools/ubuntu-setup.sh --install --toolchain` 安装（自包含目录落
 `~/.ps-deps/toolchain/ccache/`）。因为 `CMakeLists.txt` 里的探测靠 shell 的 `PATH`，
@@ -86,11 +86,11 @@ ccache 的配置**不要堆在 shell 环境变量里**。环境变量优先级�
 一旦 `~/.bashrc` 里 export 了策略项，就只有 source 过脚本的终端生效，IDE / CI /
 直接调 `ccache` 的场景会用另一套值。按下面三层放，所有入口读同一份：
 
-| 配置项 | 放哪里 | 理由 |
-|---|---|---|
-| `CCACHE_DIR` | `CMakePresets.json` 的 `environment`（`$env{HOME}/.ps-deps/caches/ccache`）+ `.bashrc` / `--print-env`（脚本写） | 决定缓存物理位置；**preset 注入保证干净 shell / IDE / CI 也能读到 `ccache.conf`**，shell 那份只服务手动 `ccache -s` |
-| `max_size` / `depend_mode` / `hash_dir` / `sloppiness` | `$CCACHE_DIR/ccache.conf`（脚本生成） | 纯策略、与路径无关；持久、团队一致、CI 也认 |
-| `CCACHE_BASEDIR` | `CMakePresets.json` 的 `environment`（`${sourceDir}`） | 与仓库绝对路径绑定，必须随仓库版本化；IDE / CI / `cmake --preset` 都读 |
+| 配置项                                                 | 放哪里                                                                                                           | 理由                                                                                                                |
+| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `CCACHE_DIR`                                           | `CMakePresets.json` 的 `environment`（`$env{HOME}/.ps-deps/caches/ccache`）+ `.bashrc` / `--print-env`（脚本写） | 决定缓存物理位置；**preset 注入保证干净 shell / IDE / CI 也能读到 `ccache.conf`**，shell 那份只服务手动 `ccache -s` |
+| `max_size` / `depend_mode` / `hash_dir` / `sloppiness` | `$CCACHE_DIR/ccache.conf`（脚本生成）                                                                            | 纯策略、与路径无关；持久、团队一致、CI 也认                                                                         |
+| `CCACHE_BASEDIR`                                       | `CMakePresets.json` 的 `environment`（`${sourceDir}`）                                                           | 与仓库绝对路径绑定，必须随仓库版本化；IDE / CI / `cmake --preset` 都读                                              |
 
 **为什么 `CCACHE_DIR` 也要进 preset**：`ccache.conf` 只在 `CCACHE_DIR` 指向该目录时
 才会被读取。干净 shell（CI、从 IDE 直接调 `cmake --preset`、未 source 脚本的终端）
@@ -156,12 +156,12 @@ export CCACHE_MAXSIZE=5G
 
 #### 实测：同仓库多 worktree 的命中率
 
-| 场景 | 配置 | 命中率 |
-|---|---|---:|
-| c7 全新 build 目录（首次） | 默认目录（落 `/runtime`） | **0 / 114（0%）** |
-| c7 同目录续编 | 持久目录 + `base_dir=/home/user` | 26 / 335（7.76%） |
-| c8 全量 | 同上 | **132 / 652（20.25%）** |
-| **c9 全新 worktree 首轮** | 同上 | **338 / 911（37.10%）** |
+| 场景                       | 配置                             |                  命中率 |
+| -------------------------- | -------------------------------- | ----------------------: |
+| c7 全新 build 目录（首次） | 默认目录（落 `/runtime`）        |       **0 / 114（0%）** |
+| c7 同目录续编              | 持久目录 + `base_dir=/home/user` |       26 / 335（7.76%） |
+| c8 全量                    | 同上                             | **132 / 652（20.25%）** |
+| **c9 全新 worktree 首轮**  | 同上                             | **338 / 911（37.10%）** |
 
 最后一行是关键判据：**全新 worktree、全新 build 目录的首轮就能命中三分之一**，
 说明条目确实跨 worktree 复用（这些 TU 在 `wt-c8` 编过）。缓存体积随之从 1.8MB 长到 53MB。
@@ -213,12 +213,12 @@ tools/ubuntu-setup.sh --install --warm-cache  # 装环境时顺手预热
 
 环境：5 核 / 8.2 GiB / 无 swap / Ubuntu 22.04 / GCC + Ninja。
 
-| 场景 | 耗时 |
-|---|---:|
-| 真冷构建（缓存为空） | 227.8s |
+| 场景                        |      耗时 |
+| --------------------------- | --------: |
+| 真冷构建（缓存为空）        |    227.8s |
 | 预热后删 build 目录全量重建 | **14.8s** |
-| 预热后改一个 .cpp 增量重编 | **7.2s** |
-| 预热命令本身（缓存已满时） | 1~4s |
+| 预热后改一个 .cpp 增量重编  |  **7.2s** |
+| 预热命令本身（缓存已满时）  |      1~4s |
 
 "删 build 目录全量重建"这轮打印了 **386 条 `Building CXX object`**，但 ccache
 计数是 **418 hits / 0 misses**——即全部命中，没有一条真正编译。386 这个数字
@@ -229,10 +229,10 @@ ccache 的命中计数，不是看 make/ninja 打印了多少条。
 
 `PS_USE_PCH`（预编译头）默认 **OFF**。真实工程实测（5 核 / Ninja / 每组独立缓存）：
 
-| 配置 | 冷构建 | 删 build 全量重建 | 增量 | 缓存体积 |
-|---|---:|---:|---:|---:|
-| **PCH 关 + ccache** | 194.4s | **14.8s** | **2.6s** | 16.5MB |
-| PCH 开 + ccache | 246.0s | 245.6s | 5.8s | 1416MB |
+| 配置                | 冷构建 | 删 build 全量重建 |     增量 | 缓存体积 |
+| ------------------- | -----: | ----------------: | -------: | -------: |
+| **PCH 关 + ccache** | 194.4s |         **14.8s** | **2.6s** |   16.5MB |
+| PCH 开 + ccache     | 246.0s |            245.6s |     5.8s |   1416MB |
 
 PCH 在这个工程里是**纯负收益**：冷构建更慢（+27%），缓存体积涨 86 倍，
 增量也慢一倍。所以默认关闭。PCH 的实验开关与实现由构建加速的另一条工作提供
@@ -240,11 +240,11 @@ PCH 在这个工程里是**纯负收益**：冷构建更慢（+27%），缓存�
 
 用 8 文件最小工程做了机制验证（秒级，与真实工程结论一致）：
 
-| 配置 | 删 build 重建 | 命中 | 缓存 |
-|---|---:|---|---|
-| PCH 关 + ccache | 0.09s | hit=8 miss=16 | 0.2MB |
-| PCH 开 + ccache（无 sloppiness） | 1.55s | **hit=0, uncacheable=18** | 0MB |
-| PCH 开 + ccache（有 sloppiness） | 0.21s | hit=9 | 5.6MB |
+| 配置                             | 删 build 重建 | 命中                      | 缓存  |
+| -------------------------------- | ------------: | ------------------------- | ----- |
+| PCH 关 + ccache                  |         0.09s | hit=8 miss=16             | 0.2MB |
+| PCH 开 + ccache（无 sloppiness） |         1.55s | **hit=0, uncacheable=18** | 0MB   |
+| PCH 开 + ccache（有 sloppiness） |         0.21s | hit=9                     | 5.6MB |
 
 **关键机制**：PCH 不是与 ccache"硬冲突"——配上 sloppiness 后能正常命中。
 真正致命的是 `CCACHE_SLOPPINESS` 缺 `pch_defines,time_macros`：此时 ccache 报
@@ -270,12 +270,12 @@ ccache --print-stats | grep -E "direct_cache_hit|preprocessed_cache_hit|cache_mi
 源码依赖走构建期的 `FetchContent` 镜像（上文）；而**工具本身**的安装由 `tools/ubuntu-setup.sh` 负责，
 下载地址同样集中在 `deps-version.json → mirrors`。每个工具给一组 URL，脚本按顺序轮询、第一个可达的即用：
 
-| 工具 | 注入方式 | 镜像列表（节选，国内在前、官方兜底） |
-|---|---|---|
-| rustup | `RUSTUP_DIST_SERVER` / `RUSTUP_UPDATE_ROOT` + installer | USTC `rust-static` → `sh.rustup.rs` |
-| pip | `pip --index-url`（未显式配源时） | 阿里云 → 清华 → `pypi.org` |
-| Qt | `aqt --base` | USTC `qtproject` → 阿里云 → `download.qt.io` |
-| apt | 临时 sources.list（仅 Ubuntu，不改系统源） | USTC → 阿里云 → `archive.ubuntu.com` |
+| 工具   | 注入方式                                                | 镜像列表（节选，国内在前、官方兜底）         |
+| ------ | ------------------------------------------------------- | -------------------------------------------- |
+| rustup | `RUSTUP_DIST_SERVER` / `RUSTUP_UPDATE_ROOT` + installer | USTC `rust-static` → `sh.rustup.rs`          |
+| pip    | `pip --index-url`（未显式配源时）                       | 阿里云 → 清华 → `pypi.org`                   |
+| Qt     | `aqt --base`                                            | USTC `qtproject` → 阿里云 → `download.qt.io` |
+| apt    | 临时 sources.list（仅 Ubuntu，不改系统源）              | USTC → 阿里云 → `archive.ubuntu.com`         |
 
 **轮询机制**：6s 超时逐个探测，某源慢/不可达自动跳下一个，全部不可达用第一个并报真实错误。
 这直接解决国内网络下 rustup 卡在下载 toolchain、pip/Qt/apt 官方源超时的问题
@@ -285,12 +285,12 @@ pip 用户在 `pip.conf` 显式配过 index 时脚本不覆盖；apt 仅对 Ubun
 
 ## 排查
 
-| 现象 | 原因与处理 |
-|---|---|
-| `--install --rust` 卡在下载 toolchain | 检查 `mirrors.rustup` 数组里各 installer/dist 地址可达性；轮询会自动跳过不可达项 |
-| `--install` 下载慢但没失败 | 轮询会逐个试，前面的源超时（6s）会拖慢；把最快的源调到数组首位即可 |
-| 配置阶段卡在下载 | 走了上游 URL。确认镜像仓库已推 tag，且 `PS_DEPS_NANOARROW_URL` 首项是 Gitee 地址 |
-| 解压后找不到 `CMakeLists.txt` | tag 没推上去，404 后被当成 zip 解压失败。`git ls-remote --tags <mirror>` 确认 |
-| `rcc: error while loading shared libraries: libQt6Core.so.6` | 跑构建时 `LD_LIBRARY_PATH` 没包含 Qt 的 lib 目录，与依赖镜像无关 |
-| `Could not find the Qt platform plugin "offscreen"` | 同上，需额外设 `QT_QPA_PLATFORM_PLUGIN_PATH` 指向 Qt 的 `plugins/platforms` |
-| 哈希校验失败 | 填的哈希与实际下载源不匹配。清空 `PS_DEPS_NANOARROW_SHA256` 或填入对应源的哈希 |
+| 现象                                                         | 原因与处理                                                                       |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| `--install --rust` 卡在下载 toolchain                        | 检查 `mirrors.rustup` 数组里各 installer/dist 地址可达性；轮询会自动跳过不可达项 |
+| `--install` 下载慢但没失败                                   | 轮询会逐个试，前面的源超时（6s）会拖慢；把最快的源调到数组首位即可               |
+| 配置阶段卡在下载                                             | 走了上游 URL。确认镜像仓库已推 tag，且 `PS_DEPS_NANOARROW_URL` 首项是 Gitee 地址 |
+| 解压后找不到 `CMakeLists.txt`                                | tag 没推上去，404 后被当成 zip 解压失败。`git ls-remote --tags <mirror>` 确认    |
+| `rcc: error while loading shared libraries: libQt6Core.so.6` | 跑构建时 `LD_LIBRARY_PATH` 没包含 Qt 的 lib 目录，与依赖镜像无关                 |
+| `Could not find the Qt platform plugin "offscreen"`          | 同上，需额外设 `QT_QPA_PLATFORM_PLUGIN_PATH` 指向 Qt 的 `plugins/platforms`      |
+| 哈希校验失败                                                 | 填的哈希与实际下载源不匹配。清空 `PS_DEPS_NANOARROW_SHA256` 或填入对应源的哈希   |

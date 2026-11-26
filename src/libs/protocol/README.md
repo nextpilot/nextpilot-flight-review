@@ -18,13 +18,12 @@ v3 是**重构**，不是兼容升级：旧键一律报"未知键"，没有迁�
   "maxsize": 32,
   "timestamp": { "expr": "time_us", "unit": "us", "origin": "first_frame" },
   "segments": [
-    { "name": "sync",  "type": "u8", "output": "none", "expect": [170] },
+    { "name": "sync", "type": "u8", "output": "none", "expect": [170] },
     { "name": "time_us", "type": "u32" },
-    { "name": "roll",  "type": "i16", "transform": "self*0.01", "unit": "deg" },
+    { "name": "roll", "type": "i16", "transform": "self*0.01", "unit": "deg" },
     { "name": "pitch", "type": "i16", "transform": "self*0.01", "unit": "deg" },
-    { "name": "crc",   "type": "u8", "output": "none",
-      "expect": [ { "op": "crc8", "poly": 7, "over": "sync:roll" } ] }
-  ]
+    { "name": "crc", "type": "u8", "output": "none", "expect": [{ "op": "crc8", "poly": 7, "over": "sync:roll" }] },
+  ],
 }
 ```
 
@@ -42,14 +41,14 @@ v3 是**重构**，不是兼容升级：旧键一律报"未知键"，没有迁�
 
 `name`（必填）/ `type`（必填）/ `description` / `unit` / `output` / `count` / `transform` / `expect` / `on_mismatch` / `if`
 
-| 键 | 说明 |
-|---|---|
-| `output` | `channel`（出通道，默认）/ `aux`（参与表达式与校验、不出通道）/ `none`（只占位、只校验）——取代 v2 的 `emit`/`hidden`/`plot` |
-| `count` | `3`（恰好）/ `"n"`（表达式求值）/ `"*"`（读到帧尾，全局唯一） |
-| `transform` | `"self*0.25"` 表达式，或算子数组 `[{"op":"scale","k":0.25},…]` |
-| `expect` | 约束数组，逐项 AND，判**原始值**：`[">63"]` / `["[36,427)"]` / `["{1,3,5}"]` / CRC 等摘要 op |
-| `on_mismatch` | `reject`（默认）/ `warn`（出 NaN 通道 + 明细）/ `skip` |
-| `if` | 条件表达式，不成立时该段不存在 |
+| 键            | 说明                                                                                                                        |
+| ------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| `output`      | `channel`（出通道，默认）/ `aux`（参与表达式与校验、不出通道）/ `none`（只占位、只校验）——取代 v2 的 `emit`/`hidden`/`plot` |
+| `count`       | `3`（恰好）/ `"n"`（表达式求值）/ `"*"`（读到帧尾，全局唯一）                                                               |
+| `transform`   | `"self*0.25"` 表达式，或算子数组 `[{"op":"scale","k":0.25},…]`                                                              |
+| `expect`      | 约束数组，逐项 AND，判**原始值**：`[">63"]` / `["[36,427)"]` / `["{1,3,5}"]` / CRC 等摘要 op                                |
+| `on_mismatch` | `reject`（默认）/ `warn`（出 NaN 通道 + 明细）/ `skip`                                                                      |
+| `if`          | 条件表达式，不成立时该段不存在                                                                                              |
 
 位域：`type` 取 `bit`（lsb0）/ `rbit`（msb0），宽度与起始位写进 `count:"宽@偏移"`（如 `"29@0"`）。位域段不推进字节游标，偏移相对帧起点。
 
@@ -68,8 +67,8 @@ v2 词法键（`literal` / `key` / `width` / `rest` / `base` / `pattern` / `fixe
   "term": ["\r\n"],
   "segments": [
     { "name": "msgid", "format": "$GPGGA,", "output": "none" },
-    { "name": "msgid2", "format": "%[^,]", "expect": [{"op":"eq","value":"$GPGGA"}], "output": "aux" }
-  ]
+    { "name": "msgid2", "format": "%[^,]", "expect": [{ "op": "eq", "value": "$GPGGA" }], "output": "aux" },
+  ],
 }
 ```
 
@@ -110,7 +109,7 @@ v2 词法键（`literal` / `key` / `width` / `rest` / `base` / `pattern` / `fixe
 `expect` 内置 20 种 op（判值 7 种 + 摘要 12 种 + `script`）。脚本兜底：
 
 ```jsonc
-{"expect":[{"op":"script","script":"return xor_of(ctx.data) > 127 and 1 or 0"}]}
+{ "expect": [{ "op": "script", "script": "return xor_of(ctx.data) > 127 and 1 or 0" }] }
 ```
 
 脚本是普通 Lua chunk，可用全局 `ctx`（`ctx.data` 原始字节、`ctx.len`、`ctx.fields` 段名→值）。`return` 必须是数字。沙箱只开 `base/string/table/math`；指令配额 40 万条，超限报 `ScriptTimeout`。

@@ -62,13 +62,13 @@ ccache -z              # 清零统计，用来测一轮改动的真实命中率
 
 ## 测试分层
 
-| 类型 | 位置 | 说明 |
-|---|---|---|
-| 契约/单元测试 | `tests/test_*.cpp` → `ps_test_*` | 数据、绘图、脚本、协议、过滤器、注册表、意图、MCP 桥等，headless 可跑 |
-| GUI 契约测试 | `tests/test_gui.cpp` → `ps_test_gui` | offscreen 下验证 ribbon 绑定、停靠、画布取数、数据呈现链路 |
-| Rust 内核测试 | `src/kernel` | `cargo test`，由 CTest 的 `kernel_cargo_test` 调用 |
-| 格式夹具 | `tests/fixture/` | CSV、ULog、APBin、BLF、ASC、MDF4、rosbag2、UBX、MCAP 等 |
-| UI 自动化驱动 | `tests/ui_driver.cpp` → `ps_ui_driver` | 工具（非 ctest 用例），截图 + 事件注入 + 文档产图，见下节 |
+| 类型          | 位置                                   | 说明                                                                  |
+| ------------- | -------------------------------------- | --------------------------------------------------------------------- |
+| 契约/单元测试 | `tests/test_*.cpp` → `ps_test_*`       | 数据、绘图、脚本、协议、过滤器、注册表、意图、MCP 桥等，headless 可跑 |
+| GUI 契约测试  | `tests/test_gui.cpp` → `ps_test_gui`   | offscreen 下验证 ribbon 绑定、停靠、画布取数、数据呈现链路            |
+| Rust 内核测试 | `src/kernel`                           | `cargo test`，由 CTest 的 `kernel_cargo_test` 调用                    |
+| 格式夹具      | `tests/fixture/`                       | CSV、ULog、APBin、BLF、ASC、MDF4、rosbag2、UBX、MCAP 等               |
+| UI 自动化驱动 | `tests/ui_driver.cpp` → `ps_ui_driver` | 工具（非 ctest 用例），截图 + 事件注入 + 文档产图，见下节             |
 
 ## GUI 契约测试
 
@@ -108,27 +108,27 @@ offscreen 截图 + Qt 事件注入的可复用工具，用于人工目检、场�
 }
 ```
 
-| op | 参数 | 说明 |
-|---|---|---|
-| `list-pages` | — | 打印全部 ribbon 页（索引 + 标题） |
-| `page` | `index` 或 `name` | 切 ribbon 页（按索引或页名） |
-| `settle` | `ms` | 等待渲染/异步完成 |
-| `shot` | `out` | 整窗截图保存为 PNG |
-| `load` | `path`、`format` | 走真实 `data.load` 意图加载数据文件 |
-| `plot-all-channels` | `dataset`（可选） | 数据集全部数值通道上图（等价于逐列双击） |
-| `intent` | `intent`、`params` | 执行任意意图；params 支持 `$lastSource`/`$lastDataset` 引用前序产出 |
-| `view-action` | `action`、`params` | 走 `dispatchViewAction`（与 ribbon 点击同路径） |
-| `panel` | `slot`、`panel` | 打开面板（`requestPanel`） |
-| `raise-panel` | `area`、`class` | 把 dock 区某类面板置顶（类名按后缀匹配） |
-| `cursor` | `t` | 游标读数 + A/B 区间 + 书签（画布真实 API） |
-| `hover-toolbar` | — | 浮出活动格工具栏 |
-| `demo-live` | `name`、`paused` | 注册演示 live 源（呈现 live 卡片，不真连接） |
-| `click` / `dblclick` | `widget`（`x`/`y` 可选） | 在控件中心（或局部坐标）注入鼠标点击 |
-| `key` | `widget`、`keys` 或 `text` | 组合键（如 `Ctrl+S`）或文本输入 |
-| `type` | `widget`、`text` | 文本输入 |
-| `action` | `action` | 触发 QAction（objectName / 文本 / data 三重匹配） |
-| `dialog` | `name`、`shot`、… | 打开对话框配置后截图：`import` / `protocol` / `transform` / `filter` / `settings` |
-| `dump` | `out` | 打印控件树（找 objectName 定位控件用） |
+| op                   | 参数                       | 说明                                                                              |
+| -------------------- | -------------------------- | --------------------------------------------------------------------------------- |
+| `list-pages`         | —                          | 打印全部 ribbon 页（索引 + 标题）                                                 |
+| `page`               | `index` 或 `name`          | 切 ribbon 页（按索引或页名）                                                      |
+| `settle`             | `ms`                       | 等待渲染/异步完成                                                                 |
+| `shot`               | `out`                      | 整窗截图保存为 PNG                                                                |
+| `load`               | `path`、`format`           | 走真实 `data.load` 意图加载数据文件                                               |
+| `plot-all-channels`  | `dataset`（可选）          | 数据集全部数值通道上图（等价于逐列双击）                                          |
+| `intent`             | `intent`、`params`         | 执行任意意图；params 支持 `$lastSource`/`$lastDataset` 引用前序产出               |
+| `view-action`        | `action`、`params`         | 走 `dispatchViewAction`（与 ribbon 点击同路径）                                   |
+| `panel`              | `slot`、`panel`            | 打开面板（`requestPanel`）                                                        |
+| `raise-panel`        | `area`、`class`            | 把 dock 区某类面板置顶（类名按后缀匹配）                                          |
+| `cursor`             | `t`                        | 游标读数 + A/B 区间 + 书签（画布真实 API）                                        |
+| `hover-toolbar`      | —                          | 浮出活动格工具栏                                                                  |
+| `demo-live`          | `name`、`paused`           | 注册演示 live 源（呈现 live 卡片，不真连接）                                      |
+| `click` / `dblclick` | `widget`（`x`/`y` 可选）   | 在控件中心（或局部坐标）注入鼠标点击                                              |
+| `key`                | `widget`、`keys` 或 `text` | 组合键（如 `Ctrl+S`）或文本输入                                                   |
+| `type`               | `widget`、`text`           | 文本输入                                                                          |
+| `action`             | `action`                   | 触发 QAction（objectName / 文本 / data 三重匹配）                                 |
+| `dialog`             | `name`、`shot`、…          | 打开对话框配置后截图：`import` / `protocol` / `transform` / `filter` / `settings` |
+| `dump`               | `out`                      | 打印控件树（找 objectName 定位控件用）                                            |
 
 `widget` 用 objectName 匹配（`findChild` 递归查找），先用 `dump` 拿控件树再写步骤。其他参数：`--width`/`--height` 设窗口尺寸（默认 1440x900）。拖拽（QDrag 程序化投递）暂未纳入，见 `ps_test_gui` 对 `dropChannel` 的覆盖。
 
@@ -193,7 +193,6 @@ offscreen 截图 + Qt 事件注入的可复用工具，用于人工目检、场�
 - 把视图拖到 Activity Bar 已有图标：并入该 Activity；拖到空白：新建图标。内容落回 Primary Side Bar。
 - Activity 点击在视图当前所在区或浮动窗口聚焦，不强制搬回左栏。
 - 布局版本 4；旧 `ps.dock.sidebar` 快照跳过，回退默认布局。
-
 
 ## GUI 冒烟（手工，Xvfb）
 

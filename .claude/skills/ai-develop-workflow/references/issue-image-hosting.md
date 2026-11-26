@@ -6,10 +6,10 @@ Gitee issue 的 API **不支持上传附件**，AI 无法把截图直接塞进 i
 
 约定：issue 讨论用的截图统一上传到独立图床仓库，业务仓库只留代码与文档配图。
 
-| 用途 | 位置 |
-|---|---|
+| 用途                            | 位置                                |
+| ------------------------------- | ----------------------------------- |
 | issue 讨论、PR 描述里的临时截图 | 图床 `nphelper/issue-image-hosting` |
-| 文档正文配图、README 图示 | 业务仓库 `docs/screenshots/` |
+| 文档正文配图、README 图示       | 业务仓库 `docs/screenshots/`        |
 
 ## 仓库与目录约定
 
@@ -102,10 +102,10 @@ curl -s -X DELETE "https://gitee.com/api/v5/repos/nphelper/issue-image-hosting/c
 
 ## 排错
 
-| 现象 | 原因与处理 |
-|---|---|
-| 图片不显示 | raw 链接返回 302 跟随后是否 200；仓库是否 public；分支名是否与链接一致 |
-| 404 | 路径大小写或目录层级不对；先 `GET /repos/nphelper/issue-image-hosting/contents/<目录>` 列目录确认 |
-| API 上传返回 400 | JSON 格式错或 `branch` 不存在；分支用 `master` |
-| DELETE 返回 400 | 缺 `sha`；用上传时返回的 `content.sha` |
-| 图片过大加载慢 | 未压缩；用 pngquant 重新压 |
+| 现象             | 原因与处理                                                                                        |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| 图片不显示       | raw 链接返回 302 跟随后是否 200；仓库是否 public；分支名是否与链接一致                            |
+| 404              | 路径大小写或目录层级不对；先 `GET /repos/nphelper/issue-image-hosting/contents/<目录>` 列目录确认 |
+| API 上传返回 400 | JSON 格式错或 `branch` 不存在；分支用 `master`                                                    |
+| DELETE 返回 400  | 缺 `sha`；用上传时返回的 `content.sha`                                                            |
+| 图片过大加载慢   | 未压缩；用 pngquant 重新压                                                                        |

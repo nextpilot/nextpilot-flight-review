@@ -2,7 +2,7 @@
 
 > **本文是架构设计，不是实现说明。** 设计输入是需求；协议算法、画布绘制、ADS/SARibbon
 > 用法等实现细节以既有实现为准，但**类清单与分层不照抄**——那是演进产物，不是设计。
-
+>
 > **机制收口现状**：机制库全部在 `libs/`（无独立 core 过渡层，编号 L2 空缺）；
 > `AppContext` 归 `libs/context` 且唯一实例在组合根 `App`、其余层构造注入；libs 无全局活实例/单例/服务定位器。
 > 物理布局：App 基底为 `src/application/`（shell/gui/host/modules），机制库 `libs/`、
@@ -18,7 +18,7 @@
 
 一条典型流程贯穿全软件：
 
-```
+```text
 打开数据文件或流（可同时多个）→ parse 解析 → 数据给 Rust
                                     → 分析从 Rust 取数 → 绘图 → 出报告
 ```
@@ -27,29 +27,29 @@
 
 ## 2. 需求 → 架构约束
 
-| 你的需求 | 架构约束 | 推论 |
-|---|---|---|
-| (1) modules 是模块，是工具**不懂业务** | 模块只提供**机制 + 插槽**，不含任何领域判断 | "画什么曲线"不是 plot 模块的事，是扩展的事 |
-| (1) 增一个 module 不改其他代码 | 模块**静态自注册**，宿主遍历装载 | 宿主/App 不出现任何具体模块类名 |
-| (1) modules 相对独立 | 模块之间**只经意图通信**，互不 include 对方头文件 | 模块可单独装卸、单独测试 |
-| (2) extension 是知识库 | 贡献类型**开放字符串**，扩展是聚合单位 | 加一类知识 = 新接口 + 注册槽，不改 core 枚举 |
-| (2) 增一个扩展不改其他代码 | 扩展**静态自注册**进包表 | 同上 |
-| (3) 百万千万级数据 | 数据本体**只在 Rust**；一切取数**有界** | C++ 永不物化全量；绘图内存 = O(像素宽) |
-| (4) SARibbon + ADS | 外壳**只做绑定**，不自研 ribbon、docking | 第三方组件负责结构与交互，宿主只提供插槽数据 |
-| (4) ps 数据 UI 管理与呈现 | 数据浏览与绘图是**两个独立模块** | 数据集浏览 ≠ 绘图渲染 |
-| (5) 同时打开多个数据源 | **Source 是一等对象**，有 id 与独立生命周期 | 数据源 ≠ 数据集；多源对比 = 多 dataset id |
-| (5) plot 页面直接交互 | View 是**可插拔类型**，交互框架由模块提供 | 12 种视图不必塞进一个 3800 行类 |
-| (5) 分析掌握知识 | 分析的**算法来自扩展**，模块只调度 | "算什么"是知识，"怎么跑"是机制 |
-| (5) 脚本掌握自动化 | 脚本经**同一意图管道**，可录制可回放 | GUI 操作与脚本调用等价 |
-| (6) 录制与回放，**同时录多种格式、多种后端** | 录制 = **格式 × 后端** 的正交组合，两个独立注册表 | 一路录制 = (raw\|mcap, file\|udp, 端点)；多路 = 多个组合实例 |
-| 数据源是广义完整的 | 三段聚合成一个 **DataSource 运行时实例** | 但聚合的是**绑定关系**，资产（解析器）仍全局共享 |
-| 解析：**单前端 + 多解析器** | 绑定语义是**扇出**不是分流；`topic` 降级为可选过滤器 | 同一份字节同时喂给 N 个解析器，各产独立数据集 |
-| app 统一管理 dataset/setting | 进程级运行态收敛到 **AppContext**（唯一持有者） | 模块只认 `ctx.app()` 一个入口，不再两条路径混用 |
-| UI 只是显示 | AppContext **绝不含 QWidget 指针** | CLI 保持纯 Core（ldd 验证无 libQt6Widgets） |
+| 你的需求                                     | 架构约束                                             | 推论                                                         |
+| -------------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------ |
+| (1) modules 是模块，是工具**不懂业务**       | 模块只提供**机制 + 插槽**，不含任何领域判断          | "画什么曲线"不是 plot 模块的事，是扩展的事                   |
+| (1) 增一个 module 不改其他代码               | 模块**静态自注册**，宿主遍历装载                     | 宿主/App 不出现任何具体模块类名                              |
+| (1) modules 相对独立                         | 模块之间**只经意图通信**，互不 include 对方头文件    | 模块可单独装卸、单独测试                                     |
+| (2) extension 是知识库                       | 贡献类型**开放字符串**，扩展是聚合单位               | 加一类知识 = 新接口 + 注册槽，不改 core 枚举                 |
+| (2) 增一个扩展不改其他代码                   | 扩展**静态自注册**进包表                             | 同上                                                         |
+| (3) 百万千万级数据                           | 数据本体**只在 Rust**；一切取数**有界**              | C++ 永不物化全量；绘图内存 = O(像素宽)                       |
+| (4) SARibbon + ADS                           | 外壳**只做绑定**，不自研 ribbon、docking             | 第三方组件负责结构与交互，宿主只提供插槽数据                 |
+| (4) ps 数据 UI 管理与呈现                    | 数据浏览与绘图是**两个独立模块**                     | 数据集浏览 ≠ 绘图渲染                                        |
+| (5) 同时打开多个数据源                       | **Source 是一等对象**，有 id 与独立生命周期          | 数据源 ≠ 数据集；多源对比 = 多 dataset id                    |
+| (5) plot 页面直接交互                        | View 是**可插拔类型**，交互框架由模块提供            | 12 种视图不必塞进一个 3800 行类                              |
+| (5) 分析掌握知识                             | 分析的**算法来自扩展**，模块只调度                   | "算什么"是知识，"怎么跑"是机制                               |
+| (5) 脚本掌握自动化                           | 脚本经**同一意图管道**，可录制可回放                 | GUI 操作与脚本调用等价                                       |
+| (6) 录制与回放，**同时录多种格式、多种后端** | 录制 = **格式 × 后端** 的正交组合，两个独立注册表    | 一路录制 = (raw\|mcap, file\|udp, 端点)；多路 = 多个组合实例 |
+| 数据源是广义完整的                           | 三段聚合成一个 **DataSource 运行时实例**             | 但聚合的是**绑定关系**，资产（解析器）仍全局共享             |
+| 解析：**单前端 + 多解析器**                  | 绑定语义是**扇出**不是分流；`topic` 降级为可选过滤器 | 同一份字节同时喂给 N 个解析器，各产独立数据集                |
+| app 统一管理 dataset/setting                 | 进程级运行态收敛到 **AppContext**（唯一持有者）      | 模块只认 `ctx.app()` 一个入口，不再两条路径混用              |
+| UI 只是显示                                  | AppContext **绝不含 QWidget 指针**                   | CLI 保持纯 Core（ldd 验证无 libQt6Widgets）                  |
 
 ## 3. 核心抽象：DataSource（来源 + 解析绑定 + 数据集）→ 消费者
 
-```
+```text
    ┌──────────────┐   原始字节    ┌──────────┐   结构化批   ┌──────────────┐
    │   Source     │ ───────────▶ │  Parser  │ ──────────▶ │   Dataset    │
    │  数据源       │              │  解析器   │             │   数据集      │
@@ -75,12 +75,12 @@
 **架构判断**：这三段确实聚合成一个用户面对的概念，但**聚合的是"运行时绑定关系"，
 不是"资产归属"**。三者的复用粒度不同：
 
-| | 是什么 | 复用粒度 | 归属 |
-|---|---|---|---|
-| **Parser** | 知识资产 | 全进程一份，可被 N 个数据源共享 | 注册表（extension 提供） |
-| **RecordingFormat** | 机制选项 | 同上 | 注册表（官方内置 + 插件可注册） |
-| **Dataset** | 产物 | 被分析/绘图多方引用 | 仓库（Rust 拥有） |
-| **DataSource** | **运行时实例** | 一次打开 = 一个实例 | 运行时登记表 |
+|                     | 是什么         | 复用粒度                        | 归属                            |
+| ------------------- | -------------- | ------------------------------- | ------------------------------- |
+| **Parser**          | 知识资产       | 全进程一份，可被 N 个数据源共享 | 注册表（extension 提供）        |
+| **RecordingFormat** | 机制选项       | 同上                            | 注册表（官方内置 + 插件可注册） |
+| **Dataset**         | 产物           | 被分析/绘图多方引用             | 仓库（Rust 拥有）               |
+| **DataSource**      | **运行时实例** | 一次打开 = 一个实例             | 运行时登记表                    |
 
 于是：用户操作层面是统一的（打开一个数据源 → 立刻可用），
 但它内部持有的是**对共享资产的引用**，而非资产副本——
@@ -109,7 +109,7 @@ struct DataSourceInfo {
 
 **三段就绪是渐进的**，这正是 sniff 存在的意义：
 
-```
+```text
 刚打开      → 只有 ① 来源（还不知道是什么格式）
 嗅探/选定后 → ① + ②（知道用谁解析了）
 解析后      → ① + ② + ③（拿到了数据）
@@ -146,10 +146,10 @@ typedef struct PsParserVtable {
 
 职责边界（这是本设计的核心）：
 
-| 角色 | 做什么 | 不做什么 |
-|---|---|---|
-| **Parser** | 字节 → 结构化批 | 不读文件、不写存储、不认识宿主、不管生命周期 |
-| **调用者（宿主）** | 喂字节、收批、决定批去哪（Rust / 其它） | 不关心字节怎么解析 |
+| 角色               | 做什么                                  | 不做什么                                     |
+| ------------------ | --------------------------------------- | -------------------------------------------- |
+| **Parser**         | 字节 → 结构化批                         | 不读文件、不写存储、不认识宿主、不管生命周期 |
+| **调用者（宿主）** | 喂字节、收批、决定批去哪（Rust / 其它） | 不关心字节怎么解析                           |
 
 收益：同一份 ULog 解析器既能读文件、也能读串口/网络流；解析器可独立单测；
 结果归宿由调用者决定，解析器不绑定 Rust。
@@ -160,12 +160,12 @@ typedef struct PsParserVtable {
 
 #### 两类解析器，不要混
 
-| | 数据摄取 Parser（§3.2 上文） | 协议检查器 IMessageParser（新增） |
-|---|---|---|
-| 接口形态 | 纯 C ABI vtable（`ps_parser_spi.h`） | C++ 接口类 `IMessageParser`（内置）+ C ABI 镜像 `ps_message_parser_spi.h`（插件） |
-| 产出 | `PsFrameBatch` 数值批 → Rust Dataset → 画图/分析 | `DecodedFrame` 可读字段树 → 协议检查对话框 |
-| 消费者 | `IngestPipeline` → `data.load` | 专用协议对话框（`modules/protocol/gui/ProtocolInspectorDialog`），不产 Dataset |
-| 用途 | 大数据绘图/分析主通路 | 逐帧看字段/枚举/校验，协议调试 |
+|          | 数据摄取 Parser（§3.2 上文）                     | 协议检查器 IMessageParser（新增）                                                 |
+| -------- | ------------------------------------------------ | --------------------------------------------------------------------------------- |
+| 接口形态 | 纯 C ABI vtable（`ps_parser_spi.h`）             | C++ 接口类 `IMessageParser`（内置）+ C ABI 镜像 `ps_message_parser_spi.h`（插件） |
+| 产出     | `PsFrameBatch` 数值批 → Rust Dataset → 画图/分析 | `DecodedFrame` 可读字段树 → 协议检查对话框                                        |
+| 消费者   | `IngestPipeline` → `data.load`                   | 专用协议对话框（`modules/protocol/gui/ProtocolInspectorDialog`），不产 Dataset    |
+| 用途     | 大数据绘图/分析主通路                            | 逐帧看字段/枚举/校验，协议调试                                                    |
 
 - 为什么检查器是 **C++ 接口类**：它带 Qt 数据（`QVariant` 字段），且要"继承一个接口类、自述元数据"——
   继承 + 自述是 C++ 侧的自然形态。外部 C/Rust 插件仍走 C ABI 镜像 vtable，两者汇入同一注册表，
@@ -193,11 +193,11 @@ Rust 里的 typed 表集合。C++ 侧只有门面（句柄 + schema 投影 + 有
 
 三者都是"从 Dataset 取数 → 产出东西"，但产出物不同：
 
-| 角色 | 产出 | 机制归谁 | 知识归谁 |
-|---|---|---|---|
-| **View** | 像素 + 交互状态 | plot 模块（画布宿主、交互框架、LOD 取数） | 扩展（具体视图类型：姿态曲线/频谱/地图/3D） |
-| **Analysis** | 指标 / 统计 / 频谱结果 | analysis 模块（调度、进度、结果缓存） | 扩展（算什么：飞行品质、振动指标…） |
-| **Report** | HTML / PDF / CSV 文档 | report 模块（模板引擎、导出） | 扩展（报告模板与章节） |
+| 角色         | 产出                   | 机制归谁                                  | 知识归谁                                    |
+| ------------ | ---------------------- | ----------------------------------------- | ------------------------------------------- |
+| **View**     | 像素 + 交互状态        | plot 模块（画布宿主、交互框架、LOD 取数） | 扩展（具体视图类型：姿态曲线/频谱/地图/3D） |
+| **Analysis** | 指标 / 统计 / 频谱结果 | analysis 模块（调度、进度、结果缓存）     | 扩展（算什么：飞行品质、振动指标…）         |
+| **Report**   | HTML / PDF / CSV 文档  | report 模块（模板引擎、导出）             | 扩展（报告模板与章节）                      |
 
 > **Report**：
 > 它是"分析结果的再呈现"，属于**知识**（模板）而非**机制**。
@@ -205,18 +205,19 @@ Rust 里的 typed 表集合。C++ 侧只有门面（句柄 + schema 投影 + 有
 ### 3.5 录制：格式 × 后端的正交组合
 
 需求原文：
+
 > 「数据录制，可以同时录制多种格式（raw，mcap）、多种后端（文件,udp）」
 > 「其实就是配置是否需要录制，以及录制格式是什么。官方默认提供了 raw 和 mcap，
->   插件可以定义其他的格式，注册进来就可以选。跟解析格式一样的……」
+> 插件可以定义其他的格式，注册进来就可以选。跟解析格式一样的……」
 
 **架构判断**：录制有两个**正交**的维度，各自独立注册：
 
-| | 格式 RecordingFormat | 后端 RecordingBackend |
-|---|---|---|
-| 回答什么 | 字节**长什么样**（容器结构） | 字节**送到哪**（投递方式） |
-| 内置 | raw（裸字节流）/ mcap（消息容器） | file（本地文件）/ udp（组播） |
-| 注册表 | `RecordingFormatHub` | `RecordingBackendHub` |
-| 插件可扩展 | 是 | 是 |
+|            | 格式 RecordingFormat              | 后端 RecordingBackend         |
+| ---------- | --------------------------------- | ----------------------------- |
+| 回答什么   | 字节**长什么样**（容器结构）      | 字节**送到哪**（投递方式）    |
+| 内置       | raw（裸字节流）/ mcap（消息容器） | file（本地文件）/ udp（组播） |
+| 注册表     | `RecordingFormatHub`              | `RecordingBackendHub`         |
+| 插件可扩展 | 是                                | 是                            |
 
 于是**一路录制 = (格式, 后端, 端点)**：
 
@@ -232,7 +233,7 @@ struct RecordingTarget {
 而一个数据源持有**一个 RecordingTarget 列表**——所以"同时录多种格式、多种后端"
 不是特例分支，而是两个独立注册表的自然组合结果：
 
-```
+```text
 {raw,  file, "/tmp/a.raw"}
 {mcap, file, "/tmp/a.mcap"}
 {raw,  udp,  "239.0.0.1:5600"}     ← 三路同时工作，互不干扰
@@ -240,7 +241,7 @@ struct RecordingTarget {
 
 实现上，成帧器与输出端彻底解耦：
 
-```
+```text
 Recorder（组合层）
   ├── 成帧器（格式侧）: RawRecorder / McapRecorder  —— 决定字节长什么样
   └── 输出端（后端侧）: FileSink / UdpSink            —— 决定字节送到哪
@@ -251,7 +252,7 @@ Recorder（组合层）
 
 一份录制包含三样东西：
 
-```
+```text
 ① 字节（消息体）   ② 通道/topic 归属   ③ 时间戳
 ```
 
@@ -259,9 +260,9 @@ raw 与 mcap 的差别只在**②③如何编码**；①都是原始字节——
 因此**回放一定等价于原始**：同一批字节喂给同一组解析器，结果一致。
 这就是录制的全部意义（确定性）。
 
-| 格式 | 通道结构 | 按时间定位 | 适用 |
-|---|---|---|---|
-| raw | 无 | 否 | 单通道源，最简单通用 |
+| 格式 | 通道结构         | 按时间定位          | 适用                            |
+| ---- | ---------------- | ------------------- | ------------------------------- |
+| raw  | 无               | 否                  | 单通道源，最简单通用            |
 | mcap | schema + channel | 是（有 chunk 索引） | 多通道源，需按 topic 选择性回放 |
 
 **归属层**：录制是 app 的**机制**，不是领域知识——所以 raw/mcap 由 app 官方提供，
@@ -289,16 +290,16 @@ raw 与 mcap 的差别只在**②③如何编码**；①都是原始字节——
 
 于是状态分三层，各归其位：
 
-| 层 | 内容 | 归属 | 判据 |
-|---|---|---|---|
-| **进程级运行态** | DataRepository / SettingsStore / ToolboxHub / SourceRepository / IngestPipeline / 活动视图 | **AppContext** | 生命周期 = 进程，与 GUI 无关，可序列化 |
-| 会话级 | （暂不建）多窗口/多工作区 | 未来需要时再引入 | 需要「多实例并存」才有价值 |
-| 编译期资产目录 | ParserHub / RecordingFormat / RecordingBackend / BuiltinPack | **保持全局静态** | 靠静态初始化自注册，收进上下文会导致"多 App 实例时重复初始化" |
-| GUI 纯展示态 | ribbon 页签 / dock 布局 / 视口缩放 / 曲线高亮 | **留在 GUI 层** | 不可序列化、CLI 不需要；放上下文会污染 headless |
+| 层               | 内容                                                                                       | 归属             | 判据                                                          |
+| ---------------- | ------------------------------------------------------------------------------------------ | ---------------- | ------------------------------------------------------------- |
+| **进程级运行态** | DataRepository / SettingsStore / ToolboxHub / SourceRepository / IngestPipeline / 活动视图 | **AppContext**   | 生命周期 = 进程，与 GUI 无关，可序列化                        |
+| 会话级           | （暂不建）多窗口/多工作区                                                                  | 未来需要时再引入 | 需要「多实例并存」才有价值                                    |
+| 编译期资产目录   | ParserHub / RecordingFormat / RecordingBackend / BuiltinPack                               | **保持全局静态** | 靠静态初始化自注册，收进上下文会导致"多 App 实例时重复初始化" |
+| GUI 纯展示态     | ribbon 页签 / dock 布局 / 视口缩放 / 曲线高亮                                              | **留在 GUI 层**  | 不可序列化、CLI 不需要；放上下文会污染 headless               |
 
 装配顺序严格单向：
 
-```
+```text
 core: AppContext ──▶ host: RuntimeHost ──▶ app: App（组合根） ──▶ gui: MainWindow
 ```
 
@@ -341,7 +342,7 @@ GUI 点一下通道，脚本随后 query 得到同一答案。
 
 这条需求决定了绑定语义是**扇出**而非分流：
 
-```
+```text
 字节流 ──┬──▶ parser A（独立实例 a1）──▶ dataset A
          ├──▶ parser B（独立实例 b1）──▶ dataset B
          └──▶ parser C（独立实例 c1）──▶ dataset C
@@ -377,11 +378,11 @@ schema 投影的刷新是 O(行数)，因此**只在通道收尾时刷一次**�
 归并数据通路后，一件事变得清晰：**不是所有"跟数据有关"的东西都属于解析器**。
 SPI 解析器的职责被刻意收窄为「字节 → 结构化批」，于是有三类东西分属三层：
 
-| 层 | 归属 | 具体 | 为什么不在别处 |
-|---|---|---|---|
-| **格式知识** | 解析器（SPI） | 协议怎么解、哪些列是数值、时间单位是秒还是微秒、列名从哪来 | 只有格式本身知道 |
-| **宿主策略** | 编排器（`IngestOrchestrator`） | 缓存（源文件指纹）、stable id（录制/回放）、表名改写 | 与"这次怎么加载"有关，与"格式是什么"无关 |
-| **机制** | 管道（`IngestPipeline`） | 扇出、实例隔离、批次缓冲、schema 刷新时机 | 与内容和策略都无关 |
+| 层           | 归属                           | 具体                                                       | 为什么不在别处                           |
+| ------------ | ------------------------------ | ---------------------------------------------------------- | ---------------------------------------- |
+| **格式知识** | 解析器（SPI）                  | 协议怎么解、哪些列是数值、时间单位是秒还是微秒、列名从哪来 | 只有格式本身知道                         |
+| **宿主策略** | 编排器（`IngestOrchestrator`） | 缓存（源文件指纹）、stable id（录制/回放）、表名改写       | 与"这次怎么加载"有关，与"格式是什么"无关 |
+| **机制**     | 管道（`IngestPipeline`）       | 扇出、实例隔离、批次缓冲、schema 刷新时机                  | 与内容和策略都无关                       |
 
 三者的接口边界：
 
@@ -404,13 +405,13 @@ SPI 解析器的职责被刻意收窄为「字节 → 结构化批」，于是�
 
 变换与衍生是**两个概念**（设计语义经用户逐条敲定）：
 
-| | 变换（transform） | 衍生（derive） |
-|---|---|---|
-| 本质 | 非破坏视图：只改值不改字段名 | 独立派生字段：生成新字段 |
-| 归属 | dataset 级配方（`data.transform.set`，settings 持久化）或 plot 级曲线配方 | 派生注册表（`DerivedSeriesHub`，宿主层 `libs/context`） |
-| 作用域 | dataset 级对**所有后端**生效；plot 级只影响当前曲线 | 全后端可读（`data.series` / `plot.channel` 按派生名穿透） |
-| 原始数据 | 永不写回 | 永不写回（不污染 dataset） |
-| 形态 | SISO：值进值出（op 算子 / 数学表达式 / Lua） | SISO（previewFilter）+ MIMO（如 q0-q3→roll/pitch/yaw） |
+|          | 变换（transform）                                                         | 衍生（derive）                                            |
+| -------- | ------------------------------------------------------------------------- | --------------------------------------------------------- |
+| 本质     | 非破坏视图：只改值不改字段名                                              | 独立派生字段：生成新字段                                  |
+| 归属     | dataset 级配方（`data.transform.set`，settings 持久化）或 plot 级曲线配方 | 派生注册表（`DerivedSeriesHub`，宿主层 `libs/context`）   |
+| 作用域   | dataset 级对**所有后端**生效；plot 级只影响当前曲线                       | 全后端可读（`data.series` / `plot.channel` 按派生名穿透） |
+| 原始数据 | 永不写回                                                                  | 永不写回（不污染 dataset）                                |
+| 形态     | SISO：值进值出（op 算子 / 数学表达式 / Lua）                              | SISO（previewFilter）+ MIMO（如 q0-q3→roll/pitch/yaw）    |
 
 关键裁决：**派生注册表下沉 `libs/context`**（AppContext 持有）而非 host——`context`
 不能反向依赖 host，派生属于"跨前端共享的应用状态"，与源注册表同级。
@@ -470,15 +471,15 @@ SPI 解析器的职责被刻意收窄为「字节 → 结构化批」，于是�
 一条硬规则：**模块里不允许出现任何领域词汇**（飞行、姿态、CAN、电池……）。
 模块提供**机制 + 插槽**，具体内容由扩展填。
 
-| 模块 | 提供的机制 | 声明的插槽 | 明确不做 |
-|---|---|---|---|
-| `mod.data` | Source 生命周期（打开/关闭/录制/回放）+ 数据集目录（表/列/时间范围查询、订阅变化）+ 驱动 Parser | `source.list` 面板、`dataset.tree` 面板 | 不认识任何格式，不取业务语义 |
-| `mod.plot` | View 宿主：多页面、画布、LOD 取数、交互框架 | `view.canvas` 中央区 | 不知道画哪种曲线 |
-| `mod.analysis` | 分析调度：执行、进度、结果、报告触发 | `analysis.result` 面板 | 不知道算什么指标 |
-| `mod.report` | 报告导出：声明「报告」页与 `report.export` 入口（PDF 管线在外壳层） | `ribbon.page.report` 页 | 不知道报告内容结构 |
-| `mod.script` | 脚本引擎：Lua 门面、Job 录制回放 | — | 不知道业务语义 |
-| `mod.protocol` | 协议编辑：模板库、意图处理（`protocol.*`） | 协议编辑器入口 | 不做解码（解码在 libs/protocol） |
-| `mod.settings` | 设置承载与意图（`settings.* / theme.*`） | 设置面板 | 不持业务状态 |
+| 模块           | 提供的机制                                                                                      | 声明的插槽                              | 明确不做                         |
+| -------------- | ----------------------------------------------------------------------------------------------- | --------------------------------------- | -------------------------------- |
+| `mod.data`     | Source 生命周期（打开/关闭/录制/回放）+ 数据集目录（表/列/时间范围查询、订阅变化）+ 驱动 Parser | `source.list` 面板、`dataset.tree` 面板 | 不认识任何格式，不取业务语义     |
+| `mod.plot`     | View 宿主：多页面、画布、LOD 取数、交互框架                                                     | `view.canvas` 中央区                    | 不知道画哪种曲线                 |
+| `mod.analysis` | 分析调度：执行、进度、结果、报告触发                                                            | `analysis.result` 面板                  | 不知道算什么指标                 |
+| `mod.report`   | 报告导出：声明「报告」页与 `report.export` 入口（PDF 管线在外壳层）                             | `ribbon.page.report` 页                 | 不知道报告内容结构               |
+| `mod.script`   | 脚本引擎：Lua 门面、Job 录制回放                                                                | —                                       | 不知道业务语义                   |
+| `mod.protocol` | 协议编辑：模板库、意图处理（`protocol.*`）                                                      | 协议编辑器入口                          | 不做解码（解码在 libs/protocol） |
+| `mod.settings` | 设置承载与意图（`settings.* / theme.*`）                                                        | 设置面板                                | 不持业务状态                     |
 
 > Source 与 Dataset 合在一个 `mod.data` 里（`DataModule`），是当前实现形态：
 > 打开数据源与浏览数据集是同一条数据通路的两侧，拆分留待通路稳定后按需评审。
@@ -508,17 +509,17 @@ PS_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
 
 以飞控包为例，它聚合**一个领域的所有知识**：
 
-| 贡献类型（kind） | 飞控包里的内容 |
-|---|---|
-| `format` | ULog 文件的识别规则与后缀 |
-| `parser` | ULog 协议解析器实现 |
-| `view` | 姿态曲线视图、航迹视图、电机转速视图 |
-| `analysis` | 飞行品质指标、振动评估、能耗分析 |
-| `report` | 飞行报告模板 |
-| `ui` | ribbon 入口、面板、画布工具 |
-| `script` | 飞控脚本库（自动化示例） |
-| `data` | 样例数据资产 |
-| `doc` | ULog 协议文档、指标定义 |
+| 贡献类型（kind） | 飞控包里的内容                       |
+| ---------------- | ------------------------------------ |
+| `format`         | ULog 文件的识别规则与后缀            |
+| `parser`         | ULog 协议解析器实现                  |
+| `view`           | 姿态曲线视图、航迹视图、电机转速视图 |
+| `analysis`       | 飞行品质指标、振动评估、能耗分析     |
+| `report`         | 飞行报告模板                         |
+| `ui`             | ribbon 入口、面板、画布工具          |
+| `script`         | 飞控脚本库（自动化示例）             |
+| `data`           | 样例数据资产                         |
+| `doc`            | ULog 协议文档、指标定义              |
 
 **kind 是开放字符串**（不是封闭枚举）——因为知识清单会持续生长，
 封成枚举每加一类就要改 core 并全量重编译，违反开闭原则。
@@ -533,7 +534,7 @@ PS_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
 
 包在自己的 TU 里静态自注册（`PS_REGISTER_PACK`），两条发现路径汇入同一张注册表：
 
-```
+```text
 内部扩展：PS_REGISTER_PARSER / PS_REGISTER_PACK  ─┐
                                                     ├─▶ ParserHub / ToolboxHub
 外部插件：目录扫描 → dlopen → ABI 校验 ────────────┘
@@ -562,27 +563,27 @@ PS_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
 又一条 `<T>` 数据）。所有注册表的容器本体都委托它（保序：keys() 按插入序），
 壳只保留各自的领域语义。看名字就知道层次：
 
-| 层 | 注册表 | 容器本体 | 壳保留的领域语义 |
-|---|---|---|---|
-| **机制**（libs/registry） | `Registry<T,Key>` / `StaticRegistry<T>` | —— 自身 | 纯值容器：insert/find/remove/keys/values/clear，保序 |
-| **数据挂载**（libs/registry） | `ToolboxHub` | 七张 `Registry<T>`：packs / uiActions / panels / scripts / dataAssets / docs / examples | mount/unmount 按包原子装卸（写 provider/domain 归属字段）、解析器视图（唯一行为式条目） |
-| | `ParserHub` | `Registry<ParserEntry>`（静态） | C ABI 解析器资产（进程一份）；插件句柄同 id 存放 |
-| | `PanelFactory` | `StaticRegistry<工厂>` | 面板实现工厂（编译期自注册） |
-| | `TransformHub` | `Registry<TransformDescriptor>`（静态） | 内置算子不可覆盖（领域语义）；保序=all() 顺序 |
-| | `ModuleFactory` | `Registry<ModuleEntry>`（静态） | 模块工厂（编译期自注册），与包自注册同构不再复写 |
-| | `UiSlotHub` | 插槽声明 + 绑定视图 | Ribbon 页/组/动作声明与动作→槽绑定；壳级容器在 `ShellContributions` 一处声明 |
-| **运行态**（会话实例） | `DatasetHub` | `TypedRegistry<Dataset,int>`（薄壳继承，kind=Dataset） | id 分配、datasetAdded/Removed 信号 |
-| | `SourceHub` | `Registry<DataSourceInfo,int>` | id 分配、信号、解析器绑定关系、dataset 反查 |
-| | `DerivedSeriesHub` | `Registry<Entry,QString>` | 同名覆盖刷新缓存、水位推进、按 dataset 级联清理 |
-| | `SinkRegistry`（**未实现**，仅设计裁决） | `Registry<SinkSession,int>` | 流录制会话：id 分配、start/stop、样本计数 |
+| 层                            | 注册表                                   | 容器本体                                                                                | 壳保留的领域语义                                                                        |
+| ----------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- |
+| **机制**（libs/registry）     | `Registry<T,Key>` / `StaticRegistry<T>`  | —— 自身                                                                                 | 纯值容器：insert/find/remove/keys/values/clear，保序                                    |
+| **数据挂载**（libs/registry） | `ToolboxHub`                             | 七张 `Registry<T>`：packs / uiActions / panels / scripts / dataAssets / docs / examples | mount/unmount 按包原子装卸（写 provider/domain 归属字段）、解析器视图（唯一行为式条目） |
+|                               | `ParserHub`                              | `Registry<ParserEntry>`（静态）                                                         | C ABI 解析器资产（进程一份）；插件句柄同 id 存放                                        |
+|                               | `PanelFactory`                           | `StaticRegistry<工厂>`                                                                  | 面板实现工厂（编译期自注册）                                                            |
+|                               | `TransformHub`                           | `Registry<TransformDescriptor>`（静态）                                                 | 内置算子不可覆盖（领域语义）；保序=all() 顺序                                           |
+|                               | `ModuleFactory`                          | `Registry<ModuleEntry>`（静态）                                                         | 模块工厂（编译期自注册），与包自注册同构不再复写                                        |
+|                               | `UiSlotHub`                              | 插槽声明 + 绑定视图                                                                     | Ribbon 页/组/动作声明与动作→槽绑定；壳级容器在 `ShellContributions` 一处声明            |
+| **运行态**（会话实例）        | `DatasetHub`                             | `TypedRegistry<Dataset,int>`（薄壳继承，kind=Dataset）                                  | id 分配、datasetAdded/Removed 信号                                                      |
+|                               | `SourceHub`                              | `Registry<DataSourceInfo,int>`                                                          | id 分配、信号、解析器绑定关系、dataset 反查                                             |
+|                               | `DerivedSeriesHub`                       | `Registry<Entry,QString>`                                                               | 同名覆盖刷新缓存、水位推进、按 dataset 级联清理                                         |
+|                               | `SinkRegistry`（**未实现**，仅设计裁决） | `Registry<SinkSession,int>`                                                             | 流录制会话：id 分配、start/stop、样本计数                                               |
 
 **三层选型纪律**：
 
-| 层 | 类 | 用途 | 谁允许直接用 |
-|---|---|---|---|
-| 活对象 | `RegistryNode` / `RegistryTree` | 继承即注册，挂树，(kind,name) 发现 | 模块/扩展/面板宿主等有生命周期的对象 |
-| 登记表 | `TypedRegistry<T,Key>` | 需要信号/owner/id 分配的值登记表 | Dataset/Source/DerivedSeries 等运行态表（壳迁入） |
-| 存储原语 | `Registry<T,Key>` | 保序容器底座 | 仅限 registry 库内部、纯数据声明式表（工具箱 7 张表）、静态自注册通道 |
+| 层       | 类                              | 用途                               | 谁允许直接用                                                          |
+| -------- | ------------------------------- | ---------------------------------- | --------------------------------------------------------------------- |
+| 活对象   | `RegistryNode` / `RegistryTree` | 继承即注册，挂树，(kind,name) 发现 | 模块/扩展/面板宿主等有生命周期的对象                                  |
+| 登记表   | `TypedRegistry<T,Key>`          | 需要信号/owner/id 分配的值登记表   | Dataset/Source/DerivedSeries 等运行态表（壳迁入）                     |
+| 存储原语 | `Registry<T,Key>`               | 保序容器底座                       | 仅限 registry 库内部、纯数据声明式表（工具箱 7 张表）、静态自注册通道 |
 
 纪律线：**业务登记表禁止裸用 `Registry<T>`**——有生命周期走 TypedRegistry，是活对象
 就继承 RegistryNode；`Registry<T>` 只服务上述三类。全系统注册树归组合根
@@ -633,7 +634,7 @@ PS_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
 第三方组件已提供对应能力，再包一层同名类只是转发。
 外壳只保留**一个绑定器**：
 
-```
+```text
 registry::UiSlotHub（纯数据：有哪些 Ribbon 页签/分组/动作；面板走 PanelFactory + Region）
         ↓
 gui::ShellBinder（唯一知道 SARibbon / ADS 的地方）
@@ -650,7 +651,7 @@ gui::ShellBinder（唯一知道 SARibbon / ADS 的地方）
 - 业务 UI 随扩展装卸，app 骨架不动；
 - 第三方组件可整体替换，只改绑定器。
 
-#### 槽容器：壳声明壳的，模块声明模块的
+### 槽容器：壳声明壳的，模块声明模块的
 
 注册表只承载 **RibbonPage / RibbonGroup** 两类有真实消费者的容器；逻辑区域
 （`ActivityBar / PrimarySidebar / SecondarySidebar / Panel / Editor`）是壳的代码常量
@@ -674,7 +675,7 @@ kind 仅限 RibbonPage/RibbonGroup，旧 Dock/Canvas/Menu 槽与方位名槽归�
 
 **架构判断**：GUI 分两层，**外壳层不认识任何功能视图**：
 
-```
+```text
 gui/
   shell/                    外壳层：只做装配，零业务
     MainWindow               窗口骨架：建 ribbon、dock，装模块、存取状态
@@ -707,7 +708,7 @@ gui/
 据此，一个功能（模块 + 它的 UI + action + 意图）**物理上放在一个目录**，
 靠 CMake 拆成两个 target 实现**编译期分离**：
 
-```
+```text
 modules/data/                     一个"数据"功能，物理聚合
   DataModule.{h,cpp}          ┐ → ps_module_data     （headless，CLI 装载）
   DataManagerPanel.{h,cpp}    ┘ → ps_module_data_gui （GUI 装载，链 Widgets）
@@ -722,11 +723,11 @@ modules/data/                     一个"数据"功能，物理聚合
 
 判据（一个 view 归哪）：
 
-| view 的性质 | 归属 | 例子 |
-|---|---|---|
-| 只服务一个功能的专属 UI | **聚合进该功能目录**，`<功能> + <功能>_gui` 两个 target | `dataset-tree` → `modules/data/` |
-| **通用能力库**（可独立复用，将来抽成 Qwt-like 库） | **留 `gui/views/`**（未来 `libs/plot/`），不进任何模块 | `plot-canvas` —— 绘图是能力库，不是模块 UI |
-| 形态随领域变（扩展提供） | **留 `toolbox/<域>/gui/`**，永不进 modules | `car.can-browser` |
+| view 的性质                                        | 归属                                                    | 例子                                       |
+| -------------------------------------------------- | ------------------------------------------------------- | ------------------------------------------ |
+| 只服务一个功能的专属 UI                            | **聚合进该功能目录**，`<功能> + <功能>_gui` 两个 target | `dataset-tree` → `modules/data/`           |
+| **通用能力库**（可独立复用，将来抽成 Qwt-like 库） | **留 `gui/views/`**（未来 `libs/plot/`），不进任何模块  | `plot-canvas` —— 绘图是能力库，不是模块 UI |
+| 形态随领域变（扩展提供）                           | **留 `toolbox/<域>/gui/`**，永不进 modules              | `car.can-browser`                          |
 
 注意区分"跨功能"与"通用能力库"：`plot-canvas` 留 `gui/views/` 的根本原因是
 **它是要独立成库的绘图能力**，而非单纯因为被 bench/shot 多处使用——后者只是
@@ -751,7 +752,7 @@ CMake 保证 CLI 只链 headless 那一半：`ldd` 验证 CLI 与 headless 测�
    且对视图类的引用数为 **0**。
 2. **视图之间靠 AppContext 的共享状态协作，不是互相引用**：
 
-```
+```text
 数据集树双击 ──▶ AppContext.setActiveChannel(数据��, 表, 列)
                             │（共享状态，星形）
                             ▼
@@ -793,15 +794,15 @@ PS_REGISTER_PANEL("dataset-tree", datasetTree, createDatasetTreePanel)
 
 分工是本机制的核心：
 
-| 层 | 载体 | 内容 | 谁可见 |
-|---|---|---|---|
-| **描述**（纯数据） | `registry::IPanelContribution` / `PanelSpec` | id / 标题 / 建议区域 / 图标 / 附加数据 | headless 也可见（CLI `--list-contributions panel` 可查） |
-| **机制**（纯数据） | `registry::PanelFactory` | `QHash<id, 工厂>`；`QWidget` 只前置声明 | registry，谁都能调 |
-| **实现**（QWidget） | 扩展的**呈现层** | 真正的面板类，TU 末尾 `PS_REGISTER_PANEL` | 仅 GUI |
+| 层                  | 载体                                         | 内容                                      | 谁可见                                                   |
+| ------------------- | -------------------------------------------- | ----------------------------------------- | -------------------------------------------------------- |
+| **描述**（纯数据）  | `registry::IPanelContribution` / `PanelSpec` | id / 标题 / 建议区域 / 图标 / 附加数据    | headless 也可见（CLI `--list-contributions panel` 可查） |
+| **机制**（纯数据）  | `registry::PanelFactory`                     | `QHash<id, 工厂>`；`QWidget` 只前置声明   | registry，谁都能调                                       |
+| **实现**（QWidget） | 扩展的**呈现层**                             | 真正的面板类，TU 末尾 `PS_REGISTER_PANEL` | 仅 GUI                                                   |
 
 描述与实现用**同一个 id** 关联。扩展因此拆成两个产物：
 
-```
+```text
 toolbox/<域>/                  知识层：协议 + 描述（纯数据，CLI 也链接）
 toolbox/<域>/gui/              呈现层：QWidget 面板（只 GUI 链接）
                                   依赖方向：呈现层 → core，不依赖 ps_gui
@@ -836,7 +837,7 @@ headless 也能查到。
 主题是**横向 GUI 基础设施**（深浅两套主题必须同时成立）。
 `ThemeManager` 设计为一条单向链：
 
-```
+```text
 语义 token  →  双主题色表（唯一色值来源）  →  QSS + palette  →  各控件
      ↑                    ↑
   视图只认 token      ThemeManager 认领 theme.* 意图
@@ -844,12 +845,12 @@ headless 也能查到。
 
 **组成部分**（c6 起纯 token 色表在 `libs/uischema`，状态/QSS/图标渲染在 `gui/theme/`）：
 
-| 部件 | 职责 | 关键约束 |
-|---|---|---|
-| `uischema::ThemeTokens` | 双主题色表、纯取色函数、系列分类色与可读性适配（无状态、无 Widgets，只依赖 QtGui 值类型） | 十六进制色值**只在色表出现一次** |
-| `ThemeManager`（gui） | 当前主题状态与持久化、扩展包兜底色、QSS/palette 生成、认领 `theme.set/toggle/get`；静态取色入口委托 `ThemeTokens` | 视图一律 `color(token)` / `styleSheet()` |
-| `ShellBinder::applyTheme` | 把 token QSS 套到 SARibbon | 绑定器是唯一知道 SARibbon 的地方；不碰 ThemeManager 具体类型 |
-| `AxesView`（fastplot 画布宿主） | `changeEvent(PaletteChange)` 里调 `applyPalette()`，从 `palette()` 取色重设 fastplot 的画布/轴/标题 | fastplot 库内不认识主题、颜色在构造时定死；宿主侧用 palette 覆盖，库保持纯净；曲线色在 `pushToPlot` 时按当时 palette 取 |
+| 部件                            | 职责                                                                                                              | 关键约束                                                                                                                |
+| ------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `uischema::ThemeTokens`         | 双主题色表、纯取色函数、系列分类色与可读性适配（无状态、无 Widgets，只依赖 QtGui 值类型）                         | 十六进制色值**只在色表出现一次**                                                                                        |
+| `ThemeManager`（gui）           | 当前主题状态与持久化、扩展包兜底色、QSS/palette 生成、认领 `theme.set/toggle/get`；静态取色入口委托 `ThemeTokens` | 视图一律 `color(token)` / `styleSheet()`                                                                                |
+| `ShellBinder::applyTheme`       | 把 token QSS 套到 SARibbon                                                                                        | 绑定器是唯一知道 SARibbon 的地方；不碰 ThemeManager 具体类型                                                            |
+| `AxesView`（fastplot 画布宿主） | `changeEvent(PaletteChange)` 里调 `applyPalette()`，从 `palette()` 取色重设 fastplot 的画布/轴/标题               | fastplot 库内不认识主题、颜色在构造时定死；宿主侧用 palette 覆盖，库保持纯净；曲线色在 `pushToPlot` 时按当时 palette 取 |
 
 **三条设计判据**（都是踩过坑或守住红线的结果）：
 
@@ -872,7 +873,7 @@ headless 也能查到。
 信息层与交互形态见 `docs/screenshots/PlotScope-Source-Inspector.png`，
 数据全部走仓库抽象：
 
-```
+```text
 标题：数据源 · N 已连接
 上段：源卡片        DataSourceRepository（状态点 / 名称 / N 通道 / 元信息 tooltip）
    ↓ 选中
@@ -887,10 +888,10 @@ headless 也能查到。
 **为什么是三视图**：字段是数值通道（画图用），参数是键值配置，
 消息是事件/话题流，三者的数据形态和消费者都不同，不能压成单一树。
 
-| 设计点 | 做法 | 原因 |
-|---|---|---|
+| 设计点       | 做法                                            | 原因                           |
+| ------------ | ----------------------------------------------- | ------------------------------ |
 | 面板数据来源 | 订阅 `AppContext` + `DataSourceRepository` 信号 | 面板只读元数据，不持有业务状态 |
-| 数据源访问 | 只用 `DataSourceRepository` / `DataRepository` | 不引入面板私有数据类型 |
+| 数据源访问   | 只用 `DataSourceRepository` / `DataRepository`  | 不引入面板私有数据类型         |
 
 **只读展示骨架的边界**：参数/消息 tab 当前展示真实的**表清单 / 列结构 / 行数 / 首时刻**；
 文本键值（`params`/`facts` 的 name→value）的真实值暂留占位——因为 `Dataset::readWindow`
@@ -1046,7 +1047,7 @@ UI 排布顺序不依赖绑定/装载先后，全部由 order 字段显式表达
 
 ## 8. 分层与依赖
 
-```
+```text
 装配根（exe / application/app · application/bare · application/tools）
   创建 AppContext + RuntimeHost；链接模块 + 壳；持有产品 ProductSpec 实例
   ↓                                        ↓（唯一允许链 L4 的一层）
@@ -1083,14 +1084,14 @@ toolbox/             扩展（领域知识）：common / autopilot / automotive 
 > `version`、`reportTitle`、`aboutText`（关于页用途说明）。壳拼装这些字段，不写死产品名或产品用途；
 > 第二份 spec 留空 `aboutText` 就不会带出第一份产品的用途描述。业务文案（Ribbon 页/组标题、
 > 命令标签、状态项文本）归各模块在 `onAttach` 声明，不进 `ProductSpec`，避免换产品时把业务词汇带走。
-
+>
 > **协议 UI 归属（D18a，已落地）**：`ProtocolInspectorDialog`、`ProtocolEditorDialog`
 > 住在 `modules/protocol/gui/`，由 `ps_module_protocol_gui` 呈现层编译；`gui/shell/` 零协议对话框，
 > `ps_gui` 不编译任何业务对话框。外壳只按动作 id 经 `DialogLauncherHub`（libs/registry）触发，
 > 不 include、不构造业务对话框；未注册（裸壳/headless）时启动器为 no-op。模块呈现层在各自 TU
 > 用 `PS_REGISTER_DIALOG_LAUNCHER` 自注册，启动器签名带 `QWidget* parent`、`AppContext&`、
 > `IIntentExecutor&`，模块不持有外壳指针。这与 `PanelFactoryHub` 同构，壳与业务对话框双向解耦。
-
+>
 > 上述分层是机制视角。各目录的**定位、放什么/禁放什么、可依赖/禁依赖**以 [`LAYERS.md`](LAYERS.md) 为准——新增代码先在那里判归属。跨层依赖由 `cmake/LayerContractGuard.cmake` 在 configure 期强制，物理 include 边界由 `cmake/LibBoundaryGuard.cmake` 强制。
 
 ### 8.1 机制资产清单（uORB 式：先备齐，业务直接用）
@@ -1101,21 +1102,22 @@ toolbox/             扩展（领域知识）：common / autopilot / automotive 
 再开始用——禁止在业务代码里临时自造一套**（再出现一个手写 QHash 注册容器
 即违规）。
 
-| 中间件（libs/） | 预备好的机制 | 业务何时直接用 / 禁止什么 |
-|---|---|---|
-| `foundation` | `Result<T>`（统一错误传播）、`Events`（事件主题集中定义） | 一切错误返回与跨层通知；禁止自造错误码体系、禁止字符串主题散落 |
-| `registry` | `Registry<T,Key>`（唯一容器机制，保序）、`StaticRegistry`（启动期自注册）、`Contribution.h`（贡献契约：基类 + 6 类声明式贡献 + ToolPack）、`ToolboxHub`（包/贡献容器） | 任何"按 id 登记与查询"；运行态注册表一律委托泛型表；禁止手写 QHash 注册容器、禁止为声明式资产新建类 |
-| `intent` | `Intent`（统一意图）、`IIntentExecutor`（统一执行契约）、`JobRecorder`（意图录制回放） | 一切功能入口与跨模块调用；禁止模块间直调、禁止旁路意图管道 |
-| `parser` | `IMessageParser`（怎么读）、`IByteSource`（字节来源）、`ParserHub` | 新格式 = 新解析器贡献；禁止在 handler 里 if-else 认后缀 |
-| `protocol` | psproto 文档模型、编译、编解码、Lua 脚本后端 | 协议模板解析与校验一律走 ps_protocol；禁止复制解码规则 |
-| `dataset` | `Dataset`（kernel 门面）、`DatasetHub`/`SourceHub`（运行态容器，委托泛型表） | 一切数据进出 kernel 的路径；禁止绕过门面直捅 Rust FFI |
-| `context` | `AppContext`（会话上下文）、`IngestPipeline`（入库）、`DerivedSeriesHub`、`ChannelTransformConfig` | 派生/变换机制复用；禁止业务层私建派生账本 |
-| `uischema` | 变换契约（能力位 + 自描述）、Form/Property/Marker schema | 新算子先登记能力位；禁止无自描述的算子 |
-| `fastplot` | 视口/刻度/轴/曲线/仪表等绘图部件 | 画布宿主经 LOD 取数后喂 fastplot；禁止在部件里认数据/主题 |
-| `recording` | Recorder / RecordingFormat / RecordingBackend / Sink | 流录制能力登记与组合；禁止各处自写落盘循环 |
-| `module` | `IModule`/`ModuleInfo`/`IUiContext`（模块契约，纯接口面） | 实现模块只链本库（运行时在 host）；契约头禁止写实现体、禁止持有运行态 |
+| 中间件（libs/） | 预备好的机制                                                                                                                                                           | 业务何时直接用 / 禁止什么                                                                           |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `foundation`    | `Result<T>`（统一错误传播）、`Events`（事件主题集中定义）                                                                                                              | 一切错误返回与跨层通知；禁止自造错误码体系、禁止字符串主题散落                                      |
+| `registry`      | `Registry<T,Key>`（唯一容器机制，保序）、`StaticRegistry`（启动期自注册）、`Contribution.h`（贡献契约：基类 + 6 类声明式贡献 + ToolPack）、`ToolboxHub`（包/贡献容器） | 任何"按 id 登记与查询"；运行态注册表一律委托泛型表；禁止手写 QHash 注册容器、禁止为声明式资产新建类 |
+| `intent`        | `Intent`（统一意图）、`IIntentExecutor`（统一执行契约）、`JobRecorder`（意图录制回放）                                                                                 | 一切功能入口与跨模块调用；禁止模块间直调、禁止旁路意图管道                                          |
+| `parser`        | `IMessageParser`（怎么读）、`IByteSource`（字节来源）、`ParserHub`                                                                                                     | 新格式 = 新解析器贡献；禁止在 handler 里 if-else 认后缀                                             |
+| `protocol`      | psproto 文档模型、编译、编解码、Lua 脚本后端                                                                                                                           | 协议模板解析与校验一律走 ps_protocol；禁止复制解码规则                                              |
+| `dataset`       | `Dataset`（kernel 门面）、`DatasetHub`/`SourceHub`（运行态容器，委托泛型表）                                                                                           | 一切数据进出 kernel 的路径；禁止绕过门面直捅 Rust FFI                                               |
+| `context`       | `AppContext`（会话上下文）、`IngestPipeline`（入库）、`DerivedSeriesHub`、`ChannelTransformConfig`                                                                     | 派生/变换机制复用；禁止业务层私建派生账本                                                           |
+| `uischema`      | 变换契约（能力位 + 自描述）、Form/Property/Marker schema                                                                                                               | 新算子先登记能力位；禁止无自描述的算子                                                              |
+| `fastplot`      | 视口/刻度/轴/曲线/仪表等绘图部件                                                                                                                                       | 画布宿主经 LOD 取数后喂 fastplot；禁止在部件里认数据/主题                                           |
+| `recording`     | Recorder / RecordingFormat / RecordingBackend / Sink                                                                                                                   | 流录制能力登记与组合；禁止各处自写落盘循环                                                          |
+| `module`        | `IModule`/`ModuleInfo`/`IUiContext`（模块契约，纯接口面）                                                                                                              | 实现模块只链本库（运行时在 host）；契约头禁止写实现体、禁止持有运行态                               |
 
 新增机制的流程（三步，缺一不可）：
+
 1. 本清单加一行（机制名 + 一句话能力 + 使用纪律）；
 2. 在对应 lib 实现并配契约测试；
 3. `LAYERS.md` 同步归属。
@@ -1127,7 +1129,7 @@ GUI 点击、CLI 命令、脚本调用**走同一条路**，因此可录制、�
 
 关键 op（按领域划分，模块各自认领，宿主保管系统面）：
 
-```
+```text
 data.load / data.reload / data.export / data.recent / data.clearCache   （宿主系统面）
 data.connect / data.record.* / data.workspace.* / data.cache / data.derive / data.transform
 plot.*            （plot 模块：画布、曲线、导出、视图状态）
@@ -1141,7 +1143,7 @@ ai.status / ai.tools.list / ai.tool.call   （MCP 桥消费）
 
 `IntentResult` 必须可序列化 → GUI 操作能录成 Job、脚本能回放同一序列。
 
-#### data.* 系统级意图：归口宿主，只搬有底层支撑的能力
+### data.* 系统级意图：归口宿主，只搬有底层支撑的能力
 
 数据加载与派生操作（`data.load` / `data.reload` / `data.export` / `data.recent` /
 `data.clearCache`）都是**宿主级 handler**，不归属可卸载模块——因为它们要访问
@@ -1150,18 +1152,19 @@ ai.status / ai.tools.list / ai.tool.call   （MCP 桥消费）
 
 铁律：**只实现底层有 API 支撑的能力，不造点了没反应的空按钮。**
 
-| 命令 | 归属 | 底层支撑 |
-|---|---|---|
-| `file.open` / `data.quickOpen` | `data.load`（已有）+ 开始页 `app.action.openData`（DataModule 贡献到壳声明的 home.data 组） | 格式驱动 + 摄取管道 |
-| `data.reload` | `data.reload`（宿主） | `sources` + `data.load`，**稳定 id 保持数据集不换 id** |
-| `data.exportSnapshot` | `data.export`（宿主） | `Dataset::channel` 有界取数写 CSV |
-| `data.recent` | `data.recent`（宿主）+ `data.load` 成功自动记入 | `SettingsStore` 持久化 |
-| `data.clearCache` | `data.clearCache`（宿主） | `.psc` 缓存路径约定 |
-| `layout.save/import` | 已有 `plot.layout.save/load` | — |
-| `protocol.inspect` | 领域面板 `toolbox/<域>/gui/`（非 data 意图） | — |
+| 命令                           | 归属                                                                                        | 底层支撑                                               |
+| ------------------------------ | ------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `file.open` / `data.quickOpen` | `data.load`（已有）+ 开始页 `app.action.openData`（DataModule 贡献到壳声明的 home.data 组） | 格式驱动 + 摄取管道                                    |
+| `data.reload`                  | `data.reload`（宿主）                                                                       | `sources` + `data.load`，**稳定 id 保持数据集不换 id** |
+| `data.exportSnapshot`          | `data.export`（宿主）                                                                       | `Dataset::channel` 有界取数写 CSV                      |
+| `data.recent`                  | `data.recent`（宿主）+ `data.load` 成功自动记入                                             | `SettingsStore` 持久化                                 |
+| `data.clearCache`              | `data.clearCache`（宿主）                                                                   | `.psc` 缓存路径约定                                    |
+| `layout.save/import`           | 已有 `plot.layout.save/load`                                                                | —                                                      |
+| `protocol.inspect`             | 领域面板 `toolbox/<域>/gui/`（非 data 意图）                                                | —                                                      |
 
 `DataModule.onAttach` 只把这些能力声明成 ribbon"数据"组的 action（纯数据，
 绑真实 intentOp），不自己实现、不碰 Widgets——headless/CLI 同样能执行这些意图。
+
 ## 10. 明确不做
 
 - 不自研 ribbon / docking（用 SARibbon / ADS）；

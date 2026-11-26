@@ -6,18 +6,18 @@
 
 ## 单一真值与单位口径
 
-| 层 | 真值 | 说明 |
-|----|------|------|
-| 数据层 | `TimeNs = int64_t`（整数 ns） | dataset 时间轴单一真值；Table 只存 schema 元数据 + 首尾时间 |
-| 绘图层 | 相对秒（double） | `t0 = firstTimeNs / 1e9`；曲线/视口/游标全在相对秒轴上运算 |
-| 存档层 | 相对秒（double） | `saveViewState` 的 `x`/`y` 区间、参考线 `referenceT` 均为相对轴值 |
+| 层     | 真值                          | 说明                                                              |
+| ------ | ----------------------------- | ----------------------------------------------------------------- |
+| 数据层 | `TimeNs = int64_t`（整数 ns） | dataset 时间轴单一真值；Table 只存 schema 元数据 + 首尾时间       |
+| 绘图层 | 相对秒（double）              | `t0 = firstTimeNs / 1e9`；曲线/视口/游标全在相对秒轴上运算        |
+| 存档层 | 相对秒（double）              | `saveViewState` 的 `x`/`y` 区间、参考线 `referenceT` 均为相对轴值 |
 
 推论：**offset（曲线 X 偏移）只叠加在绘图副本上，不进存档**——存盘视口不因 offset 漂移
 （测试 8c）。存相对轴值的额外收益：天然抗时间基准偏移，恢复时无需知道绝对 epoch。
 
 ## 恢复链时序（applyDocumentSpec）
 
-```
+```text
 preflightDocumentSpec   # 开档前体检：origin 可满足性/通道缺口清单（诊断，不阻断）
   └─ dropPendingBinds   # 新文档接管 pending 队列
   └─ 逐页逐格：
@@ -37,7 +37,7 @@ preflightDocumentSpec   # 开档前体检：origin 可满足性/通道缺口清�
 
 所有画布视图状态经 **一条通道** 存取：
 
-```
+```text
 AxesView::saveViewState  ──►  CanvasSpec.state  ──►  AxesView::restoreViewState
 （fastplot Axes::saveState 的全部键 + seriesAxes + seriesTransforms + axisTransform）
 ```
@@ -75,14 +75,14 @@ AxesView::saveViewState  ──►  CanvasSpec.state  ──►  AxesView::resto
 
 ## 回归锚点
 
-| 不变量 | 测试（tests/test_plot_io.cpp） |
-|--------|-------------------------------|
-| 视口不被绑曲线覆盖（preserveRange） | 8a |
-| 显式色稳定保留、不被 palette 重分配覆盖 | 8b |
-| offset 不进存盘视口 | 8c |
-| 相对秒视口往返精确 | 9b |
-| 晚到绑定 + 视口/显隐回放 | 10 |
-| 多数据集最佳拟合 + 重绑 | 11/12 |
-| 全文档 round-trip 全等 + apply 幂等 | 16 |
-| 全局 undo 步数/拆分回退 | 14 |
-| visibility 五路径三方一致 | 13 |
+| 不变量                                  | 测试（tests/test_plot_io.cpp） |
+| --------------------------------------- | ------------------------------ |
+| 视口不被绑曲线覆盖（preserveRange）     | 8a                             |
+| 显式色稳定保留、不被 palette 重分配覆盖 | 8b                             |
+| offset 不进存盘视口                     | 8c                             |
+| 相对秒视口往返精确                      | 9b                             |
+| 晚到绑定 + 视口/显隐回放                | 10                             |
+| 多数据集最佳拟合 + 重绑                 | 11/12                          |
+| 全文档 round-trip 全等 + apply 幂等     | 16                             |
+| 全局 undo 步数/拆分回退                 | 14                             |
+| visibility 五路径三方一致               | 13                             |
