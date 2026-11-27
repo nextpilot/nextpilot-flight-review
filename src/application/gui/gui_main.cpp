@@ -190,7 +190,7 @@ int main(int argc, char *argv[])
         nextpilot::plotscope::instantiation::ServiceTypeTag<nextpilot::plotscope::report::IReportExportHost>::value());
     struct DeactivateBeforeHostDeath
     {
-        App &app;
+        nextpilot::plotscope::app::App &app;
         ~DeactivateBeforeHostDeath() { app.host().deactivateAll(); }
     } deactivateGuard{application};
 #endif
