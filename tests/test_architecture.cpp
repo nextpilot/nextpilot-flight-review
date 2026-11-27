@@ -1186,11 +1186,11 @@ using namespace nextpilot::plotscope::context;
     // view action 注销闭环：独立 App 实例，卸载 data 模块后 data.table.open 不再可派发，
     // 重新激活后恢复（headless 无 UI，handler 命中但以 Unsupported 拒绝）。
     {
-        App isolated;
+        App isolated{};
         CHECK(isolated.startup(true).isEmpty());
         CHECK(isolated.host().isActive(QStringLiteral("mod.data")));
 
-        const int before = isolated.context().interactions().count();
+        const int before{isolated.context().interactions().count()};
         Result<QVariant> live{QVariant()};
         CHECK(isolated.context().interactions().dispatchViewAction(QStringLiteral("data.table.open"), QVariantMap(),
                                                                    live));
