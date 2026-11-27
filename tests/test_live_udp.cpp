@@ -18,11 +18,13 @@
 #include <QHostAddress>
 #include <QThread>
 #include <QFile>
+#include <QTcpServer>
 #include <QTcpSocket>
 #include <QUdpSocket>
 #include <QtEndian>
 
 #include <cstdio>
+#include <optional>
 
 #ifdef __linux__
 #include <pty.h>
@@ -369,20 +371,33 @@ int main(int argc, char **argv)
 
     // ---- TCP 前端：监听端 tcp://0.0.0.0:port，测试端连上去写帧 ----
     {
-        QUdpSocket portProbe; // 借用绑定取空闲端口（TCP/UDP 端口空间独立，仅作随机端口用）
-        CHECK(portProbe.bind(QHostAddress::LocalHost, 0));
-        const quint16 tcpPort = portProbe.localPort();
-        portProbe.close();
-
+        // 端口探测必须在 TCP 空间做：借 UDP bind(0) 取号会落到 Windows 的保留段
+        // （Hyper-V excluded port range），被测端 TCP bind 直接失败——CI 上偶发
+        // "FAIL: tcr" 就是这个；close 到重绑的竞态也一并躲开。让 QTcpServer 真正
+        // 监听、取系统分配的 TCP 端口，data.connect 失败就换号重试。
         Intent tc;
         tc.op = QStringLiteral("data.connect");
-        tc.params[QStringLiteral("url")] =
-            QStringLiteral("tcp://0.0.0.0:%1").arg(tcpPort);
         tc.params[QStringLiteral("parser")] = QStringLiteral("custom-protocol");
         tc.params[QStringLiteral("template")] = tpl;
         tc.params[QStringLiteral("name")] = QStringLiteral("tcp-test");
-        const auto tcr = app.host().execute(tc);
-        CHECK(tcr);
+
+        quint16 tcpPort = 0;
+        std::optional<decltype(app.host().execute(tc))> tcResult;
+        for (int attempt = 0; attempt < 4; ++attempt)
+        {
+            QTcpServer probe;
+            if (!probe.listen(QHostAddress::LocalHost, 0))
+                continue;
+            tcpPort = probe.serverPort();
+            probe.close();
+
+            tc.params[QStringLiteral("url")] = QStringLiteral("tcp://0.0.0.0:%1").arg(tcpPort);
+            tcResult = app.host().execute(tc);
+            if (*tcResult)
+                break;
+        }
+        CHECK(tcResult && *tcResult);
+        const auto &tcr = *tcResult;
         if (tcr)
         {
             const int tid = tcr.value().payload.toMap().value(QStringLiteral("source")).toInt();
