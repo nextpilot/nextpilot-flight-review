@@ -316,10 +316,13 @@ jobs:
         if: steps.changed.outputs.files != ''
         run: |
           # Configure only — clang-tidy needs the translation unit's flags, not the binaries.
+          # tests 必须 ON：编译数据库是按目标导出的，tests=OFF 时 tests/*.cpp 没有条目，
+          # clang-tidy 会用空参数兜底，把正交测试文件报成 "App.h file not found" +
+          # 满屏伪 "not initialized"。configure 不编译，开 tests 只是多导出几份命令。
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" \
-            -DPS_BUILD_TESTS=OFF \
+            -DPS_BUILD_TESTS=ON \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
 
       - name: Run clang-tidy on changed files
