@@ -2,6 +2,7 @@
 // GUI 点击、脚本调用、Job 回放三条路径共用同一个执行器（意图是公共货币）。
 #include <type_traits>
 #include "../core/App.h"
+#include "ParserHub.h"
 #include "Intent.h"
 #include "Dataset.h"
 #include "ContributionsFormat.h"
@@ -11,6 +12,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
@@ -51,37 +53,52 @@ using namespace nextpilot::plotscope::context;
 
 static void printUsage()
 {
-    fprintf(stdout,
-            "用法:\n"
-            "  plotscope --list-modules      # 模块模块\n"
-            "  plotscope --list-packs        # 工具箱里的扩展包（装载/卸载单位）\n"
-            "  plotscope --list-contributions [kind]  # 贡献（按 kind×领域，开放类型）\n"
-            "  plotscope --contributions      # A8b vscode contributes：owner/key/id/order 逐行\n"
-            "  plotscope --list-parser      # 工具箱里的格式驱动（list-contributions format 别名）\n"
-            "  plotscope --list-slots        # UI 插槽及工具箱填入的入口\n"
-            "  plotscope --kernel            # Rust kernel ABI/版本/自检\n"
-            "  plotscope --info <file.csv|file.ulg>   # 按扩展名选格式\n"
-            "  plotscope --run <job.json>\n"
-            "  plotscope --script <file.lua> [--record <out.json>]\n"
-            "  plotscope --batch <dir> <script.lua> [--pattern \"*.csv;*.ulg\"] [--json out.json]\n"
-            "  plotscope --mcp-bridge        # MCP server（stdio JSON-RPC，供外部代理驱动）\n"
-            "  plotscope --dump-diagnostics  # 应用诊断 JSON（模块/扩展包/数据面/工具目录）\n"
-            "\n"
-            "全局选项:\n"
-            "  --settings <path>   # 设置文件路径，缺省 <AppData>/plotscope/settings.json\n");
+    fprintf(stdout, "用法:\n"
+                    "  plotscope --list-modules      # 模块模块\n"
+                    "  plotscope --list-packs        # 工具箱里的扩展包（装载/卸载单位）\n"
+                    "  plotscope --list-contributions [kind]  # 贡献（按 kind×领域，开放类型）\n"
+                    "  plotscope --contributions      # A8b vscode contributes：owner/key/id/order 逐行\n"
+                    "  plotscope --list-parser      # 工具箱里的格式驱动（list-contributions format 别名）\n"
+                    "  plotscope --list-slots        # UI 插槽及工具箱填入的入口\n"
+                    "  plotscope --kernel            # Rust kernel ABI/版本/自检\n"
+                    "  plotscope --info <file>                # 格式由解析器注册表按后缀选\n"
+                    "  plotscope --run <job.json>\n"
+                    "  plotscope --script <file.lua> [--record <out.json>]\n"
+                    "  plotscope --batch <dir> <script.lua> [--pattern \"*.ext;*.ext2\"] [--json out.json]\n"
+                    "  plotscope --mcp-bridge        # MCP server（stdio JSON-RPC，供外部代理驱动）\n"
+                    "  plotscope --dump-diagnostics  # 应用诊断 JSON（模块/扩展包/数据面/工具目录）\n"
+                    "\n"
+                    "全局选项:\n"
+                    "  --settings <path>   # 设置文件路径，缺省 <AppData>/plotscope/settings.json\n");
 }
 
 static Intent makeLoadIntent(const QString &path)
 {
-    // 按扩展名选格式扩展包；新格式只需在这里加一行，扩展自身不动宿主。
-    const QString format = path.endsWith(QStringLiteral(".ulg"), Qt::CaseInsensitive)
-        ? QStringLiteral("ulog")
-        : QStringLiteral("csv");
+    // 格式由解析器注册表回答，CLI 不认识任何具体扩展名；未登记时 format 留空，
+    // 由调用方报可读错误（不猜默认格式）。
+    const QString suffix = QStringLiteral(".") + QFileInfo(path).suffix().toLower();
+    const auto *entry = nextpilot::plotscope::parser::ParserHub::findByExtension(suffix);
     Intent intent;
     intent.op = QStringLiteral("data.load");
     intent.params[QStringLiteral("path")] = path;
-    intent.params[QStringLiteral("format")] = format;
+    intent.params[QStringLiteral("format")] = entry ? QString::fromUtf8(entry->info.id) : QString();
     return intent;
+}
+
+// 已登记后缀清单（用于"无法识别格式"的报错）。
+static QString knownSuffixes()
+{
+    QStringList out;
+    for (const QString &id : nextpilot::plotscope::parser::ParserHub::ids())
+    {
+        const auto *entry = nextpilot::plotscope::parser::ParserHub::entry(id);
+        if (!entry || !entry->info.extensions)
+            continue;
+        for (const QString &p : QString::fromUtf8(entry->info.extensions).split(QLatin1Char(','), Qt::SkipEmptyParts))
+            out << p.trimmed().toLower();
+    }
+    out.removeDuplicates();
+    return out.join(QLatin1Char(','));
 }
 
 static Intent makeScriptIntent(const QString &path)
@@ -357,7 +374,14 @@ int main(int argc, char **argv)
 
     if (command == QStringLiteral("--info") && args.size() >= 3)
     {
-        Result<IntentResult> r = application.host().execute(makeLoadIntent(args.at(2)));
+        const Intent intent = makeLoadIntent(args.at(2));
+        if (intent.params.value(QStringLiteral("format")).toString().isEmpty())
+        {
+            fprintf(stderr, "error[E_FORMAT]: 无法识别格式 %s（已注册后缀: %s）\n",
+                    u8(QStringLiteral(".") + QFileInfo(args.at(2)).suffix().toLower()), u8(knownSuffixes()));
+            return 1;
+        }
+        Result<IntentResult> r = application.host().execute(intent);
         if (!r)
         {
             fprintf(stderr, "error[%s]: %s\n", u8(r.error().code), u8(r.error().message));
@@ -457,7 +481,7 @@ int main(int argc, char **argv)
 
     if (command == QStringLiteral("--batch") && args.size() >= 4)
     {
-        // --batch <dir> <script.lua> [--pattern "*.csv;*.ulg"] [--json out.json]
+        // --batch <dir> <script.lua> [--pattern "*.ext;*.ext2"] [--json out.json]
         // M2.4 headless JSON 出口：汇总 payload 直接序列化打印/落盘。
         const QString dir = args.at(2);
         const QString script = args.at(3);

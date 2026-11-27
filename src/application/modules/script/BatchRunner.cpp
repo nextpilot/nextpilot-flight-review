@@ -1,5 +1,7 @@
 #include "BatchRunner.h"
 
+#include "ParserHub.h"
+
 #include "Dataset.h"
 #include "DatasetHub.h"
 #include "ErrorCodes.h"
@@ -25,12 +27,48 @@ namespace nextpilot::plotscope::script
 
 namespace
 {
-// 与 CLI/gui_main 的 makeLoadIntent 同规则：按扩展名选格式扩展包。
+// 格式一律由解析器注册表回答：扩展后缀 -> 解析器 id。未知后缀返回空串，
+// 由调用方给出可读报错，绝不在批量侧自造格式表或回退某个"默认格式"。
 QString formatForPath(const QString &path)
 {
-    return path.endsWith(QStringLiteral(".ulg"), Qt::CaseInsensitive)
-        ? QStringLiteral("ulog")
-        : QStringLiteral("csv");
+    const QString suffix = QStringLiteral(".") + QFileInfo(path).suffix().toLower();
+    const auto *entry = parser::ParserHub::findByExtension(suffix);
+    return entry ? QString::fromUtf8(entry->info.id) : QString();
+}
+
+// 默认收集 pattern 同样来自注册表：每个已登记解析器声明了哪些后缀就收哪些，
+// 不再在代码里写死具体后缀。
+QStringList defaultPatterns()
+{
+    static const QStringList patterns = [] {
+        QStringList out;
+        for (const QString &id : parser::ParserHub::ids())
+        {
+            const auto *entry = parser::ParserHub::entry(id);
+            if (!entry || !entry->info.extensions)
+                continue;
+            for (const QString &piece :
+                 QString::fromUtf8(entry->info.extensions).split(QLatin1Char(','), Qt::SkipEmptyParts))
+            {
+                const QString ext = piece.trimmed().toLower();
+                if (ext.startsWith(QLatin1Char('.')))
+                    out << QStringLiteral("*") + ext;
+            }
+        }
+        out.removeDuplicates();
+        return out;
+    }();
+    return patterns;
+}
+
+// 已注册后缀，供"无法识别格式"的报错列出可选项。
+QString knownSuffixes()
+{
+    const QStringList patterns = defaultPatterns();
+    QStringList out;
+    for (const QString &p : patterns)
+        out << p.mid(1);
+    return out.join(QLatin1Char(','));
 }
 
 // Lua 字符串字面量安全包装（路径里可能有引号/反斜杠）。
@@ -43,7 +81,7 @@ QString luaStr(const QString &s)
     return QStringLiteral("\"%1\"").arg(escaped);
 }
 
-// pattern 参数："*.csv *.ulg" / "*.csv;*.ulg" / 单个 "*.csv" 都接受。
+// pattern 参数：空白或分号分隔的多个 glob 都接受；缺省取注册表后缀。
 QStringList splitPatterns(const QString &raw)
 {
     QStringList out;
@@ -54,8 +92,7 @@ QStringList splitPatterns(const QString &raw)
         if (!p.isEmpty())
             out << p;
     }
-    return out.isEmpty() ? QStringList{QStringLiteral("*.csv"), QStringLiteral("*.ulg")}
-                         : out;
+    return out.isEmpty() ? defaultPatterns() : out;
 }
 } // namespace
 
@@ -109,7 +146,7 @@ Result<IntentResult> BatchHandler::execute(const Intent &intent)
     if (source.trimmed().isEmpty())
         return fail(err::Args, QStringLiteral("批量脚本为空"));
 
-    // ---- 文件收集（默认 *.csv *.ulg；recursive 可选）----
+    // ---- 文件收集（默认取解析器注册表后缀；recursive 可选）----
     const QStringList patterns =
         splitPatterns(intent.params.value(QStringLiteral("pattern")).toString());
     const bool recursive = intent.params.value(QStringLiteral("recursive")).toBool();
@@ -145,8 +182,13 @@ Result<IntentResult> BatchHandler::execute(const Intent &intent)
         Intent load;
         load.op = QStringLiteral("data.load");
         load.params.insert(QStringLiteral("path"), filePath);
-        load.params.insert(QStringLiteral("format"), formatForPath(filePath));
-        Result<IntentResult> lr = m_executor.execute(load);
+        const QString format = formatForPath(filePath);
+        load.params.insert(QStringLiteral("format"), format);
+        // 格式未登记：不执行 data.load（否则会落到某默认格式，把"不认识"伪装成"解析为空"）。
+        Result<IntentResult> lr =
+            format.isEmpty() ? fail(err::Args, QStringLiteral("无法识别格式 %1（已注册后缀: %2）")
+                                                   .arg(QStringLiteral(".") + fi.suffix().toLower(), knownSuffixes()))
+                             : m_executor.execute(load);
         // 空解析判定：摄取管道对垃圾文件宽容（返回 0 表数据集），
         // 批量场景里"0 表"就是损坏/格式不符——判 load 失败，明细可追。
         DatasetId createdId = kInvalidDataset; // load 实际产生的数据集（无论成败，收尾移除）
