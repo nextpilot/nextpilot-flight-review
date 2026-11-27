@@ -1303,6 +1303,11 @@ using namespace nextpilot::plotscope::context;
     // 生命周期回归模块：上面的"report.export 随模块启停"用例已覆盖摘除与恢复，
     // 此处不再在 hub 上裸注册（那会绕开宿主、测不到真实链路）。
 
+    // 收尾：先显式拆模块，再让栈上的 fakeReportHost 析构。App 析构时也会 deactivateAll
+    // （幂等），但 application 早于 fakeReportHost 声明、晚于它析构——不在这里先拆，
+    // ~App 的 deactivateAll 就会对着已析构的 fake host 做虚调用（Debug 下 pure virtual abort）。
+    application.host().deactivateAll();
+
     fprintf(stdout, "\n全部架构契约测试通过\n");
     return 0;
 }

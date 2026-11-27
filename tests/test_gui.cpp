@@ -164,6 +164,8 @@ int main(int argc, char *argv[])
 
     App application;
     // IKYDH2：report.export 由模块生命周期托管，host 由组合根注册。
+    // host 先于 application 声明、先于它析构；退出前必须先把模块拆掉（见函数末尾
+    // deactivateAll），否则 ~App 的 onDetach 落在已析构 host 上是纯虚调用 abort。
     nextpilot::plotscope::gui::ReportExportHost reportExportHost(application.context());
     MainWindow window(application.context(), nextpilot::plotscope::registry::plotScopeProductSpec());
 
@@ -4446,6 +4448,10 @@ int main(int argc, char *argv[])
         CHECK(!DialogLauncherHub::has(QStringLiteral("protocol.no.such.launcher")));
         OK("D18a：协议对话框启动器已注册、壳按 id 触发、未注册 id 安全 no-op");
     }
+
+    // 退出前先拆模块：reportExportHost 是本函数栈对象、先于 application 析构，
+    // 而 ~App 里还有一次 deactivateAll；不先拆，那次 onDetach 就落在已亡 host 上。
+    application.host().deactivateAll();
 
     fprintf(stdout, "\nGUI 契约测试全部通过\n");
     return 0;

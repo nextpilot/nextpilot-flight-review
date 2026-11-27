@@ -180,10 +180,19 @@ int main(int argc, char *argv[])
 #ifdef PS_HAS_REPORT_GUI
     // 组合根注册 report.export 的 host；report 模块在 initialize 安装、onDetach 卸载。
     // 必须在 window.build（内部 host.activate）之前注册，模块 initialize 才取得到。
+    // 析构顺序是这里的硬约束：host 先于 application 声明、先于它析构，而 ~App 里还会
+    // deactivateAll —— 那时模块 onDetach 会对着已析构的 host 做虚调用（Debug 下
+    // "pure virtual method called" 直接 abort）。故在 host 之后声明一个守卫，
+    // 让本块退出时先拆模块、再让 host 死亡。
     nextpilot::plotscope::gui::ReportExportHost reportExportHost(application.context());
     application.host().services()->registerSingleton(
         QStringLiteral("report.exportHost"), &reportExportHost, QStringLiteral("assembly"), 1,
         nextpilot::plotscope::instantiation::ServiceTypeTag<nextpilot::plotscope::report::IReportExportHost>::value());
+    struct DeactivateBeforeHostDeath
+    {
+        App &app;
+        ~DeactivateBeforeHostDeath() { app.host().deactivateAll(); }
+    } deactivateGuard{application};
 #endif
 
     nextpilot::plotscope::gui::MainWindow window(application.context(), productSpec);

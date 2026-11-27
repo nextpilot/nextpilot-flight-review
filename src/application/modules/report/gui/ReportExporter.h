@@ -41,6 +41,8 @@ nextpilot::plotscope::foundation::Result<void> exportReportPdf(nextpilot::plotsc
                                                                const ReportRequest &request);
 
 // report.export 的安装/卸载实现：注册进交互表，handler 与脚本、Ribbon 共用。
+// 生命周期由组合根（main / 测试）负责：host 必须在 App 之前析构完成——顺序反了，
+// ~App 的 deactivateAll 会对着已析构的 host 做虚调用（Debug 下 pure virtual abort）。
 class ReportExportHost final : public nextpilot::plotscope::report::IReportExportHost
 {
 public:
