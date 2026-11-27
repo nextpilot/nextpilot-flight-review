@@ -55,11 +55,12 @@ plotscope --mcp-bridge        # MCP server（stdio JSON-RPC，供 AI 代理驱�
 
 ### 构建代码
 
-依赖 CMake ≥ 3.22、Qt 6（Core/Widgets/Gui/Svg）、C++17 编译器、Rust 工具链：
+依赖 CMake ≥ 3.24、Qt 6（Core/Widgets/Gui/Svg）、C++17 编译器、Rust 工具链：
 
 ```bash
-cmake -S . -B build
-cmake --build build -j
+tools/ubuntu-setup.sh --install          # 装齐环境并生成 ~/.ps-deps/env.sh
+cmake --preset default                   # 注入 PATH / CCACHE_DIR，并校验 ccache 真的能命中
+cmake --build --preset default -j
 ctest --test-dir build --output-on-failure
 ```
 

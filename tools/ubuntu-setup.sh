@@ -2,15 +2,18 @@
 # PlotScope 编译环境统一入口（Ubuntu/Debian）。
 #
 #   tools/ubuntu-setup.sh --check                 # 只体检，不改任何文件（默认）
-#   tools/ubuntu-setup.sh --install               # 全量：系统 apt 依赖 + 工具链 + Qt + Rust + Python venv + shell 块
-#   tools/ubuntu-setup.sh --install --system      # 只补系统 apt 依赖（GL / X11 / xcb 开发包）
-#   tools/ubuntu-setup.sh --install --toolchain   # 只处理 cmake / ninja / ccache（gcc 只体检，不自动装）
-#   tools/ubuntu-setup.sh --install --qt          # 只处理 Qt
-#   tools/ubuntu-setup.sh --install --python      # 只处理 venv 与 pip 依赖
-#   tools/ubuntu-setup.sh --install --rust        # 只处理 rustup 工具链
+#   tools/ubuntu-setup.sh --install               # 全量：系统 apt 依赖 + 工具链 + Qt + Rust + Python venv + shell 块；仓库内有 .githooks 时顺带注册 hook
+#   tools/ubuntu-setup.sh --install-hooks         # 只注册仓库 .githooks（不装环境）
+#   tools/ubuntu-setup.sh --uninstall-hooks       # 只解除仓库 .githooks 注册
+#   tools/ubuntu-setup.sh --check-hooks           # 只检查 Git hooks 是否已注册且可执行
+#   tools/ubuntu-setup.sh --install-system        # 只补系统 apt 依赖（GL / X11 / xcb 开发包）
+#   tools/ubuntu-setup.sh --install-toolchain     # 只处理 cmake / ninja / ccache（gcc 只体检，不自动装）
+#   tools/ubuntu-setup.sh --install-qt            # 只处理 Qt
+#   tools/ubuntu-setup.sh --install-python        # 只处理 venv 与 pip 依赖
+#   tools/ubuntu-setup.sh --install-rust          # 只处理 rustup 工具链
 #   tools/ubuntu-setup.sh --warm-cache            # 用 preset 预热 ccache：Release + Debug 各跑一次全量
-#   tools/ubuntu-setup.sh --warm-cache --force    # 已达标也强制重跑
-#   tools/ubuntu-setup.sh --install --warm-cache  # 装环境时顺手预热
+#   tools/ubuntu-setup.sh --warm-cache-force    # 缓存已达标也强制重跑
+#   tools/ubuntu-setup.sh --install-with-warm-cache  # 装环境时顺手预热
 #   tools/ubuntu-setup.sh --print-env             # 输出可 eval 的环境（CI 用）
 #   tools/ubuntu-setup.sh --uninstall             # 移除写进 shell 的块（保留已装目录）
 #
@@ -46,19 +49,23 @@ DO_WARM=0
 DO_FORCE=0
 for arg in "$@"; do
   case "$arg" in
-    --check | --install | --print-env | --uninstall) MODE="$arg" ;;
-    --warm-cache) DO_WARM=1 ;;
-    --force) DO_FORCE=1 ;;
-    --system) DO_TOOLCHAIN=0; DO_QT=0; DO_PYTHON=0; DO_RUST=0 ;;
-    --toolchain) DO_SYSTEM=0; DO_QT=0; DO_PYTHON=0; DO_RUST=0 ;;
-    --qt) DO_SYSTEM=0; DO_TOOLCHAIN=0; DO_PYTHON=0; DO_RUST=0 ;;
-    --python) DO_SYSTEM=0; DO_TOOLCHAIN=0; DO_QT=0; DO_RUST=0 ;;
-    --rust) DO_SYSTEM=0; DO_TOOLCHAIN=0; DO_QT=0; DO_PYTHON=0 ;;
-    -h | --help) sed -n '2,21p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --check | --install | --print-env | --uninstall | --install-hooks | --uninstall-hooks | --check-hooks) MODE="$arg" ;;
+    --install-system) MODE=--install; DO_SYSTEM=1; DO_TOOLCHAIN=0; DO_QT=0; DO_PYTHON=0; DO_RUST=0 ;;
+    --install-toolchain) MODE=--install; DO_SYSTEM=0; DO_TOOLCHAIN=1; DO_QT=0; DO_PYTHON=0; DO_RUST=0 ;;
+    --install-qt) MODE=--install; DO_SYSTEM=0; DO_TOOLCHAIN=0; DO_QT=1; DO_PYTHON=0; DO_RUST=0 ;;
+    --install-python) MODE=--install; DO_SYSTEM=0; DO_TOOLCHAIN=0; DO_QT=0; DO_PYTHON=1; DO_RUST=0 ;;
+    --install-rust) MODE=--install; DO_SYSTEM=0; DO_TOOLCHAIN=0; DO_QT=0; DO_PYTHON=0; DO_RUST=1 ;;
+    --warm-cache)
+      [ "$MODE" = "--check" ] || { echo "未知参数组合：--warm-cache 不能与 $MODE 同用；装环境请用 --install-with-warm-cache" >&2; exit 2; }
+      MODE=--warm-cache ;;
+    --warm-cache-force)
+      [ "$MODE" = "--check" ] || { echo "未知参数组合：--warm-cache-force 不能与 $MODE 同用" >&2; exit 2; }
+      MODE=--warm-cache; DO_FORCE=1 ;;
+    --install-with-warm-cache) MODE=--install; DO_WARM=1 ;;
+    -h | --help) sed -n '2,18p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "未知参数：$arg" >&2; exit 2 ;;
   esac
 done
-[ "$DO_WARM" = 1 ] && [ "$MODE" = "--check" ] && MODE="--warm-cache"
 
 log() { printf '[ubuntu-setup] %s\n' "$*"; }
 row() { printf '  %-8s %-10s %-12s %-10s %s\n' "$1" "$2" "$3" "$4" "$5"; }
@@ -179,15 +186,34 @@ for x in d: print(json.dumps(x,ensure_ascii=False))' "$MANIFEST" 2>/dev/null)
 
 # 来源判定看实际解析到的可执行文件：落在统一根下记为 managed（如软链的 cmake）
 src_of() {
-  local p; p="$(command -v "$1" 2>/dev/null)" || { echo none; return; }
+  local name="$1" p
+  case "$name" in
+    cmake) [ -x "$PS_DEPS_ROOT/bin/cmake" ] && { echo managed; return; } ;;
+    python3 | python) [ -x "$PS_DEPS_ROOT/toolchain/python/venv/bin/python" ] && { echo managed; return; } ;;
+  esac
+  p="$(command -v "$1" 2>/dev/null)" || { echo none; return; }
   case "$p" in "$PS_DEPS_ROOT"*) echo managed ;; *) echo system ;; esac
 }
 
 # ---------- 探测 ----------
-probe_cmake() { command -v cmake >/dev/null 2>&1 && cmake --version | head -1 | sed 's/cmake version //'; }
+# 优先查统一根下的实际安装位置，不依赖当前 shell 的 PATH：
+# --check 可能跑在 build 终端之外的 shell 里，PATH 不代表编译时环境。
+probe_cmake() {
+  if [ -x "$PS_DEPS_ROOT/bin/cmake" ]; then
+    "$PS_DEPS_ROOT/bin/cmake" --version | head -1 | sed 's/cmake version //'
+  elif command -v cmake >/dev/null 2>&1; then
+    cmake --version | head -1 | sed 's/cmake version //'
+  fi
+}
 probe_ninja() { command -v ninja >/dev/null 2>&1 && ninja --version; }
 probe_gcc() { command -v gcc >/dev/null 2>&1 && gcc -dumpversion; }
-probe_python() { command -v python3 >/dev/null 2>&1 && python3 -c 'import sys;print("%d.%d.%d"%sys.version_info[:3])'; }
+probe_python() {
+  if [ -x "$PS_DEPS_ROOT/toolchain/python/venv/bin/python" ]; then
+    "$PS_DEPS_ROOT/toolchain/python/venv/bin/python" -c 'import sys;print("%d.%d.%d"%sys.version_info[:3])'
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c 'import sys;print("%d.%d.%d"%sys.version_info[:3])'
+  fi
+}
 probe_ccache() {
   if [ -x "$PS_DEPS_ROOT/toolchain/ccache/bin/ccache" ]; then
     "$PS_DEPS_ROOT/toolchain/ccache/bin/ccache" --version | head -1 | awk '{print $3}'
@@ -243,6 +269,86 @@ record() { # name requirement actual source verdict
   row "$1" "$3" "$2" "$4" "$([ "$5" = true ] && echo '✓' || echo '✗')"
 }
 
+hook_dir() { printf '%s/.githooks' "$ROOT"; }
+
+in_git_worktree() {
+  git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1
+}
+
+hook_path_matches() {
+  local cur cur_abs want
+  cur="$(git -C "$ROOT" config --get core.hooksPath 2>/dev/null || true)"
+  [ -n "$cur" ] || return 1
+  case "$cur" in
+    /*) cur_abs="$(realpath -m -- "$cur" 2>/dev/null || true)" ;;
+    *) cur_abs="$(realpath -m -- "$ROOT/$cur" 2>/dev/null || true)" ;;
+  esac
+  want="$(realpath -m -- "$(hook_dir)" 2>/dev/null || hook_dir)"
+  [ "$cur_abs" = "$want" ]
+}
+
+install_git_hooks() {
+  local dir
+  dir="$(hook_dir)"
+
+  if ! in_git_worktree; then
+    log "非 Git 工作树，跳过 Git hooks 安装"
+    return 0
+  fi
+  if [ ! -d "$dir" ]; then
+    log "未发现 .githooks（独立环境安装），跳过 Git hooks 安装"
+    return 0
+  fi
+  for hook in pre-commit pre-push; do
+    [ -f "$dir/$hook" ] || {
+      log "缺 hook 文件：$dir/$hook"
+      return 1
+    }
+  done
+  git -C "$ROOT" config --local core.hooksPath .githooks
+  chmod +x "$dir/pre-commit" "$dir/pre-push"
+  log "已注册 Git hooks：core.hooksPath=.githooks"
+}
+
+uninstall_git_hooks() {
+  if ! in_git_worktree; then
+    log "非 Git 工作树，跳过 Git hooks 卸载"
+    return 0
+  fi
+  if hook_path_matches; then
+    git -C "$ROOT" config --local --unset core.hooksPath
+    log "已移除 Git hooks（core.hooksPath）"
+  else
+    log "core.hooksPath 不是本仓库 .githooks，跳过 Git hooks 卸载"
+  fi
+}
+
+check_git_hooks() {
+  local dir cur
+  dir="$(hook_dir)"
+
+  if ! in_git_worktree; then
+    log "非 Git 工作树，跳过 Git hooks 检查"
+    return 0
+  fi
+  if [ ! -d "$dir" ]; then
+    # 在 Git 工作树里 .githooks 是仓库资产，缺失本身就要报；
+    # 只有非工作树（脚本被独立下载）才允许没有 .githooks。
+    record git-hook ".githooks" "缺 .githooks" none false
+    log "Git 工作树缺少 .githooks：$dir"
+    return 1
+  fi
+
+  cur="$(git -C "$ROOT" config --get core.hooksPath 2>/dev/null || true)"
+  if hook_path_matches >/dev/null 2>&1 && [ -x "$dir/pre-commit" ] && [ -x "$dir/pre-push" ]; then
+    record git-hook ".githooks" "$cur" local true
+  else
+    record git-hook ".githooks" "${cur:-未设置}" local false
+    log "Git hooks 未注册或不可执行：core.hooksPath=${cur:-未设置}；修复：tools/ubuntu-setup.sh --install"
+    return 1
+  fi
+}
+
 check_all() {
   printf '  %-8s %-10s %-12s %-10s %s\n' "工具" "实测" "要求" "来源" "结果"
   local v
@@ -254,16 +360,13 @@ check_all() {
 
   v="$(probe_ccache)"; if [ -z "$v" ]; then
     record ccache "$V_CCACHE_MIN" "缺" none false
-  elif ! command -v ccache >/dev/null 2>&1; then
-    # 持久副本在、但当前 PATH 里没有：CMake 的 find_program 按 PATH 探，
-    # 这种状态下缓存实际未启用，必须标红而不是给 ✓。
-    record ccache "$V_CCACHE_VER" "$v" "managed(不在PATH)" false
-    log "ccache 在 $PS_DEPS_ROOT/toolchain/ccache/bin，但当前 PATH 探不到：. \"$PS_DEPS_ROOT/env.sh\" 后再构建"
   elif [ -x "$PS_DEPS_ROOT/toolchain/ccache/bin/ccache" ]; then
+    # 只认持久目录里的实际路径；当前 shell 的 PATH 属于编译终端，--check 不判。
     ver_satisfy "$v" "$V_CCACHE_VER" && record ccache "$V_CCACHE_VER" "$v" managed true || record ccache "$V_CCACHE_VER" "$v" managed false
-  else
-    # 系统 ccache 只要版本达标即可用于构建，与是否固化到持久目录无关
+  elif command -v ccache >/dev/null 2>&1; then
     ver_satisfy "$v" "$V_CCACHE_VER" && record ccache "$V_CCACHE_VER" "$v" system true || record ccache "$V_CCACHE_VER" "$v" system false
+  else
+    record ccache "$V_CCACHE_MIN" "缺" none false
   fi
 
   v="$(probe_rust)"; if [ -z "$v" ]; then
@@ -274,6 +377,8 @@ check_all() {
   fi
 
   local q; if q="$(find_qt)"; then record qt "$V_QT" "$V_QT" "$(qt_source)" true; else record qt "$V_QT" "缺" none false; fi
+
+  check_git_hooks
 }
 
 # ---------- shell 块 ----------
@@ -478,9 +583,9 @@ install_toolchain() {
       # 系统版本可能达标（如 3.28.3 ≥ 3.24），此时只是「pip 没备好」，不是版本低，
       # 系统 cmake 已足以构建；只有确实低于门槛才需要升级。切勿一律报「低于」。
       if ver_satisfy "$(probe_cmake)" "$V_CMAKE_VER"; then
-        log "cmake 由系统提供 $(probe_cmake)（≥$V_CMAKE_MIN，够用）；pip 托管的 cmake 未就绪，可先跑 --install --python 统一版本"
+        log "cmake 由系统提供 $(probe_cmake)（≥$V_CMAKE_MIN，够用）；pip 托管的 cmake 未就绪，可先跑 --install-python 统一版本"
       else
-        log "系统 cmake $(probe_cmake) 低于 $V_CMAKE_MIN，且 venv/pip 未就绪：先跑 --install --python，或自行安装 ≥$V_CMAKE_MIN 的 cmake"
+        log "系统 cmake $(probe_cmake) 低于 $V_CMAKE_MIN，且 venv/pip 未就绪：先跑 --install-python，或自行安装 ≥$V_CMAKE_MIN 的 cmake"
       fi
     fi
   fi
@@ -531,7 +636,7 @@ WRAPPER
 # 缓存命中后同样的全量重建能降到个位数秒级。换机器、清缓存目录、
 # CI 冷 runner 都会撞上未命中那一条，预热一次把缓存填满即可。
 #
-# 幂等：缓存已达阈值时直接跳过（--force 可强制重跑）。阈值取 deps-version.json
+# 幂等：缓存已达阈值时直接跳过（--warm-cache-force 可强制重跑）。阈值取 deps-version.json
 # 里 toolchains.ccache.warm_min_mb，避免每次 --install 都白跑几分钟。
 ccache_bin() {
   if [ -x "$PS_DEPS_ROOT/toolchain/ccache/bin/ccache" ]; then
@@ -675,7 +780,7 @@ cache_is_warm() {
 warm_cache() {
   local cc; cc="$(ccache_bin)"
   if [ -z "$cc" ]; then
-    log "错误：找不到 ccache，先跑 --install --toolchain"
+    log "错误：找不到 ccache，先跑 --install-toolchain"
     return 1
   fi
   export CCACHE_DIR="${CCACHE_DIR:-$PS_DEPS_ROOT/caches/ccache}"
@@ -687,7 +792,7 @@ warm_cache() {
   local mb; mb="$(ccache_cache_mb)"
   if [ "$DO_FORCE" != 1 ] && cache_is_warm; then
     log "ccache 已预热（Release+Debug 两套都达标，且与当前源码版本匹配），跳过。"
-    log "  需要强制重跑：tools/ubuntu-setup.sh --warm-cache --force"
+    log "  需要强制重跑：tools/ubuntu-setup.sh --warm-cache-force"
     return 0
   fi
 
@@ -838,7 +943,7 @@ pip_install() {
 }
 
 # ensure_python_venv：保证 $PS_DEPS_ROOT/toolchain/python/venv 的 pip 可用。
-# 抽成独立函数是因为 install_qt 也要用：单独跑 --install --qt 时 install_python 不会执行，
+# 抽成独立函数是因为 install_qt 也要用：单独跑 --install-qt 时 install_python 不会执行，
 # venv 不存在 → pip_install 直接失败 → 静默回退系统 aqt（版本不受控）。
 ensure_python_venv() {
   local venv="$PS_DEPS_ROOT/toolchain/python/venv"
@@ -890,7 +995,7 @@ install_qt() {
   if find_qt >/dev/null; then log "Qt $V_QT 已存在：$(find_qt)"; return 0; fi
   mkdir -p "$PS_DEPS_ROOT/toolchain/qt"
 
-  # aqtinstall 装在 venv 里：单独跑 --install --qt 时 install_python 没执行过，venv 可能不存在。
+  # aqtinstall 装在 venv 里：单独跑 --install-qt 时 install_python 没执行过，venv 可能不存在。
   # 这里自己保证一次，避免静默回退系统 aqt —— 那个版本不受控（3.3.0 对 archive 名支持更窄）。
   local venv_ok=0
   ensure_python_venv && venv_ok=1 || log "venv 不可用，稍后将回退系统 aqt"
@@ -912,7 +1017,7 @@ install_qt() {
     [ -n "$aqt" ] && log "回退系统 aqt（$("$aqt" version 2>/dev/null | head -1)）：版本不受控"
   fi
   if [ ! -x "$aqt" ]; then
-    log "缺 aqt：先跑 --install --python（venv 里装 aqtinstall）"
+    log "缺 aqt：先跑 --install-python（venv 里装 aqtinstall）"
     return 1
   fi
 
@@ -975,6 +1080,18 @@ install_rust() {
 
 # ---------- 主流程 ----------
 case "$MODE" in
+  --install-hooks)
+    install_git_hooks
+    exit $?
+    ;;
+  --uninstall-hooks)
+    uninstall_git_hooks
+    exit $?
+    ;;
+  --check-hooks)
+    check_git_hooks
+    exit $?
+    ;;
   --warm-cache)
     warm_cache
     exit $?
@@ -987,6 +1104,7 @@ case "$MODE" in
     ;;
   --print-env) print_env ;;
   --uninstall)
+    uninstall_git_hooks
     for f in "${STARTUP_FILES[@]}"; do strip_block "$f" && log "已清理 $f"; done
     log "已装目录保留在 $PS_DEPS_ROOT"
     ;;
@@ -1002,6 +1120,7 @@ case "$MODE" in
     if [ "$DO_QT" = 1 ]; then install_qt || fails=$((fails + 1)); fi
     write_block
     env_apply
+    install_git_hooks || fails=$((fails + 1))
     check_all
     save_state
     printf '\n'

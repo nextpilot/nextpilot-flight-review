@@ -71,9 +71,12 @@ CI 全绿不等于可合。主线合并前同时满足：
 ## hook
 
 ```bash
-git config core.hooksPath .githooks    # 每个 clone 一次
+tools/ubuntu-setup.sh --install        # 环境 + 仓库存在 .githooks 时注册 hook
+tools/ubuntu-setup.sh --install-hooks  # 只注册 hook；--uninstall-hooks / --check-hooks 对应卸载/检查
 ```
 
 - `pre-commit`：格式化暂存区（只修不拦），并对疑似整文件重排告警。
 - `pre-push`：跑 `local_preflight.sh` quick，失败阻断。
+- 非 Git 工作树（ubuntu-setup 被单独下载运行）跳过 hook 注册与检查；在 Git 工作树内 `.githooks` 缺失时 `--check` 直接失败。
+- CMake configure 会执行 `tools/ubuntu-setup.sh --check`，未过直接终止配置；CI 环境跳过。
 - 绕过：`SKIP_PREFLIGHT=1 git push`、`git commit --no-verify`。不建议，CI 仍会拦。

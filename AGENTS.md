@@ -24,7 +24,7 @@
 - 测试：根 `tests/`（`ctest`，fixture 在 `tests/fixture/`）
 - Rust 内核：`src/kernel`（cargo 编 `ps-abi`，构建入口在顶层 CMake）
 - 第三方锁版本库：`src/3rdparty`（lua-5.4 / saribbon / ads / mavlink）
-- 本地依赖前缀：`~/.ps-deps`（仓库外；由 `tools/ubuntu-setup.sh --install --qt` 生成）
+- 本地依赖前缀：`~/.ps-deps`（仓库外；由 `tools/ubuntu-setup.sh --install-qt` 生成）
 
 ## 2. 文档边界
 
@@ -48,7 +48,7 @@ tools/ci/local_preflight.sh --full   # 改过 C++，或推分支前最后一遍�
 ```
 
 - **基准统一 `origin/main`**：先 `git fetch origin && git rebase origin/main`。不允许在旧 base 上推送，否则改动行口径与 CI 不一致。
-- **启用 hook（每个 clone 一次）**：`git config core.hooksPath .githooks`。`pre-commit` 只修格式，`pre-push` 阻断未过门禁的推送。
+- **启用 hook**：`tools/ubuntu-setup.sh --install` 在仓库存在 `.githooks` 时自动注册；`--install-hooks` / `--uninstall-hooks` / `--check-hooks` 分别只做注册、解除、检查。没有 `.githooks`（独立环境安装）时自动跳过。`cmake` configure 会硬性执行 `tools/ubuntu-setup.sh --check`，未过直接失败；CI 环境自动跳过。`pre-commit` 只修格式，`pre-push` 阻断未过门禁的推送。
 - 改动符合 `src/AGENTS.md` 的目录、依赖与层级边界；新增 include 不跨越依赖矩阵；UI 遵守主题硬约束。
 - 新模块/扩展有对应测试；改 UI 做 GUI 冒烟。
 - **三条硬禁令**：不整文件重排；不放宽门禁换绿（不改断言、删测试、加 `#ifdef` 绕守卫、调 `.clang-tidy` 白名单）；不用 `--no-verify`、不 force-push `main`。

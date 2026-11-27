@@ -76,7 +76,7 @@ set(PS_DEPS_NANOARROW_URL
 | ccache       | `PS_USE_CCACHE`（默认 ON）  | 根 `CMakeLists.txt` 裸 `find_program(ccache)`，命中即设 `CMAKE_CXX_COMPILER_LAUNCHER`；探测不到就静默直连 |
 | 测试目标裁剪 | `PS_BUILD_TESTS`（默认 ON） | 关闭后不编测试目标，显著缩短日常迭代构建；此时 ctest 无用例可跑，属预期                                   |
 
-ccache 本身由 `tools/ubuntu-setup.sh --install --toolchain` 安装（自包含目录落
+ccache 本身由 `tools/ubuntu-setup.sh --install-toolchain` 安装（自包含目录落
 `~/.ps-deps/toolchain/ccache/`）。因为 `CMakeLists.txt` 里的探测靠 shell 的 `PATH`，
 换机器后重跑一次脚本即可，不需要改仓库配置。
 
@@ -99,6 +99,12 @@ ccache 的配置**不要堆在 shell 环境变量里**。环境变量优先级�
 所有编译判为 Uncacheable。preset 里用 `$env{HOME}/.ps-deps/caches/ccache` 注入，
 既覆盖干净环境，又不写死绝对路径（换用户/换机器均可用）；自定义了 `PS_DEPS_ROOT`
 的用户仍可在 shell export `CCACHE_DIR`（`--print-env` 会输出）覆盖为实际路径。
+
+**两层校验，别混为一谈：**`tools/ubuntu-setup.sh --check` 只检查工具实际安装路径是否存在、
+版本是否达标；它不判断当前 shell 的 PATH（`--check` 可能不在编译终端里），也不做编译验证。
+`cmake configure` 面向“这次构建”，会检查当前进程的 `CCACHE_DIR` 是否存在且可写、
+`CCACHE_DISABLE` 是否关闭，并用 `CMAKE_C_COMPILER` 实编两次验证命中；Linux 本地
+`PS_REQUIRE_CCACHE` 默认 ON，不通过直接失败。
 
 脚本生成的 `ccache.conf`（`--install` 和 `--warm-cache` 都会确保它存在）：
 
@@ -184,8 +190,8 @@ ccache 的收益要等缓存里真有过东西才兑现。换机器、清过缓�
 
 ```bash
 tools/ubuntu-setup.sh --warm-cache          # 跑一次全量构建把缓存填满
-tools/ubuntu-setup.sh --warm-cache --force  # 缓存已达标也强制重跑
-tools/ubuntu-setup.sh --install --warm-cache  # 装环境时顺手预热
+tools/ubuntu-setup.sh --warm-cache-force  # 缓存已达标也强制重跑
+tools/ubuntu-setup.sh --install-with-warm-cache  # 装环境时顺手预热
 ```
 
 不预热也不会坏，只是第一次构建仍是冷构建。脚本用 `ccache --print-stats` 的
@@ -287,7 +293,7 @@ pip 用户在 `pip.conf` 显式配过 index 时脚本不覆盖；apt 仅对 Ubun
 
 | 现象                                                         | 原因与处理                                                                       |
 | ------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| `--install --rust` 卡在下载 toolchain                        | 检查 `mirrors.rustup` 数组里各 installer/dist 地址可达性；轮询会自动跳过不可达项 |
+| `--install-rust` 卡在下载 toolchain                          | 检查 `mirrors.rustup` 数组里各 installer/dist 地址可达性；轮询会自动跳过不可达项 |
 | `--install` 下载慢但没失败                                   | 轮询会逐个试，前面的源超时（6s）会拖慢；把最快的源调到数组首位即可               |
 | 配置阶段卡在下载                                             | 走了上游 URL。确认镜像仓库已推 tag，且 `PS_DEPS_NANOARROW_URL` 首项是 Gitee 地址 |
 | 解压后找不到 `CMakeLists.txt`                                | tag 没推上去，404 后被当成 zip 解压失败。`git ls-remote --tags <mirror>` 确认    |

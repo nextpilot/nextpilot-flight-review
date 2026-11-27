@@ -1,8 +1,8 @@
-# Python 包版本唯一源。由 tools/ubuntu-setup.sh --install --python 装进
+# Python 包版本唯一源。由 tools/ubuntu-setup.sh --install-python 装进
 # $PS_DEPS_ROOT/toolchain/python/venv，不污染系统 site-packages。
 # 解释器版本门槛见 deps-version.json 的 toolchains.python.min；
-# 升级包版本后重跑 --install --python。
-# 注意 aqtinstall 是 Qt 下载器（--install --qt 依赖它），不是运行时依赖。
+# 升级包版本后重跑 --install-python。
+# 注意 aqtinstall 是 Qt 下载器（--install-qt 依赖它），不是运行时依赖。
 
 pynmea2==1.19.0
 pyubx2==1.4.1

@@ -5,6 +5,7 @@ project(PlotScope VERSION 0.1.0 LANGUAGES C CXX)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_SOURCE_DIR}/cmake")
 include(Version)
 include(Warnings)
+include(DevEnvCheck)
 
 # 可复现路径前缀：把源码树与构建目录的绝对路径规整成稳定值。
 # 目的有两个：
@@ -40,13 +41,20 @@ endif()
 include(Dependencies)
 
 # 编译缓存：命中即跳过整段编译，2 核机器收益最明显。
-# 探不到时默认只告警并直连编译器——没装 ccache 的机器必须照常可编；
-# 但「以为开了、实际没开」不能静默：验收机/CI 用 -DPS_REQUIRE_CCACHE=ON
-# 把这条变成配置期硬失败。非交互 shell（agent/CI 的一次性 bash）不读
-# ~/.bashrc，PATH 里可能没有 $PS_DEPS_ROOT/toolchain/ccache/bin，
-# 这类进程先 `. "$PS_DEPS_ROOT/env.sh"`。
+# 默认要求 ccache 必须真的可用：装上但没进 PATH、CCACHE_DIR 不可写、被 CCACHE_DISABLE
+# 关掉，都会在 configure 阶段硬失败，而不是“以为开了、实际直连编译器”。
+# 完全不用缓存时显式 -DPS_USE_CCACHE=OFF。
+# 非交互 shell（agent/CI 的一次性 bash）不读 ~/.bashrc，先 `. "$PS_DEPS_ROOT/env.sh"`，
+# 或直接用 cmake --preset default（preset 会注入 PATH / CCACHE_DIR）。
 option(PS_USE_CCACHE "探测 ccache 并启用编译缓存" ON)
-option(PS_REQUIRE_CCACHE "探不到 ccache 时配置期直接失败（验收机/CI 用）" OFF)
+# Linux 本地默认硬门禁；Windows 走 sccache 或系统未装 ccache 时保持可配置，
+# 需要严格验收时显式 -DPS_REQUIRE_CCACHE=ON。
+if(WIN32)
+    set(_ps_require_ccache_default OFF)
+else()
+    set(_ps_require_ccache_default ON)
+endif()
+option(PS_REQUIRE_CCACHE "ccache 在当前 CMake 环境不可用时配置期失败" ${_ps_require_ccache_default})
 if(PS_USE_CCACHE)
     # 不写 cache：旧 build 目录里残留的绝对路径在换机/换 HOME 后失效，
     # 会让 launcher 指向不存在的文件（表现为 /bin/sh: ccache: not found）。
@@ -60,17 +68,20 @@ if(PS_USE_CCACHE)
     if(CCACHE_PROGRAM)
         set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
         set(CMAKE_C_COMPILER_LAUNCHER "${CCACHE_PROGRAM}")
+        if(PS_REQUIRE_CCACHE)
+            _ps_check_ccache_usable("${CCACHE_PROGRAM}")
+        endif()
         message(STATUS "[ccache] 已启用：${CCACHE_PROGRAM}")
     elseif(PS_REQUIRE_CCACHE)
         message(STATUS "[ccache] 期望的 ccache：${_ps_ccache_hint}")
         message(FATAL_ERROR
-            "[ccache] PS_REQUIRE_CCACHE=ON 但没有探到 ccache；装法 tools/ubuntu-setup.sh --install --toolchain，"
+            "[ccache] PS_REQUIRE_CCACHE=ON 但没有探到 ccache；装法 tools/ubuntu-setup.sh --install-toolchain，"
             "非交互 shell 先 source \"${_ps_ccache_root}/env.sh\"；不用缓存就 -DPS_USE_CCACHE=OFF。")
     else()
         message(WARNING
             "[ccache] 没探到 ccache，本次构建直连编译器（编译缓存未启用）；期望 ${_ps_ccache_hint} "
             "或 PATH 上的系统 ccache。非交互 shell（agent/CI 的一次性 bash）不读 ~/.bashrc，"
-            "先 source \"${_ps_ccache_root}/env.sh\"；验收机要硬失败就 -DPS_REQUIRE_CCACHE=ON。")
+            "先 source \"${_ps_ccache_root}/env.sh\"；不用缓存就 -DPS_USE_CCACHE=OFF。")
     endif()
 endif()
 
