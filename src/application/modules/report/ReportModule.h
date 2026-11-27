@@ -11,6 +11,10 @@
 
 #include <QObject>
 
+namespace nextpilot::plotscope::uischema {
+class IScriptCapabilities;
+} // namespace nextpilot::plotscope::uischema
+
 using namespace nextpilot::plotscope::host;
 using namespace nextpilot::plotscope::registry;
 
@@ -24,5 +28,11 @@ public:
     nextpilot::plotscope::host::ModuleInfo info() const override;
     void initialize(nextpilot::plotscope::instantiation::InstantiationService &services) override;
     void onAttach(nextpilot::plotscope::host::IUiContext &ui) override;
+    // report.export 的注册点在外壳装配（导出器捕获 AppContext），卸载时由本模块摘除；
+    // 模块自身不注册 view action，因此 onDetach 只做这一件事。
+    void onDetach() override;
     nextpilot::plotscope::registry::ModuleContributions contributes() const override;
+
+private:
+    nextpilot::plotscope::uischema::IScriptCapabilities *m_caps = nullptr;
 };

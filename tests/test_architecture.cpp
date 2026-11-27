@@ -1244,6 +1244,21 @@ using namespace nextpilot::plotscope::context;
         fprintf(stdout, "[ok] 卸载后声明式贡献摘净，重激活不重复\n");
     }
 
+    // report.export 归属装配层（捕获 AppContext，不引用模块对象），但注销权按模块
+    // 生命周期归位：卸载 mod.report 后 action 从交互表摘除，不留游离注册。
+    {
+        App isolated;
+        CHECK(isolated.startup(true).isEmpty());
+        auto &hub = isolated.context().interactions();
+        hub.registerViewAction(QStringLiteral("report.export"),
+                               [](const QVariantMap &) { return Result<QVariant>(QVariant()); });
+        Result<QVariant> out{QVariant()};
+        CHECK(hub.dispatchViewAction(QStringLiteral("report.export"), QVariantMap(), out));
+        CHECK(isolated.host().deactivate(QStringLiteral("mod.report")));
+        CHECK(!hub.dispatchViewAction(QStringLiteral("report.export"), QVariantMap(), out));
+        fprintf(stdout, "[ok] 卸载 report 模块后 report.export 摘除\n");
+    }
+
     fprintf(stdout, "\n全部架构契约测试通过\n");
     return 0;
 }

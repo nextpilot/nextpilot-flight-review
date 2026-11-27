@@ -2,6 +2,7 @@
 
 #include "BuiltinModuleHub.h"
 #include "Contribution.h"
+#include "IScriptCapabilities.h"
 #include "InstantiationService.h"
 
 using nextpilot::plotscope::instantiation::InstantiationService;
@@ -24,9 +25,12 @@ ModuleInfo ReportModule::info() const
 
 IWorkbenchContribution *ReportModule::create() { return new ReportModule(); }
 
-void ReportModule::initialize(InstantiationService &)
+void ReportModule::initialize(InstantiationService &services)
 {
-    // 报告模块无需运行时装配：入口声明在 onAttach，导出管线在外壳层。
+    // 报告模块无运行时装配项；只需拿到能力接口，供 onDetach 摘除由装配层注册的
+    // report.export（注册点在外壳 ExportReportExporter，注销权按模块生命周期归位）。
+    m_caps =
+        services.getService<nextpilot::plotscope::uischema::IScriptCapabilities>(QStringLiteral("script.capabilities"));
 }
 
 ModuleContributions ReportModule::contributes() const
@@ -55,6 +59,12 @@ void ReportModule::onAttach(IUiContext &ui)
 {
     Q_UNUSED(ui);
     // A8b-M2：UI 声明已迁至 contributes()，宿主统一灌回；onAttach 不再声明。
+}
+
+void ReportModule::onDetach()
+{
+    if (m_caps)
+        m_caps->unregisterViewAction(QStringLiteral("report.export"));
 }
 
 #include "ReportModule.moc"
