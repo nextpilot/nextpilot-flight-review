@@ -25,8 +25,8 @@ class LiveConnectDialog : public QDialog
 {
     Q_OBJECT
 public:
-    // parserIds 是可用解析器 id 目录快照（经 AppContext::parserIds() 提供），
-    // 对话框不 include ParserHub、不硬编码解析器清单。
+    // parserIds 是可用解析器 id 目录快照，由调用方注入；
+    // 对话框不直接依赖解析器容器实现，也不硬编码解析器清单。
     explicit LiveConnectDialog(nextpilot::plotscope::intent::IIntentExecutor &executor, const QStringList &parserIds,
                                QWidget *parent = nullptr);
 

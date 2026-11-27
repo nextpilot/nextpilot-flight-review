@@ -11,6 +11,8 @@ add_library(ps_context STATIC
     src/DerivedSeriesHub.cpp
     src/IngestPipeline.cpp
     src/IngestOrchestrator.cpp
+    src/ParserCatalog.cpp
+    include/ParserCatalog.h
     src/MessageLog.cpp
     src/PersistentStateHub.cpp
     src/StatusHub.cpp

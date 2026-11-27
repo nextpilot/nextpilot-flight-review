@@ -1,6 +1,6 @@
 #include "BatchRunner.h"
 
-#include "ParserHub.h"
+#include "ParserCatalog.h"
 
 #include "Dataset.h"
 #include "DatasetHub.h"
@@ -29,47 +29,14 @@ namespace
 {
 // 格式一律由解析器注册表回答：扩展后缀 -> 解析器 id。未知后缀返回空串，
 // 由调用方给出可读报错，绝不在批量侧自造格式表或回退某个"默认格式"。
-QString formatForPath(const QString &path)
-{
-    const QString suffix = QStringLiteral(".") + QFileInfo(path).suffix().toLower();
-    const auto *entry = parser::ParserHub::findByExtension(suffix);
-    return entry ? QString::fromUtf8(entry->info.id) : QString();
-}
+QString formatForPath(const QString &path) { return context::ParserCatalog::formatForPath(path); }
 
 // 默认收集 pattern 同样来自注册表：每个已登记解析器声明了哪些后缀就收哪些，
 // 不再在代码里写死具体后缀。
-QStringList defaultPatterns()
-{
-    static const QStringList patterns = [] {
-        QStringList out;
-        for (const QString &id : parser::ParserHub::ids())
-        {
-            const auto *entry = parser::ParserHub::entry(id);
-            if (!entry || !entry->info.extensions)
-                continue;
-            for (const QString &piece :
-                 QString::fromUtf8(entry->info.extensions).split(QLatin1Char(','), Qt::SkipEmptyParts))
-            {
-                const QString ext = piece.trimmed().toLower();
-                if (ext.startsWith(QLatin1Char('.')))
-                    out << QStringLiteral("*") + ext;
-            }
-        }
-        out.removeDuplicates();
-        return out;
-    }();
-    return patterns;
-}
+QStringList defaultPatterns() { return context::ParserCatalog::patterns(); }
 
 // 已注册后缀，供"无法识别格式"的报错列出可选项。
-QString knownSuffixes()
-{
-    const QStringList patterns = defaultPatterns();
-    QStringList out;
-    for (const QString &p : patterns)
-        out << p.mid(1);
-    return out.join(QLatin1Char(','));
-}
+QString knownSuffixes() { return context::ParserCatalog::suffixes().join(QLatin1Char(',')); }
 
 // Lua 字符串字面量安全包装（路径里可能有引号/反斜杠）。
 QString luaStr(const QString &s)

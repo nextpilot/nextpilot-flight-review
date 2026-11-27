@@ -2,7 +2,7 @@
 // GUI 点击、脚本调用、Job 回放三条路径共用同一个执行器（意图是公共货币）。
 #include <type_traits>
 #include "../core/App.h"
-#include "ParserHub.h"
+#include "ParserCatalog.h"
 #include "Intent.h"
 #include "Dataset.h"
 #include "ContributionsFormat.h"
@@ -74,31 +74,13 @@ static void printUsage()
 
 static Intent makeLoadIntent(const QString &path)
 {
-    // 格式由解析器注册表回答，CLI 不认识任何具体扩展名；未登记时 format 留空，
+    // 格式由解析器目录回答，CLI 不认识任何具体扩展名；未登记时 format 留空，
     // 由调用方报可读错误（不猜默认格式）。
-    const QString suffix = QStringLiteral(".") + QFileInfo(path).suffix().toLower();
-    const auto *entry = nextpilot::plotscope::parser::ParserHub::findByExtension(suffix);
     Intent intent;
     intent.op = QStringLiteral("data.load");
     intent.params[QStringLiteral("path")] = path;
-    intent.params[QStringLiteral("format")] = entry ? QString::fromUtf8(entry->info.id) : QString();
+    intent.params[QStringLiteral("format")] = nextpilot::plotscope::context::ParserCatalog::formatForPath(path);
     return intent;
-}
-
-// 已登记后缀清单（用于"无法识别格式"的报错）。
-static QString knownSuffixes()
-{
-    QStringList out;
-    for (const QString &id : nextpilot::plotscope::parser::ParserHub::ids())
-    {
-        const auto *entry = nextpilot::plotscope::parser::ParserHub::entry(id);
-        if (!entry || !entry->info.extensions)
-            continue;
-        for (const QString &p : QString::fromUtf8(entry->info.extensions).split(QLatin1Char(','), Qt::SkipEmptyParts))
-            out << p.trimmed().toLower();
-    }
-    out.removeDuplicates();
-    return out.join(QLatin1Char(','));
 }
 
 static Intent makeScriptIntent(const QString &path)
@@ -378,7 +360,8 @@ int main(int argc, char **argv)
         if (intent.params.value(QStringLiteral("format")).toString().isEmpty())
         {
             fprintf(stderr, "error[E_FORMAT]: 无法识别格式 %s（已注册后缀: %s）\n",
-                    u8(QStringLiteral(".") + QFileInfo(args.at(2)).suffix().toLower()), u8(knownSuffixes()));
+                    u8(QStringLiteral(".") + QFileInfo(args.at(2)).suffix().toLower()),
+                    u8(nextpilot::plotscope::context::ParserCatalog::suffixes().join(QLatin1Char(','))));
             return 1;
         }
         Result<IntentResult> r = application.host().execute(intent);

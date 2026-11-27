@@ -24,6 +24,12 @@ set_target_properties(ps_test_dataset_standalone PROPERTIES AUTOMOC ON CXX_STAND
 add_test(NAME ps_dataset_standalone COMMAND ps_test_dataset_standalone)
 
 # === PersistentStateHub 验收（M4-R2）：往返 / 分段 / 登记序 / bestEffort ===
+add_executable(ps_test_parser_catalog test_parser_catalog.cpp)
+# 需要真实解析器自注册进注册表：link OBJECT 库带进 CsvParser 等内置解析器 TU。
+target_link_libraries(ps_test_parser_catalog PRIVATE ps_context ps_toolbox_common Qt6::Core)
+set_target_properties(ps_test_parser_catalog PROPERTIES AUTOMOC ON CXX_STANDARD 17)
+add_test(NAME ps_parser_catalog COMMAND ps_test_parser_catalog)
+
 add_executable(ps_test_persistent_state test_persistent_state.cpp)
 target_link_libraries(ps_test_persistent_state PRIVATE ps_context Qt6::Core)
 set_target_properties(ps_test_persistent_state PROPERTIES AUTOMOC ON CXX_STANDARD 17)
