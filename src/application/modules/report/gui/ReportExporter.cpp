@@ -249,13 +249,13 @@ Result<void> exportReportPdf(AppContext &appCtx, const ReportRequest &request)
     return Result<void>();
 }
 
-// 装配层调用（gui_main）：把 report.export viewAction 注册到 InteractionHub。
-// 归属：注册者是装配层（捕获进程级 AppContext，不引用模块对象），注销权由
-// ReportModule::onDetach 执行（见 ReportModule.cpp）——模块卸载即摘除，不留游离项。
-// 脚本 app.call("report.export", {...}) 与 Ribbon 按钮都走这条 handler。
-// title/creator 由外壳按 ProductSpec 兜底后经 params 传入——模块不认识产品名。
-void installReportExport(nextpilot::plotscope::context::AppContext &appCtx)
+// report.export 的安装/卸载：脚本 app.call("report.export", {...}) 与 Ribbon 按钮
+// 共用这条 handler。title/creator 由调用方按 ProductSpec 兜底后经 params 传入。
+void ReportExportHost::install()
 {
+    if (m_installed)
+        return;
+    auto &appCtx = m_appCtx;
     appCtx.interactions().registerViewAction(
         QStringLiteral("report.export"),
         [&appCtx](const QVariantMap &params) -> nextpilot::plotscope::foundation::Result<QVariant> {
@@ -276,6 +276,15 @@ void installReportExport(nextpilot::plotscope::context::AppContext &appCtx)
                 return nextpilot::plotscope::foundation::Result<QVariant>(r.error());
             return nextpilot::plotscope::foundation::Result<QVariant>(QVariant(req.path));
         });
+    m_installed = true;
+}
+
+void ReportExportHost::uninstall()
+{
+    if (!m_installed)
+        return;
+    m_appCtx.interactions().unregisterViewAction(QStringLiteral("report.export"));
+    m_installed = false;
 }
 
 // A2a：Ribbon「导出报告」的 GUI 交互（选 PDF 路径）归模块自己，外壳零业务特判。

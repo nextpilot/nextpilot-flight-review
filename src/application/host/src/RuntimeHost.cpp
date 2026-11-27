@@ -121,9 +121,17 @@ QHash<QString, QString> RuntimeHost::activate(const QStringList &disabledIds, IU
 
     m_order = resolveOrder(provides, errors);
 
+    // 只有本次 activate 新收集到的声明式贡献才灌给装配层；已激活模块的贡献保留在
+    // m_contributions 里，重复 install 会让 slots 里的动作叠加（实测 1 次重激活 ×3）。
+    const int contribBefore = int(m_contributions.size());
+
     for (const QString &id : m_order)
     {
         Node &node = m_nodes[id];
+        // 幂等：已激活模块不重建。否则 deactivate 单个模块后再 activate 会把其余模块
+        // 全部实例化一遍，重复注册动作/贡献（IKYDH2 生命周期对称性测试暴露）。
+        if (node.active)
+            continue;
         if (!node.reg.factory)
         {
             errors.insert(id, QStringLiteral("工厂为空"));
@@ -162,8 +170,8 @@ QHash<QString, QString> RuntimeHost::activate(const QStringList &disabledIds, IU
     // 语义与原 if(ui) 一致：headless（ui 空）不灌 UI 声明；bare 壳未接 installer
     // （nullptr）→ 也不灌，与"零模块"装配一致。
     if (ui && m_contribInstaller)
-        for (const auto &c : m_contributions)
-            m_contribInstaller->install(c);
+        for (int i = contribBefore; i < int(m_contributions.size()); ++i)
+            m_contribInstaller->install(m_contributions[i]);
 
     return errors;
 }

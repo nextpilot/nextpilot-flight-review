@@ -2,7 +2,7 @@
 
 #include "BuiltinModuleHub.h"
 #include "Contribution.h"
-#include "IScriptCapabilities.h"
+#include "IReportExportHost.h"
 #include "InstantiationService.h"
 
 using nextpilot::plotscope::instantiation::InstantiationService;
@@ -27,10 +27,10 @@ IWorkbenchContribution *ReportModule::create() { return new ReportModule(); }
 
 void ReportModule::initialize(InstantiationService &services)
 {
-    // 报告模块无运行时装配项；只需拿到能力接口，供 onDetach 摘除由装配层注册的
-    // report.export（注册点在外壳 ExportReportExporter，注销权按模块生命周期归位）。
-    m_caps =
-        services.getService<nextpilot::plotscope::uischema::IScriptCapabilities>(QStringLiteral("script.capabilities"));
+    // headless 没有实现（导出要 Qt Widgets），取不到就跳过：report.export 不出现。
+    m_host = services.getService<nextpilot::plotscope::report::IReportExportHost>(QStringLiteral("report.exportHost"));
+    if (m_host)
+        m_host->install();
 }
 
 ModuleContributions ReportModule::contributes() const
@@ -55,16 +55,10 @@ ModuleContributions ReportModule::contributes() const
     return c;
 }
 
-void ReportModule::onAttach(IUiContext &ui)
-{
-    Q_UNUSED(ui);
-    // A8b-M2：UI 声明已迁至 contributes()，宿主统一灌回；onAttach 不再声明。
-}
-
 void ReportModule::onDetach()
 {
-    if (m_caps)
-        m_caps->unregisterViewAction(QStringLiteral("report.export"));
+    if (m_host)
+        m_host->uninstall();
 }
 
 #include "ReportModule.moc"

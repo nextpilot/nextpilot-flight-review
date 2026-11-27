@@ -163,6 +163,8 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
 
     App application;
+    // IKYDH2：report.export 由模块生命周期托管，host 由组合根注册。
+    nextpilot::plotscope::gui::ReportExportHost reportExportHost(application.context());
     MainWindow window(application.context(), nextpilot::plotscope::registry::plotScopeProductSpec());
 
     // 产品身份文案（19a/19b）：身份/用途说明来自 ProductSpec，壳零硬编码业务描述。
@@ -192,9 +194,18 @@ int main(int argc, char *argv[])
                                                                    &application.context(), &application.host()));
     CHECK(nextpilot::plotscope::ext::automotive::installAutomotiveViewFactories(
         application.host().services(), &application.context(), &application.host()));
+    application.host().services()->registerSingleton(
+        QStringLiteral("report.exportHost"), &reportExportHost, QStringLiteral("assembly"), 1,
+        nextpilot::plotscope::instantiation::ServiceTypeTag<nextpilot::plotscope::report::IReportExportHost>::value());
     window.build(application.host());
-    // 测试不走 gui_main，须在此显式装配 report.export viewAction（业务在 report 模块呈现层）。
-    nextpilot::plotscope::gui::installReportExport(application.context());
+    // IKYDH2：report.export 由 ReportModule 生命周期托管（install 于 initialize，
+    // 注销于 onDetach），壳不再显式装配。此处只断言"恰好一份"；卸载/重激活的
+    // 摘除与恢复在 test_architecture 的 headless 场景验证（那里没有 slots 干扰）。
+    {
+        const auto keys = application.context().interactions().keysAsStrings();
+        CHECK(keys.count(QStringLiteral("report.export")) == 1);
+        OK("report.export 由模块自装配：启动即有且只有一份");
+    }
     // 先给窗口一个确定尺寸：画布按自身像素宽请求数据，尺寸确定后断言才可复现。
     window.resize(1280, 800);
 

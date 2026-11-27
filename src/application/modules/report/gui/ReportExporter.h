@@ -4,12 +4,14 @@
 //
 // 归属 report 模块呈现层：报告内容是报告域业务（模板 + 数据集元数据），
 // 画布经 AppContext 注入的 canvas provider 取得，模块不反向依赖外壳。
-// 装配层调 installReportExport 把 "report.export" viewAction 注册到交互表。
+// 组合根注册 ReportExportHost（实现 IReportExportHost），由 report 模块在
+// initialize 安装、onDetach 卸载；install/uninstall 幂等。
 //
 // 矢量管线：QPdfWriter（QtGui）+ QWidget::render(&painter) —— 视图走
 // QPainter 绘制，文字与线条直接以矢量写进 PDF，验收"不糊"免费。
 // 中文字体走 Qt 字体子系统（嵌 TrueType 子集），无需手工嵌字体文件。
 
+#include "IReportExportHost.h"
 #include "Result.h"
 
 #include <QString>
@@ -38,7 +40,17 @@ struct ReportRequest
 nextpilot::plotscope::foundation::Result<void> exportReportPdf(nextpilot::plotscope::context::AppContext &appCtx,
                                                                const ReportRequest &request);
 
-// 装配层调用：注册 "report.export" viewAction（脚本与 Ribbon 按钮共用入口）。
-void installReportExport(nextpilot::plotscope::context::AppContext &appCtx);
+// report.export 的安装/卸载实现：注册进交互表，handler 与脚本、Ribbon 共用。
+class ReportExportHost final : public nextpilot::plotscope::report::IReportExportHost
+{
+public:
+    explicit ReportExportHost(nextpilot::plotscope::context::AppContext &appCtx) : m_appCtx(appCtx) {}
+    void install() override;
+    void uninstall() override;
+
+private:
+    nextpilot::plotscope::context::AppContext &m_appCtx;
+    bool m_installed = false;
+};
 
 } // namespace nextpilot::plotscope::gui

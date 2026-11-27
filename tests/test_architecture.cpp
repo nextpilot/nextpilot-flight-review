@@ -22,6 +22,7 @@
 #include "IMessageParser.h"
 #include "NmeaMessageParser.h"
 #include "DataModule.h"
+#include "IReportExportHost.h"
 
 #include <QCoreApplication>
 #include <QSet>
@@ -35,6 +36,41 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+
+namespace {
+// IKYDH2 测试替身：report.export 的安装/卸载由模块生命周期驱动，不依赖 Qt Widgets。
+class FakeReportExportHost final : public nextpilot::plotscope::report::IReportExportHost
+{
+public:
+    explicit FakeReportExportHost(nextpilot::plotscope::context::AppContext &ctx) : m_ctx(ctx) {}
+
+    void install() override
+    {
+        if (m_installed)
+            return;
+        m_ctx.interactions().registerViewAction(
+            QStringLiteral("report.export"),
+            [](const QVariantMap &) -> nextpilot::plotscope::foundation::Result<QVariant> {
+                return nextpilot::plotscope::foundation::Result<QVariant>(QVariant(QStringLiteral("ok")));
+            });
+        m_installed = true;
+    }
+
+    void uninstall() override
+    {
+        if (!m_installed)
+            return;
+        m_ctx.interactions().unregisterViewAction(QStringLiteral("report.export"));
+        m_installed = false;
+    }
+
+    bool installed() const { return m_installed; }
+
+private:
+    nextpilot::plotscope::context::AppContext &m_ctx;
+    bool m_installed = false;
+};
+} // namespace
 
 // Release(NDEBUG) 下 assert 是空操作；用 CHECK 做真实断言，避免有副作用的
 // 调用被 assert 包裹后在 Release 里整个消失（历史踩过坑）。
@@ -260,6 +296,10 @@ int main(int argc, char **argv)
     // 以及所有既有模块与扩展的代码一行未改。它们能被装载，正是
     // 「新增 module / extension 不修改其他代码」的直接证明。
     App application;
+    FakeReportExportHost fakeReportHost(application.context());
+    application.host().services()->registerSingleton(
+        QStringLiteral("report.exportHost"), &fakeReportHost, QStringLiteral("test"), 1,
+        nextpilot::plotscope::instantiation::ServiceTypeTag<nextpilot::plotscope::report::IReportExportHost>::value());
     const auto errors = application.startup(true);
     CHECK(errors.isEmpty());
     CHECK(application.host().activeIds().size() == 9); // 8 内置（含 mod.report / mod.workspace）+ 1 探针
@@ -270,6 +310,21 @@ int main(int argc, char **argv)
     CHECK(application.host().isActive(QStringLiteral("mod.analysis")));
     CHECK(application.host().isActive(QStringLiteral("mod.report")));
     CHECK(application.host().isActive(QStringLiteral("mod.workspace")));
+
+    // IKYDH2：卸载 mod.report 摘除 report.export（替换 host 实现，与 GUI 同路径）。
+    {
+        const int actionsBefore = application.context().interactions().count();
+        CHECK(application.context().interactions().keysAsStrings().contains(QStringLiteral("report.export")));
+        CHECK(application.host().deactivate(QStringLiteral("mod.report")));
+        CHECK(!application.context().interactions().keysAsStrings().contains(QStringLiteral("report.export")));
+        CHECK(application.host().activate(QStringList(), nullptr).isEmpty());
+        CHECK(application.context().interactions().keysAsStrings().contains(QStringLiteral("report.export")));
+        CHECK(application.context().interactions().count() == actionsBefore);
+        CHECK(application.host().activate(QStringList(), nullptr).isEmpty());
+        CHECK(application.context().interactions().count() == actionsBefore);
+        CHECK(fakeReportHost.installed());
+        fprintf(stdout, "[ok] 卸载并重激活 report 模块后 report.export 恢复，且不叠加\n");
+    }
 
     // 探针模块提供的能力可用（它自带的意图处理器已被注册）。
     {
@@ -1244,20 +1299,9 @@ using namespace nextpilot::plotscope::context;
         fprintf(stdout, "[ok] 卸载后声明式贡献摘净，重激活不重复\n");
     }
 
-    // report.export 归属装配层（捕获 AppContext，不引用模块对象），但注销权按模块
-    // 生命周期归位：卸载 mod.report 后 action 从交互表摘除，不留游离注册。
-    {
-        App isolated;
-        CHECK(isolated.startup(true).isEmpty());
-        auto &hub = isolated.context().interactions();
-        hub.registerViewAction(QStringLiteral("report.export"),
-                               [](const QVariantMap &) { return Result<QVariant>(QVariant()); });
-        Result<QVariant> out{QVariant()};
-        CHECK(hub.dispatchViewAction(QStringLiteral("report.export"), QVariantMap(), out));
-        CHECK(isolated.host().deactivate(QStringLiteral("mod.report")));
-        CHECK(!hub.dispatchViewAction(QStringLiteral("report.export"), QVariantMap(), out));
-        fprintf(stdout, "[ok] 卸载 report 模块后 report.export 摘除\n");
-    }
+    // report.export 的注册/注销已移交 IReportExportHost（由装配根实现并注入），
+    // 生命周期回归模块：上面的"report.export 随模块启停"用例已覆盖摘除与恢复，
+    // 此处不再在 hub 上裸注册（那会绕开宿主、测不到真实链路）。
 
     fprintf(stdout, "\n全部架构契约测试通过\n");
     return 0;

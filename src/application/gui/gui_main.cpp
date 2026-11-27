@@ -177,6 +177,15 @@ int main(int argc, char *argv[])
     if (!nextpilot::plotscope::ext::automotive::installAutomotiveViewFactories(
             application.host().services(), &application.context(), &application.host()))
         reportAssemblyFailure(application.context(), "installAutomotiveViewFactories");
+#ifdef PS_HAS_REPORT_GUI
+    // 组合根注册 report.export 的 host；report 模块在 initialize 安装、onDetach 卸载。
+    // 必须在 window.build（内部 host.activate）之前注册，模块 initialize 才取得到。
+    nextpilot::plotscope::gui::ReportExportHost reportExportHost(application.context());
+    application.host().services()->registerSingleton(
+        QStringLiteral("report.exportHost"), &reportExportHost, QStringLiteral("assembly"), 1,
+        nextpilot::plotscope::instantiation::ServiceTypeTag<nextpilot::plotscope::report::IReportExportHost>::value());
+#endif
+
     nextpilot::plotscope::gui::MainWindow window(application.context(), productSpec);
     window.build(application.host());
 
@@ -187,13 +196,6 @@ int main(int argc, char *argv[])
     nextpilot::plotscope::assembly::ExtensionActivationService extensionActivation(
         application.context());
     extensionActivation.bind(window.commandRegistry(), application.host());
-
-#ifdef PS_HAS_REPORT_GUI
-    // 装配层注册 report.export viewAction（业务实现在 report 模块呈现层）。
-    // 外壳零业务 include；脚本与 Ribbon 按钮共用该入口。
-    // 宏守护：反证剔除 report_gui 模块时不编译此钩子，产品仍能装配（A4a）。
-    nextpilot::plotscope::gui::installReportExport(application.context());
-#endif
 
     int loadFailures = 0;
     auto loadOneReported = [&](const QString &path) {
