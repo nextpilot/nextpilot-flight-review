@@ -24,14 +24,14 @@ tools/ci/local_preflight.sh --full    # 改过 C++，或推分支前最后一遍
 
 工具缺失打印 `[skip]` 并继续，退出码只由真实失败决定。**`[skip]` 落在你改过的类型上，要自己确认对应 CI job 不会红**。
 
-`--full` 的构建用 `build-preflight`、tidy 用 `build-tidy`，不碰现有 `build/`。
+`--full` 的构建落在 `build-preflight-Release` 与 `build-preflight-Debug` 两个目录：Debug 不清 `NDEBUG`，`assert` 与析构顺序这类崩溃只在它现形。tidy 用 `build-tidy`。互不干扰，也不碰现有 `build/`。
 
 ## 三档与 CI job
 
 | 档            | 何时跑                     | 检查项                                                                                                                       | CI job                                                               |
 | ------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
 | quick（默认） | 每次推之前                 | 基准对齐、C++/Markdown/Python 改动行格式、markdownlint、bash -n、shellcheck、actionlint、workflow 输出契约、mypy、整文件重排 | `lint:format` `markdown` `python` `shell` `workflows` `python-types` |
-| full          | 改过 `.cpp/.h`，或推分支前 | quick + 构建 + ctest + clang-tidy 增量 + `arch_guard --quick`                                                                | `ci:test` `test-clang` `test-sanitizers` `config-matrix` `lint:tidy` |
+| full          | 改过 `.cpp/.h`，或推分支前 | quick + Release/Debug 双构建 + 双 ctest + clang-tidy 增量 + `arch_guard --quick`                                             | `ci:test` `test-clang` `test-sanitizers` `config-matrix` `lint:tidy` |
 
 `tidy` 只断新增行：`tools/clang-tidy-diff-gate.py` 取 diff 新增行号与 warning 行号的交集，存量约 329 条不阻断。命中存量行说明基准错了。
 

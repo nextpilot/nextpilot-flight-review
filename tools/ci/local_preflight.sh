@@ -130,21 +130,26 @@ else
 fi
 
 if [ "$MODE" = "full" ]; then
-    bold "4) 构建 + ctest"
+    bold "4) 构建 + ctest（Release 与 Debug 都要）"
     . "${PS_DEPS_ENV:-/home/user/.ps-deps/env.sh}" 2>/dev/null || true
     export RUSTUP_TOOLCHAIN="${RUSTUP_TOOLCHAIN:-stable}" CARGO_NET_OFFLINE="${CARGO_NET_OFFLINE:-true}"
-    if cmake -S . -B build-preflight -G Ninja -DCMAKE_BUILD_TYPE=Release -DPS_BUILD_TESTS=ON >/tmp/preflight-cmake.log 2>&1; then
-        ok "configure"
-        if cmake --build build-preflight -j"$(nproc)" >/tmp/preflight-build.log 2>&1; then
-            ok "build"
-            ctest --test-dir build-preflight -j"$(nproc)" --output-on-failure >/tmp/preflight-ctest.log 2>&1 \
-                && ok "ctest 全绿" || bad "ctest 红（看 /tmp/preflight-ctest.log）"
-        else
-            bad "build 失败（看 /tmp/preflight-build.log）"
+    # Debug 不清 NDEBUG，assert 与 pure virtual 之类的崩溃只在这一档现形；只跑 Release 会漏。
+    for CFG in Release Debug; do
+        DIR="build-preflight-$CFG"
+        if ! cmake -S . -B "$DIR" -G Ninja -DCMAKE_BUILD_TYPE="$CFG" -DPS_BUILD_TESTS=ON \
+            >"/tmp/preflight-$CFG-cmake.log" 2>&1; then
+            bad "$CFG configure 失败（看 /tmp/preflight-$CFG-cmake.log）"
+            continue
         fi
-    else
-        bad "configure 失败（看 /tmp/preflight-cmake.log）"
-    fi
+        ok "$CFG configure"
+        if ! cmake --build "$DIR" -j"$(nproc)" >"/tmp/preflight-$CFG-build.log" 2>&1; then
+            bad "$CFG build 失败（看 /tmp/preflight-$CFG-build.log）"
+            continue
+        fi
+        ok "$CFG build"
+        ctest --test-dir "$DIR" -j"$(nproc)" --output-on-failure >"/tmp/preflight-$CFG-ctest.log" 2>&1 \
+            && ok "$CFG ctest 全绿" || bad "$CFG ctest 红（看 /tmp/preflight-$CFG-ctest.log）"
+    done
 
     bold "5) clang-tidy 增量（只断新增行）"
     CPP_LIST="$(changed '*.cpp')"
