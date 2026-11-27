@@ -49,6 +49,8 @@ public:
     void registerViewAction(const QString &id, ViewActionHandler handler);
     // 注销：命中返回 true；未命中返回 false，重复调用安全。
     bool unregisterViewAction(const QString &id);
+    // 按 id 前缀批量注销（模块/视图卸载用）：返回清理数量。
+    int unregisterViewActionsWithPrefix(const QString &prefix);
     bool dispatchViewAction(const QString &id, const QVariantMap &params, Result<QVariant> &out) const;
 
     // 属性提供者：按 selection.kind 路由，属性面板取 schema 显示。

@@ -2,6 +2,8 @@
 
 #include "IWorkbenchContribution.h"
 
+#include <QStringList>
+
 // 设置模块：**统一设置管理的机制提供者**。
 //
 // 定位（"是工具不懂业务"的严格应用）：
@@ -14,6 +16,10 @@
 //   App        用户偏好，跨工作区
 //   Workspace  会话状态，重启可恢复（窗口几何、dock 排列、最近源）
 //   Document   具体工作区，可分享（plot 布局、曲线样式）
+namespace nextpilot::plotscope::workbench {
+class ICommands;
+}
+
 class SettingsModule final : public nextpilot::plotscope::host::IWorkbenchContribution
 {
     Q_OBJECT
@@ -28,4 +34,8 @@ public:
 private:
     class Handler;
     Handler *m_handler = nullptr; // parent=this，随模块析构自动回收
+    // 卸载时按 id 注销本模块注册的命令，避免命令表指向已销毁 handler。
+    void onDetach() override;
+    nextpilot::plotscope::workbench::ICommands *m_cmds = nullptr;
+    QStringList m_commandIds;
 };

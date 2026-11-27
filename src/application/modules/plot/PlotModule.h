@@ -2,6 +2,12 @@
 
 #include "IWorkbenchContribution.h"
 
+#include <QStringList>
+
+namespace nextpilot::plotscope::workbench {
+class ICommands;
+}
+
 namespace nextpilot::plotscope::uischema {
 class IScriptCapabilities;
 }
@@ -31,4 +37,8 @@ private:
     // GUI 上下文（onAttach 存；headless 恒空）。plot.instrument.open 处理器经它
     // 走 IUiContext::openEditor——ref 由模块构造，壳不解析 uri（A2c）。
     nextpilot::plotscope::host::IUiContext *m_ui = nullptr;
+    // 卸载时按 id 注销本模块注册的命令，避免命令表指向已销毁 handler。
+    void onDetach() override;
+    nextpilot::plotscope::workbench::ICommands *m_cmds = nullptr;
+    QStringList m_commandIds;
 };

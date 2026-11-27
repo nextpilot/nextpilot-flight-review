@@ -2,6 +2,8 @@
 
 #include "IWorkbenchContribution.h"
 
+#include <QStringList>
+
 // 协议模块：把协议库 的纯逻辑能力（新建/打开/校验 .psproto +
 // SPI v2 自定义协议解析）以 UI 入口的形式贡献到"协议"Ribbon 页。
 //
@@ -11,6 +13,10 @@
 namespace nextpilot::plotscope::host
 {
 class ProtocolIntentHandler;
+}
+
+namespace nextpilot::plotscope::workbench {
+class ICommands;
 }
 
 class ProtocolModule final : public nextpilot::plotscope::host::IWorkbenchContribution
@@ -28,6 +34,11 @@ public:
 private:
     // 协议意图处理器（校验/试算/模板库）：headless 也注册，GUI 按钮最终也走它。
     nextpilot::plotscope::host::ProtocolIntentHandler *m_handler = nullptr;
+
+    // 卸载时按 id 注销本模块注册的命令，避免命令表指向已销毁 handler。
+    void onDetach() override;
+    nextpilot::plotscope::workbench::ICommands *m_cmds = nullptr;
+    QStringList m_commandIds;
 };
 
 Q_DECLARE_INTERFACE(ProtocolModule, "nextpilot.ps.ProtocolModule/1.0")

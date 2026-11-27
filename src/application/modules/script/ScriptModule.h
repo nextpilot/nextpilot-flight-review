@@ -8,6 +8,8 @@
 
 #include <memory>
 
+#include <QStringList>
+
 namespace nextpilot::plotscope::script
 {
 class BatchHandler;
@@ -69,6 +71,9 @@ private:
     nextpilot::plotscope::host::IUiContext *m_ui = nullptr;
     // initialize 留存：onDetach 用它注销变换求值器（生命周期同宿主）。
     nextpilot::plotscope::uischema::IScriptCapabilities *m_caps = nullptr;
+    // 卸载时按 id 注销本模块注册的命令（onDetach 用）。
+    nextpilot::plotscope::workbench::ICommands *m_cmds = nullptr;
+    QStringList m_commandIds;
 };
 
 Q_DECLARE_INTERFACE(ScriptModule, "nextpilot.ps.ScriptModule/1.0")

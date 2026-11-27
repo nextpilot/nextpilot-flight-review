@@ -74,6 +74,8 @@ public:
     virtual void registerViewAction(const QString &id, ViewActionHandler handler) = 0;
     // 注销：模块卸载/面板销毁时调用，命中返回 true。
     virtual bool unregisterViewAction(const QString &id) = 0;
+    // 按 id 前缀批量注销（模块卸载用）：返回清理数量。
+    virtual int unregisterViewActionsWithPrefix(const QString &prefix) = 0;
     virtual bool dispatchViewAction(const QString &id, const QVariantMap &params, Result<QVariant> &out) const = 0;
     virtual void appendMessage(const QString &level, const QString &source, const QString &text,
                                const QString &locator = QString()) = 0;

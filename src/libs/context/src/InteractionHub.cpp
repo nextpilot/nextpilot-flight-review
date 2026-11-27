@@ -21,6 +21,24 @@ bool InteractionHub::unregisterViewAction(const QString &id)
     return true;
 }
 
+int InteractionHub::unregisterViewActionsWithPrefix(const QString &prefix)
+{
+    int removed = 0;
+    for (auto it = m_viewActions.begin(); it != m_viewActions.end();)
+    {
+        if (!it.key().startsWith(prefix))
+        {
+            ++it;
+            continue;
+        }
+        const QString key = it.key();
+        it = m_viewActions.erase(it);
+        Q_EMIT objectRemoved(key);
+        ++removed;
+    }
+    return removed;
+}
+
 bool InteractionHub::dispatchViewAction(const QString &id, const QVariantMap &params,
                                              Result<QVariant> &out) const
 {

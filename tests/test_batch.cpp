@@ -209,6 +209,27 @@ int main(int argc, char **argv)
         fprintf(stdout, "[ok] property/transform 注销后查询与求值不可达\n");
     }
 
+    // ---- view action 前缀批量注销：只清匹配项，其余保留；无匹配返回 0 ----
+    {
+        auto &hub = application.context().interactions();
+        hub.registerViewAction(QStringLiteral("t.pre.a"),
+                               [](const QVariantMap &) { return Result<QVariant>(QVariant(1)); });
+        hub.registerViewAction(QStringLiteral("t.pre.b"),
+                               [](const QVariantMap &) { return Result<QVariant>(QVariant(2)); });
+        hub.registerViewAction(QStringLiteral("t.keep"),
+                               [](const QVariantMap &) { return Result<QVariant>(QVariant(3)); });
+        const int beforeCount = hub.count();
+
+        CHECK(hub.unregisterViewActionsWithPrefix(QStringLiteral("t.pre.")) == 2);
+        CHECK(hub.count() == beforeCount - 2);
+        Result<QVariant> prefixOut{QVariant()};
+        CHECK(!hub.dispatchViewAction(QStringLiteral("t.pre.a"), QVariantMap(), prefixOut));
+        CHECK(hub.dispatchViewAction(QStringLiteral("t.keep"), QVariantMap(), prefixOut));
+        CHECK(hub.unregisterViewActionsWithPrefix(QStringLiteral("t.none.")) == 0);
+        CHECK(hub.unregisterViewAction(QStringLiteral("t.keep")));
+        fprintf(stdout, "[ok] view action 前缀注销只清匹配项\n");
+    }
+
     // ---- 2.4.2：取消 —— 分片边界生效（5 文件每文件 ~40ms，0ms 定时器插取消）----
     CHECK(writeCsv(d + QStringLiteral("/c1.csv"), 10));
     CHECK(writeCsv(d + QStringLiteral("/c2.csv"), 20));

@@ -190,6 +190,15 @@ bool RuntimeHost::deactivate(const QString &moduleId)
     delete it->instance; // QObject 子树自动销毁其创建的 UI 与信号连接
     it->instance = nullptr;
     it->active = false;
+
+    // 摘除本模块的声明式贡献：重激活时会重新收集，避免菜单/工具栏重复灌入。
+    for (auto ci = m_contributions.begin(); ci != m_contributions.end();)
+    {
+        if (ci->owner == moduleId)
+            ci = m_contributions.erase(ci);
+        else
+            ++ci;
+    }
     return true;
 }
 

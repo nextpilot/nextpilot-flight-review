@@ -115,6 +115,7 @@ void ScriptModule::initialize(InstantiationService &services)
         return;
     nextpilot::plotscope::uischema::IScriptCapabilities &capsRef = *caps;
     m_caps = caps;
+    m_cmds = cmds;
     nextpilot::plotscope::workbench::IWorkspace &wsRef = *ws;
     nextpilot::plotscope::workbench::ICommands &cmdsRef = *cmds;
 
@@ -125,7 +126,8 @@ void ScriptModule::initialize(InstantiationService &services)
         return capsRef.dispatchViewAction(id, params, out);
     };
     m_handler = new Handler(capsRef.executor(), capsRef.recorder(), viewDispatcher, this);
-    auto reg = [cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+    auto reg = [this, cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+        m_commandIds.append(id);
         cmds->registerCommand(id, nextpilot::plotscope::workbench::asCommandHandler(h, id));
     };
     reg(QStringLiteral("script.run"), m_handler);
@@ -646,9 +648,17 @@ ModuleContributions ScriptModule::contributes() const
 
 void ScriptModule::onDetach()
 {
-    // 注销本模块注册的统一变换求值器，卸载后 host/gui 的衍生调用不再打到已销毁模块。
+    // 注销本模块注册的统一变换求值器与 view action（script./data.batch. 两个命名空间）。
     if (m_caps)
+    {
         m_caps->unregisterTransformEvaluator();
+        m_caps->unregisterViewActionsWithPrefix(QStringLiteral("script."));
+        m_caps->unregisterViewActionsWithPrefix(QStringLiteral("data.batch."));
+    }
+    if (m_cmds)
+        for (const QString &id : m_commandIds)
+            m_cmds->unregisterCommand(id);
+    m_commandIds.clear();
 }
 
 void ScriptModule::onAttach(IUiContext &ui)

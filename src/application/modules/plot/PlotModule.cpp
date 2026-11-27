@@ -678,9 +678,11 @@ void PlotModule::initialize(InstantiationService &services)
     if (!ws || !caps || !cmds)
         return;
     m_handler = new Handler(ws->dataset(), ws->sources(), *ws, ws->derived(), *caps, this);
+    m_cmds = cmds;
     m_caps = caps; // onAttach 登记 plot.instrument.open 用（A2c）
     // 编排调用走命令；asCommandHandler 把 IIntentHandler 适配成 ICommands::Handler。
-    auto reg = [cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+    auto reg = [this, cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+        m_commandIds.append(id);
         cmds->registerCommand(id, nextpilot::plotscope::workbench::asCommandHandler(h, id));
     };
     reg(QStringLiteral("plot.render"), m_handler);
@@ -919,6 +921,14 @@ void PlotModule::onAttach(IUiContext &ui)
                                     return Result<QVariant>(QVariant(w != nullptr));
                                 });
     }
+}
+
+void PlotModule::onDetach()
+{
+    if (m_cmds)
+        for (const QString &id : m_commandIds)
+            m_cmds->unregisterCommand(id);
+    m_commandIds.clear();
 }
 
 #include "PlotModule.moc"

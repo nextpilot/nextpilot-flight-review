@@ -166,7 +166,9 @@ void SettingsModule::initialize(InstantiationService &services)
     if (!ws || !cmds)
         return;
     m_handler = new Handler(*ws, this);
-    auto reg = [cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+    m_cmds = cmds;
+    auto reg = [this, cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+        m_commandIds.append(id);
         cmds->registerCommand(id, nextpilot::plotscope::workbench::asCommandHandler(h, id));
     };
     // Handler::canHandle 用 startsWith("settings.")，execute 覆盖 get/set/scoped.get/
@@ -177,6 +179,14 @@ void SettingsModule::initialize(InstantiationService &services)
           QStringLiteral("settings.scoped.set"), QStringLiteral("settings.list"), QStringLiteral("settings.flush"),
           QStringLiteral("settings.remove")})
         reg(op, m_handler);
+}
+
+void SettingsModule::onDetach()
+{
+    if (m_cmds)
+        for (const QString &id : m_commandIds)
+            m_cmds->unregisterCommand(id);
+    m_commandIds.clear();
 }
 
 #include "SettingsModule.moc"

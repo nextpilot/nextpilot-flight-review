@@ -319,13 +319,23 @@ void WorkspaceModule::initialize(InstantiationService &services)
     if (!ws || !window || !cmds)
         return;
     m_handler = new Handler(*ws, *window, *cmds, this);
-    auto reg = [cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+    m_cmds = cmds;
+    auto reg = [this, cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+        m_commandIds.append(id);
         cmds->registerCommand(id, nextpilot::plotscope::workbench::asCommandHandler(h, id));
     };
     reg(QStringLiteral("workspace.preset.save"), m_handler);
     reg(QStringLiteral("workspace.preset.open"), m_handler);
     reg(QStringLiteral("workspace.preset.openPath"), m_handler);
     reg(QStringLiteral("workspace.preset.list"), m_handler);
+}
+
+void WorkspaceModule::onDetach()
+{
+    if (m_cmds)
+        for (const QString &id : m_commandIds)
+            m_cmds->unregisterCommand(id);
+    m_commandIds.clear();
 }
 
 #include "WorkspaceModule.moc"

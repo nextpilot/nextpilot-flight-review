@@ -27,6 +27,9 @@ class App : public QObject
 public:
     // settingsPath 为空时设置存内存（测试/headless）；否则读写该 JSON 文件。
     explicit App(const QString &settingsPath = QString(), QObject *parent = nullptr);
+    // 先停模块再拆服务：模块 onDetach 会用装配层服务（命令表/能力接口），
+    // 成员析构顺序里服务早于宿主，不在析构入口显式停模块就会踩到已析构的服务。
+    ~App() override;
 
     // 进程级运行态。
     nextpilot::plotscope::context::AppContext &context() { return m_ctx; }

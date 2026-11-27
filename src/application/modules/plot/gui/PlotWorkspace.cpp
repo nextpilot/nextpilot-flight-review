@@ -281,6 +281,10 @@ PlotWorkspace::~PlotWorkspace()
         hub.unregisterPropertyProvider(kind);
         hub.unregisterPropertySetter(kind);
     }
+    // 注销本工作区注册的 view action（figure./plot./playback. 三个命名空间）。
+    hub.unregisterViewActionsWithPrefix(QStringLiteral("figure."));
+    hub.unregisterViewActionsWithPrefix(QStringLiteral("plot."));
+    hub.unregisterViewActionsWithPrefix(QStringLiteral("playback."));
     // pending 条目持有的 demand 引用要释放，否则 SourceHub 的需求计数泄漏。
     dropPendingBinds();
     // 页对象是裸指针（Page 里还持有 scroll/host 的父子关系），析构时显式释放。

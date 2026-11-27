@@ -323,11 +323,13 @@ void AnalysisModule::initialize(InstantiationService &services)
     if (!ws || !window || !cmds)
         return;
     m_handler = new Handler(*ws, *window, this);
+    m_cmds = cmds;
     // 应用目录（收藏合法性校验来源）：从 initialize 起即就绪，不依赖 UI（A8b-M2）。
     m_handler->setCatalog({QStringLiteral("default"),
                            QStringLiteral("autopilot.review.report"),
                            QStringLiteral("autopilot.review.app")});
-    auto reg = [cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+    auto reg = [this, cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+        m_commandIds.append(id);
         cmds->registerCommand(id, nextpilot::plotscope::workbench::asCommandHandler(h, id));
     };
     reg(QStringLiteral("analysis.run"), m_handler);
@@ -387,6 +389,14 @@ void AnalysisModule::onAttach(IUiContext &ui)
 {
     Q_UNUSED(ui);
     // A8b-M2：UI 声明（含动态 provider）已迁至 contributes()，宿主统一灌回。
+}
+
+void AnalysisModule::onDetach()
+{
+    if (m_cmds)
+        for (const QString &id : m_commandIds)
+            m_cmds->unregisterCommand(id);
+    m_commandIds.clear();
 }
 
 #include "AnalysisModule.moc"

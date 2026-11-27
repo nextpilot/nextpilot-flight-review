@@ -49,7 +49,9 @@ void ProtocolModule::initialize(InstantiationService &services)
     if (!cmds)
         return;
     m_handler = new ProtocolIntentHandler(this);
-    auto reg = [cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+    m_cmds = cmds;
+    auto reg = [this, cmds](const QString &id, nextpilot::plotscope::intent::IIntentHandler *h) {
+        m_commandIds.append(id);
         cmds->registerCommand(id, nextpilot::plotscope::workbench::asCommandHandler(h, id));
     };
     for (const QString &op : ProtocolIntentHandler::supportedOps())
@@ -97,6 +99,14 @@ void ProtocolModule::onAttach(IUiContext &ui)
 {
     Q_UNUSED(ui);
     // A8b-M2：UI 声明已迁至 contributes()，宿主统一灌回。
+}
+
+void ProtocolModule::onDetach()
+{
+    if (m_cmds)
+        for (const QString &id : m_commandIds)
+            m_cmds->unregisterCommand(id);
+    m_commandIds.clear();
 }
 
 #include "ProtocolModule.moc"

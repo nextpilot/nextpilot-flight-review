@@ -22,6 +22,13 @@ using namespace nextpilot::plotscope::host;
 namespace nextpilot::plotscope::app
 {
 
+App::~App()
+{
+    // 宿主析构（deactivateAll）会晚于服务成员析构，先在这里停掉模块，
+    // deactivate 幂等（instance 置空后直接返回），宿主析构再调一次是空转。
+    m_host.deactivateAll();
+}
+
 App::App(const QString &settingsPath, QObject *parent)
     : QObject(parent), m_ctx(settingsPath, this), m_host(m_ctx, this), m_recorder(),
       m_services(m_ctx, m_recorder, m_host, this)

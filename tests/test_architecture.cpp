@@ -1208,6 +1208,40 @@ using namespace nextpilot::plotscope::context;
         CHECK(isolated.context().interactions().dispatchViewAction(QStringLiteral("data.table.open"), QVariantMap(),
                                                                    back));
         fprintf(stdout, "[ok] 卸载 data 模块后 data.table.open 注销，重新激活后恢复\n");
+
+        // 命令表注销闭环：plot 的命令在 initialize() 注册（不经过 if(ui)），headless 可测。
+        // 卸载后 executeCommand 返回 E_NO_COMMAND，重激活后恢复。
+        auto *hostServices = isolated.host().services();
+        CHECK(hostServices != nullptr);
+        auto *cmds =
+            hostServices->getService<nextpilot::plotscope::workbench::ICommands>(QStringLiteral("vscode.commands"));
+        CHECK(cmds != nullptr);
+        const QStringList plotCommands = {QStringLiteral("plot.render"), QStringLiteral("plot.channel"),
+                                          QStringLiteral("plot.instrument"), QStringLiteral("plot.layout.save"),
+                                          QStringLiteral("plot.layout.load")};
+        for (const QString &id : plotCommands)
+            CHECK(cmds->executeCommand(id, QVariantMap()).error().code != QStringLiteral("E_NO_COMMAND"));
+
+        // 卸载摘净声明式贡献；重激活不重复灌入。
+        CHECK(isolated.host().deactivate(QStringLiteral("mod.plot")));
+        for (const QString &id : plotCommands)
+            CHECK(cmds->executeCommand(id, QVariantMap()).error().code == QStringLiteral("E_NO_COMMAND"));
+        int ownerCount = 0;
+        for (const auto &c : isolated.host().contributions())
+            if (c.owner == QStringLiteral("mod.plot"))
+                ++ownerCount;
+        CHECK(ownerCount == 0);
+
+        CHECK(isolated.host().activate().isEmpty());
+        ownerCount = 0;
+        for (const auto &c : isolated.host().contributions())
+            if (c.owner == QStringLiteral("mod.plot"))
+                ++ownerCount;
+        CHECK(ownerCount <= 1);
+        for (const QString &id : plotCommands)
+            CHECK(cmds->executeCommand(id, QVariantMap()).error().code != QStringLiteral("E_NO_COMMAND"));
+        fprintf(stdout, "[ok] 卸载 plot 后 plot.* 命令注销，重激活后恢复\n");
+        fprintf(stdout, "[ok] 卸载后声明式贡献摘净，重激活不重复\n");
     }
 
     fprintf(stdout, "\n全部架构契约测试通过\n");
