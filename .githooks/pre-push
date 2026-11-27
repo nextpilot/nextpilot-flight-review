@@ -1,0 +1,27 @@
+#!/usr/bin/env sh
+# 推送前门禁：跑 tools/ci/local_preflight.sh（quick 档）。
+#
+# 每个 clone 启用一次：
+#   git config core.hooksPath .githooks
+#
+# 跑什么、为什么、红了怎么查：docs/develop/push-gate.md
+# 改过 .cpp/.h 的，推分支前再手动跑一遍 --full（构建 + ctest + tidy + arch_guard）。
+#
+# 跳过（不建议；CI 同一口径仍会拦，且必须在 PR 写明原因）：
+#   SKIP_PREFLIGHT=1 git push
+
+set -u
+
+[ "${SKIP_PREFLIGHT:-0}" = "1" ] && {
+    echo "[pre-push] SKIP_PREFLIGHT=1：跳过门禁（CI 仍会拦，请在 PR 写明原因）"
+    exit 0
+}
+
+ROOT=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+[ -x "$ROOT/tools/ci/local_preflight.sh" ] || exit 0
+
+if ! (cd "$ROOT" && tools/ci/local_preflight.sh); then
+    echo "[pre-push] 门禁失败：修完再推。确需绕过用 SKIP_PREFLIGHT=1 git push（不建议）。"
+    exit 1
+fi
+exit 0

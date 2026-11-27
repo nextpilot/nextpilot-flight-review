@@ -21,11 +21,14 @@ main 是唯一长期分支，始终可发布、可回退。所有改动经短命
 | issue 里要放截图、给 issue 配图               | `references/issue-image-hosting.md` |
 | Dev 领取、交接、PM 验收、关闭或重开 issue     | `references/issue-lifecycle.md`     |
 | 建分支、提交、rebase、推送、建 PR、合并       | `references/git-pr-delivery.md`     |
+| 推分支前过门禁、CI 红了怎么查                 | `docs/develop/push-gate.md`         |
 | 调用 Gitee API、排查平台错误                  | `references/gitee-operations.md`    |
 
 **修改前确认的硬要求：** 先复述“改什么、怎么改、哪里含糊”，等用户明确同意后才动手。沉默、未回复、话题转移、仅提问都不算同意。
 
 **写作的硬要求：** 不引用出处，不追述历史；注释只写做什么、怎么做、必要的简单原因。完整规则以 `.claude/rules/terse-writing.md` 为准。
+
+**推送门禁的硬要求：** 推任何分支前跑 `tools/ci/local_preflight.sh`（改过 C++ 或推分支前用 `--full`），失败不许推。先 `git fetch origin && git rebase origin/main`，本地和 CI 的改动行基准都取 `origin/main`。每个 clone 执行一次 `git config core.hooksPath .githooks`，让 `pre-commit` 修格式、`pre-push` 阻断。
 
 ## 1. 核心原则
 

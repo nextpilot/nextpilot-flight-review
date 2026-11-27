@@ -9,6 +9,7 @@
 | [架构概览](architecture.md)                 | 分层结构、核心抽象、数据流、扩展装配（精简版）                      |
 | [编译与构建](building.md)                   | 依赖、Qt/Lua 固定、CMake 配置、构建、运行                           |
 | [构建加速](build-acceleration.md)           | 依赖镜像（nphelper/gitee）、ccache、测试目标裁剪、排查              |
+| [推送前门禁](push-gate.md)                  | 三档本地检查、与 CI job 的对应、重排/绕过禁令、合并前口径           |
 | [测试](testing.md)                          | 单元测试、GUI 冒烟、契约测试                                        |
 | [协议规范](../../src/libs/protocol/SPEC.md) | psproto v3 语义权威（速览见同目录 README）                          |
 | [uischema 语法](uischema-syntax.md)         | 属性/表单 schema 的字段语法与渲染约定                               |

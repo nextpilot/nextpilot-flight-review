@@ -89,8 +89,15 @@ git checkout -b <类型>/<简述>
 
 ## 提交与本地测试
 
-1. `git add` 相关文件后提交（遵循“提交纪律”，作者用 `git -c` 指定）。
-2. 推送前测试必须通过：编译、ctest/项目测试全绿；失败先修复；无测试条件须在提交说明注明。
+1. `git add` 相关文件后提交（遵循"提交纪律"，作者用 `git -c` 指定）。
+2. 推之前过门禁，不靠"我记得跑过测试"：
+
+```bash
+tools/ci/local_preflight.sh           # quick：格式 / 脚本 / workflow / mypy / 重排
+tools/ci/local_preflight.sh --full    # 改过 C++，或推分支前最后一遍：构建 + ctest + tidy + arch_guard
+```
+
+失败先修，不许 `SKIP_PREFLIGHT=1` 蒙过去；确需绕过必须在 PR 写明失败项与本 PR 无关。
 3. 相互独立的改动拆成多个提交，禁止合并为单一提交。
 
 ## rebase 后推送
@@ -100,6 +107,8 @@ git fetch origin
 git rebase origin/main
 git push origin <特性分支>
 ```
+
+推送前再跑一次 `tools/ci/local_preflight.sh`（改过 C++ 用 `--full`），失败不推。
 
 - rebase 冲突逐个解决后 `git rebase --continue`；无法解决则 `git rebase --abort` 回滚并报告。禁止为绕过冲突改用 merge 提交或强推。
 - 推送被拒（远端有新提交）→ 重新执行本步骤；禁止 `--force`。
