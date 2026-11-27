@@ -695,6 +695,14 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     m_appCtx.states().registerEntry(std::move(stateEntry));
 }
 
+DataManagerPanel::~DataManagerPanel()
+{
+    auto &hub = m_appCtx.interactions();
+    for (SelectionKind kind : {SelectionKind::Source, SelectionKind::Dataset, SelectionKind::Table,
+                               SelectionKind::Column, SelectionKind::Param, SelectionKind::Message})
+        hub.unregisterPropertyProvider(kind);
+}
+
 // 单击树节点 -> 统一选中对象。把稳定标识填进 ids，供属性 provider 反查。
 void DataManagerPanel::reportSelection(QTreeWidgetItem *item)
 {

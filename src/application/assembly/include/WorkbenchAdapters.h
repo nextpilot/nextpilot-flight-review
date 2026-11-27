@@ -286,6 +286,7 @@ public:
     }
 
     void registerTransformEvaluator(TransformEvalFn fn) override { m_hub.registerTransformEvaluator(std::move(fn)); }
+    bool unregisterTransformEvaluator() override { return m_hub.unregisterTransformEvaluator(); }
     bool hasTransformEvaluator() const override { return m_hub.hasTransformEvaluator(); }
     bool evalTransform(const QJsonObject &req, uint32_t cap, const QVector<double> &t, const QVector<double> &v,
                        foundation::Result<QVector<double>> &out) const override

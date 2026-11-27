@@ -274,6 +274,13 @@ PlotWorkspace::PlotWorkspace(AppContext &appCtx, IIntentExecutor &executor, QWid
 
 PlotWorkspace::~PlotWorkspace()
 {
+    // 注销本工作区注册的属性 provider/setter，不留指向已销毁视图的闭包。
+    auto &hub = m_appCtx.interactions();
+    for (SelectionKind kind : {SelectionKind::Series, SelectionKind::Axis, SelectionKind::Canvas})
+    {
+        hub.unregisterPropertyProvider(kind);
+        hub.unregisterPropertySetter(kind);
+    }
     // pending 条目持有的 demand 引用要释放，否则 SourceHub 的需求计数泄漏。
     dropPendingBinds();
     // 页对象是裸指针（Page 里还持有 scroll/host 的父子关系），析构时显式释放。

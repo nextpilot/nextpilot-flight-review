@@ -43,6 +43,8 @@ class DataManagerPanel : public QWidget
 public:
     explicit DataManagerPanel(nextpilot::plotscope::context::AppContext &appCtx,
                               nextpilot::plotscope::intent::IIntentExecutor &executor, QWidget *parent = nullptr);
+    // 析构注销本面板注册的属性 provider，不留指向已销毁面板的闭包。
+    ~DataManagerPanel() override;
 
     void refresh();
 

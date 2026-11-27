@@ -37,6 +37,8 @@ public:
     nextpilot::plotscope::host::ModuleInfo info() const override;
     void initialize(nextpilot::plotscope::instantiation::InstantiationService &services) override;
     void onAttach(nextpilot::plotscope::host::IUiContext &ui) override;
+    // 卸载：注销统一变换求值器。
+    void onDetach() override;
     nextpilot::plotscope::registry::ModuleContributions contributes() const override;
     ~ScriptModule() override;
 
@@ -65,6 +67,8 @@ private:
     // GUI 上下文（onAttach 时注入；headless 恒空）。编辑器面板**按需创建**：
     // 中央区永远锚定画布（模块激活顺序不定，不能让编辑器抢先占位）。
     nextpilot::plotscope::host::IUiContext *m_ui = nullptr;
+    // initialize 留存：onDetach 用它注销变换求值器（生命周期同宿主）。
+    nextpilot::plotscope::uischema::IScriptCapabilities *m_caps = nullptr;
 };
 
 Q_DECLARE_INTERFACE(ScriptModule, "nextpilot.ps.ScriptModule/1.0")

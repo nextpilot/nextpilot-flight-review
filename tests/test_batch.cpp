@@ -177,6 +177,38 @@ int main(int argc, char **argv)
     CHECK(progressCount == 3);
     fprintf(stdout, "[ok] 注销后 dispatch 返回 false，重复注销安全\n");
 
+    // ---- property/transform：注销后查询与求值不可达，重复注销安全 ----
+    {
+        auto &hub = application.context().interactions();
+        Selection sel;
+        sel.kind = SelectionKind::Dataset;
+
+        QJsonObject schema;
+        hub.registerPropertyProvider(SelectionKind::Dataset,
+                                     [](const Selection &) { return QJsonObject{{QStringLiteral("k"), 1}}; });
+        CHECK(hub.queryPropertySchema(sel, schema));
+        CHECK(hub.unregisterPropertyProvider(SelectionKind::Dataset));
+        CHECK(!hub.queryPropertySchema(sel, schema));
+        CHECK(!hub.unregisterPropertyProvider(SelectionKind::Dataset));
+
+        QString err;
+        hub.registerPropertySetter(SelectionKind::Dataset, [](const Selection &, const QString &, const QString &,
+                                                              const QString &, QString *) { return true; });
+        CHECK(hub.applyProperty(sel, QStringLiteral("x"), QStringLiteral("k"), QStringLiteral("v"), &err));
+        CHECK(hub.unregisterPropertySetter(SelectionKind::Dataset));
+        CHECK(!hub.applyProperty(sel, QStringLiteral("x"), QStringLiteral("k"), QStringLiteral("v"), &err));
+        CHECK(!hub.unregisterPropertySetter(SelectionKind::Dataset));
+
+        hub.registerTransformEvaluator(
+            [](const QJsonObject &, uint32_t, const QVector<double> &t, const QVector<double> &) { return t; });
+        Result<QVector<double>> tv{QVector<double>()};
+        CHECK(hub.evalTransform(QJsonObject(), 0, QVector<double>{1.0}, QVector<double>{2.0}, tv));
+        CHECK(hub.unregisterTransformEvaluator());
+        CHECK(!hub.evalTransform(QJsonObject(), 0, QVector<double>{1.0}, QVector<double>{2.0}, tv));
+        CHECK(!hub.unregisterTransformEvaluator());
+        fprintf(stdout, "[ok] property/transform 注销后查询与求值不可达\n");
+    }
+
     // ---- 2.4.2：取消 —— 分片边界生效（5 文件每文件 ~40ms，0ms 定时器插取消）----
     CHECK(writeCsv(d + QStringLiteral("/c1.csv"), 10));
     CHECK(writeCsv(d + QStringLiteral("/c2.csv"), 20));

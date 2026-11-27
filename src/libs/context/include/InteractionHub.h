@@ -54,12 +54,16 @@ public:
     // 属性提供者：按 selection.kind 路由，属性面板取 schema 显示。
     using PropertyProvider = std::function<QJsonObject(const Selection &selection)>;
     void registerPropertyProvider(SelectionKind kind, PropertyProvider provider);
+    // 注销：按 kind 移除 provider，命中返回 true。
+    bool unregisterPropertyProvider(SelectionKind kind);
     bool queryPropertySchema(const Selection &selection, QJsonObject &out) const;
 
     // 属性写入器：与 provider 成对注册，按 kind 路由写回真正持有者。
     using PropertySetter = std::function<bool(const Selection &selection, const QString &objectId,
                                               const QString &key, const QString &value, QString *err)>;
     void registerPropertySetter(SelectionKind kind, PropertySetter setter);
+    // 注销：按 kind 移除 setter，命中返回 true。
+    bool unregisterPropertySetter(SelectionKind kind);
     bool applyProperty(const Selection &selection, const QString &objectId,
                        const QString &key, const QString &value, QString *err = nullptr) const;
 
@@ -67,6 +71,8 @@ public:
     using TransformEvalFn = std::function<Result<QVector<double>>(
         const QJsonObject &request, uint32_t cap, const QVector<double> &t, const QVector<double> &v)>;
     void registerTransformEvaluator(TransformEvalFn fn);
+    // 注销：清空单槽位求值器，有值返回 true。
+    bool unregisterTransformEvaluator();
     bool hasTransformEvaluator() const { return static_cast<bool>(m_transformEvaluator); }
     bool evalTransform(const QJsonObject &request, uint32_t cap,
                        const QVector<double> &t, const QVector<double> &v,

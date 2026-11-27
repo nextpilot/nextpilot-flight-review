@@ -40,12 +40,19 @@ void InteractionHub::registerPropertyProvider(SelectionKind kind, PropertyProvid
         m_propertyProviders.insert(static_cast<int>(kind), std::move(provider));
 }
 
+bool InteractionHub::unregisterPropertyProvider(SelectionKind kind)
+{
+    return m_propertyProviders.remove(static_cast<int>(kind));
+}
+
 bool InteractionHub::queryPropertySchema(const Selection &selection, QJsonObject &out) const
 {
     const auto it = m_propertyProviders.constFind(static_cast<int>(selection.kind));
     if (it == m_propertyProviders.constEnd())
         return false;
-    out = it.value()(selection);
+    // 拷贝后调用：provider 执行期间被替换/移除时，本地副本仍然有效。
+    const PropertyProvider provider = it.value();
+    out = provider(selection);
     return true;
 }
 
@@ -53,6 +60,11 @@ void InteractionHub::registerPropertySetter(SelectionKind kind, PropertySetter s
 {
     if (setter)
         m_propertySetters.insert(static_cast<int>(kind), std::move(setter));
+}
+
+bool InteractionHub::unregisterPropertySetter(SelectionKind kind)
+{
+    return m_propertySetters.remove(static_cast<int>(kind));
 }
 
 bool InteractionHub::applyProperty(const Selection &selection, const QString &objectId,
@@ -65,7 +77,9 @@ bool InteractionHub::applyProperty(const Selection &selection, const QString &ob
             *err = QStringLiteral("该对象类型没有属性写入器");
         return false;
     }
-    return it.value()(selection, objectId, key, value, err);
+    // 拷贝后调用：setter 执行期间被替换/移除时，本地副本仍然有效。
+    const PropertySetter setter = it.value();
+    return setter(selection, objectId, key, value, err);
 }
 
 void InteractionHub::registerTransformEvaluator(TransformEvalFn fn)
@@ -73,13 +87,23 @@ void InteractionHub::registerTransformEvaluator(TransformEvalFn fn)
     m_transformEvaluator = std::move(fn);
 }
 
+bool InteractionHub::unregisterTransformEvaluator()
+{
+    if (!m_transformEvaluator)
+        return false;
+    m_transformEvaluator = nullptr;
+    return true;
+}
+
 bool InteractionHub::evalTransform(const QJsonObject &request, uint32_t cap,
                                         const QVector<double> &t, const QVector<double> &v,
                                         Result<QVector<double>> &out) const
 {
-    if (!m_transformEvaluator)
+    // 拷贝后调用：求值期间被重新注册时，本地副本仍然有效。
+    const TransformEvalFn fn = m_transformEvaluator;
+    if (!fn)
         return false;
-    out = m_transformEvaluator(request, cap, t, v);
+    out = fn(request, cap, t, v);
     return true;
 }
 

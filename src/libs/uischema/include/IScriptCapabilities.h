@@ -45,6 +45,8 @@ public:
     using OpCatalogueFn = std::function<QStringList()>; // 与 InteractionHub.h:92 同签名
 
     virtual void registerTransformEvaluator(TransformEvalFn fn) = 0;
+    // 注销：卸载时清空求值器，有值返回 true。
+    virtual bool unregisterTransformEvaluator() = 0;
     virtual bool hasTransformEvaluator() const = 0;
     virtual bool evalTransform(const QJsonObject &req, uint32_t cap, const QVector<double> &t, const QVector<double> &v,
                                Result<QVector<double>> &out) const = 0;

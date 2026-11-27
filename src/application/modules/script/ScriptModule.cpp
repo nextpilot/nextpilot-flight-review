@@ -114,6 +114,7 @@ void ScriptModule::initialize(InstantiationService &services)
     if (!caps || !ws || !cmds)
         return;
     nextpilot::plotscope::uischema::IScriptCapabilities &capsRef = *caps;
+    m_caps = caps;
     nextpilot::plotscope::workbench::IWorkspace &wsRef = *ws;
     nextpilot::plotscope::workbench::ICommands &cmdsRef = *cmds;
 
@@ -641,6 +642,13 @@ ModuleContributions ScriptModule::contributes() const
     addRibbon(QStringLiteral("script.workbench.console"), QStringLiteral("控制台"),
               QStringLiteral("ribbon.group.script.console"), QString(), 0, QStringLiteral("terminal"));
     return c;
+}
+
+void ScriptModule::onDetach()
+{
+    // 注销本模块注册的统一变换求值器，卸载后 host/gui 的衍生调用不再打到已销毁模块。
+    if (m_caps)
+        m_caps->unregisterTransformEvaluator();
 }
 
 void ScriptModule::onAttach(IUiContext &ui)
