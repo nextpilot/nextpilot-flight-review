@@ -4,6 +4,7 @@
     {
       "name": "default",
       "displayName": "Release（日常构建）",
+      "description": "落 build/，Ninja。默认 CMAKE_BUILD_TYPE=Release、PS_DEPS_FETCH=ON、CMAKE_PREFIX_PATH=$env{PS_QT_DIR}，环境注入 ccache 三件套（PATH / CCACHE_DIR / CCACHE_BASEDIR）。可自行覆盖：PS_BUILD_TESTS（ON/OFF）、PS_USE_CCACHE（ON/OFF）、PS_REQUIRE_CCACHE（ON=探不到 ccache 直接失败）、PS_USE_PCH + PS_PCH_TARGETS。变量取值与默认值见 docs/develop/building.md 的「配置项全景」一节。",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
@@ -17,6 +18,7 @@
     {
       "name": "debug",
       "displayName": "Debug（调试与断言）",
+      "description": "落 build-debug/，继承 default 的依赖与 ccache 环境，只把 CMAKE_BUILD_TYPE 换成 Debug。纯虚调用、未初始化成员、越界这类问题只在 -O0 下暴露（-O2 会 devirtualize 把虚调用静态绑定），排查崩溃与断言失败用这个。",
       "inherits": "default",
       "binaryDir": "${sourceDir}/build-debug",
       "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
@@ -24,7 +26,9 @@
     {
       "name": "fast",
       "displayName": "Fast（关测试目标，改代码只编主程序）",
+      "description": "落 build-fast/（与 default 的 build/ 分开，避免在同一个目录里切 preset 互相改写 CMakeCache），继承 default，只设 PS_BUILD_TESTS=OFF。要跑测试请用 default 或 debug。",
       "inherits": "default",
+      "binaryDir": "${sourceDir}/build-fast",
       "cacheVariables": { "PS_BUILD_TESTS": "OFF" }
     }
   ],

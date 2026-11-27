@@ -152,6 +152,25 @@ cmake --preset default -DPS_USE_PCH=ON -DPS_PCH_TARGETS="SARibbonBar;fastplot" -
 
 本地要预热缓存用 `tools/ubuntu-setup.sh --warm-cache`（Release + Debug 各跑一次全量，幂等，已预热则跳过），机制见 `build-acceleration.md`。
 
+## 配置项全景
+
+configure 阶段可改的 cache 变量。三种改法：`-D<VAR>=<VALUE>` 一次性覆盖；直接编辑 `CMakePresets.json` 对应 preset 的 `cacheVariables` 长期生效；`cmake --preset <name> --fresh` 推倒重配。
+
+| 变量                            | 默认              | 取值                                   | 作用                                                                   |
+| ------------------------------- | ----------------- | -------------------------------------- | ---------------------------------------------------------------------- |
+| `CMAKE_BUILD_TYPE`              | `Release`         | `Release` / `Debug` / `RelWithDebInfo` | 优化与断言。Debug 才暴露纯虚调用、未初始化、UAF 一类问题               |
+| `PS_BUILD_TESTS`                | `ON`              | `ON` / `OFF`                           | 关掉测试目标只编主程序；`--preset fast` 已设 `OFF`                     |
+| `PS_USE_CCACHE`                 | `ON`              | `ON` / `OFF`                           | 接入 ccache，命中即跳过编译；探不到只告警并直连编译器                  |
+| `PS_REQUIRE_CCACHE`             | `OFF`             | `ON`                                   | 探不到 ccache 直接 `FATAL_ERROR`，验收机/CI 用，避免"以为开了其实没开" |
+| `PS_USE_PCH` / `PS_PCH_TARGETS` | `OFF` / 空        | `ON` / 分号分隔 target 名              | 预编译头，只建议 CI 冷构建；与 ccache 同开会被 configure 拦下          |
+| `PS_DEPS_FETCH`                 | `ON`              | `ON` / `OFF`                           | 系统与 `PS_DEPS_ROOT` 都缺 zlib/sqlite 时按固定 URL 拉源码编静态库     |
+| `CMAKE_PREFIX_PATH`             | `$env{PS_QT_DIR}` | Qt 安装路径                            | Qt 6.2.4 前缀；换 Qt 只改这一处                                        |
+| `PS_DEPS_ROOT`                  | `$HOME/.ps-deps`  | 路径                                   | 依赖与工具链根目录，未导出时按该默认位置探测                           |
+
+> preset 里已写死的键，`-D` 覆盖不动：`CMAKE_BUILD_TYPE`、`PS_DEPS_FETCH`、`CMAKE_PREFIX_PATH`（default/debug）、`PS_BUILD_TESTS`（fast）。要改这些就改 `CMakePresets.json` 本身，或者 `--fresh` 后按新值配。
+
+三个 preset 都用 Ninja，配完可以无参编：`cmake --build --preset <name>`。
+
 ## Windows / MSVC
 
 用 Visual Studio 2022 + Qt 6（按本机安装路径改 `CMAKE_PREFIX_PATH`）：
