@@ -6,7 +6,7 @@
 // 不解释业务 id。
 //
 // 设计约束：
-//   - registry 层不链 Qt Widgets：QWidget 只做前置声明，工厂签名照 PanelFactoryHub
+//   - registry 层不链 Qt Widgets：QWidget 只做前置声明，工厂签名照 IViewsService
 //     （std::function<QWidget*(AppContext&, IIntentExecutor&, QWidget*)>），不 include 实现。
 //   - 一个 view id 对应一个 provider 工厂（registerViewProvider，VSCode 对位
 //     registerWebviewViewProvider/createTreeView）；重复注册先到者为准 + 诊断。
@@ -45,7 +45,7 @@ namespace nextpilot::plotscope::registry
 class ViewRegistry
 {
 public:
-    // 视图内容工厂：与 PanelFactoryHub::Factory 同签名，壳创建时注入上下文/执行器/父控件。
+    // 视图内容工厂：签名 = (AppContext&, IIntentExecutor&, QWidget*)，壳创建时注入上下文/执行器/父控件。
     using ViewFactory = std::function<QWidget *(nextpilot::plotscope::context::AppContext &,
                                                 nextpilot::plotscope::intent::IIntentExecutor &,
                                                 QWidget *)>;

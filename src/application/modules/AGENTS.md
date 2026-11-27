@@ -15,7 +15,7 @@
 ## 禁止放
 
 - **include 其他模块或扩展的任何头**（同层横向，硬线）——模块间只经 host 的注册与意图协作
-- include `../gui/`、`../shell/` 的任何头（UI 经 IUiContext；面板经 PanelFactoryHub 按类型请求）
+- include `../gui/`、`../shell/` 的任何头（UI 经 IUiContext；面板经 openView/openEditor 按声明打开）
 - 运行态自持（数据/设置一律经 `ctx.app()`；发现自己在模块里 new DatasetHub 就是违规）
 - 新建"共享工具"目录（跨模块共用 → 下方 libs，禁止在 modules/ 里造公共层）
 - 通用机制（算法、格式、契约）——放 libs 才能被复用
@@ -27,10 +27,10 @@
 - `ps_module_<x>`：headless 部分，只链 Qt Core，CLI/GUI 都装载
 - `ps_module_<x>_gui`：Qt Widgets 部分，**只被 GUI 可执行文件链接**（OBJECT 库，静态自注册依赖 TU 构造函数），CLI 二进制里物理不存在
 
-写 UI 走两条通道：① override `contributes()` 返回声明式数据（Ribbon 页/组/动作，宿主统一灌回）；② 面板实现 `PS_REGISTER_PANEL(type, ...)` 自注册进 PanelFactoryHub，模块用 `ui()->requestPanel(Region, type)` 按枚举区域请求。**headless target 严禁链 Qt Widgets 或 include 本模块 `*_gui` 头**。
+写 UI 走两条通道：① override `contributes()` 返回声明式数据（Ribbon 页/组/动作，宿主统一灌回）；② 面板实现经 `installXxxViewFactories` 装配 views/editor 声明 + provider（同 TU 同次完成），模块用 `ui()->openView(viewId)` / `ui()->openEditor(viewType, ref)` 按声明打开。**headless target 严禁链 Qt Widgets 或 include 本模块 `*_gui` 头**。
 
 ## 动手前自查
 
 1. 新意图 op：别的模块也会处理它吗？会 → 归 host 系统级处理器；只本模块 → 放这里
-2. 需要一个新面板：经 IUiContext.requestPanel 走工厂表，不直接操作 MainWindow
+2. 需要一个新面板：经 IUiContext.openView/openEditor 走声明面，不直接操作 MainWindow
 3. 想链接另一个模块？停下来，用意图或 host 注册机制重新设计

@@ -30,15 +30,15 @@ Toolbox 与 Plugin **统称扩展**，两者**没有本质区别**，只差来�
 
 ## 命名定标（"Registry" 一词三层禁用规则）
 
-| 词                      | 归属                                               | 例子                                                                                                                                                                                                        |
-| ----------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Registry*** 前缀/后缀 | **机制层专用**：树、节点、货架基类、存储原语       | `RegistryTree`、`RegistryNode`、`TypedRegistry`、`Registry<T>`、`RegistryKind`                                                                                                                              |
-| ***Hub** 后缀           | **业务保管类**：肚子里有一组条目、全系统唯一访问口 | `DatasetHub`、`SourceHub`、`DerivedSeriesHub`、`InteractionHub`、`UiSlotHub`、`ToolboxHub`、`ParserHub`、`RecordingFormatHub`、`RecordingBackendHub`、`TransformHub`、`PanelFactoryHub`、`BuiltinModuleHub` |
-| **Node**                | 节点身份，由**继承**表达，不进名字                 | `DatasetHub : RegistryNode`（Hub 说职责，继承说身份）                                                                                                                                                       |
+| 词                      | 归属                                               | 例子                                                                                                                                                                                     |
+| ----------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Registry*** 前缀/后缀 | **机制层专用**：树、节点、货架基类、存储原语       | `RegistryTree`、`RegistryNode`、`TypedRegistry`、`Registry<T>`、`RegistryKind`                                                                                                           |
+| ***Hub** 后缀           | **业务保管类**：肚子里有一组条目、全系统唯一访问口 | `DatasetHub`、`SourceHub`、`DerivedSeriesHub`、`InteractionHub`、`UiSlotHub`、`ToolboxHub`、`ParserHub`、`RecordingFormatHub`、`RecordingBackendHub`、`TransformHub`、`BuiltinModuleHub` |
+| **Node**                | 节点身份，由**继承**表达，不进名字                 | `DatasetHub : RegistryNode`（Hub 说职责，继承说身份）                                                                                                                                    |
 
 判定句：**Hub 回答"你保管什么、谁经过你"，继承 `RegistryNode/TypedRegistry` 回答"你挂在哪"。新建业务保管类一律 `<域>Hub`，禁止 Registry/Store/Repo/List/Manager 等同义后缀；机制层（libs/registry 树族）禁止 Hub 后缀。**
 
-**静态表一律走 `StaticHub<Entry, Key>` 门面模板**（`libs/registry/include/StaticAutoRegistry.h`）：编译期可枚举的静态自注册表（PanelFactoryHub / BuiltinModuleHub / RecordingFormatHub / RecordingBackendHub 等）只写 Entry 结构 + `using <域>Hub = StaticHub<<域>Entry, Key>` 别名，插入/查找/遍历/计数由模板统一提供；**禁止再手写 QHash+order 私有存储或重复的 XXXHub 类**。运行期增删的表（DatasetHub 等）不走此模板，仍用运行期句柄机制。
+**静态表一律走 `StaticHub<Entry, Key>` 门面模板**（`libs/registry/include/StaticAutoRegistry.h`）：编译期可枚举的静态自注册表（BuiltinModuleHub / RecordingFormatHub / RecordingBackendHub 等）只写 Entry 结构 + `using <域>Hub = StaticHub<<域>Entry, Key>` 别名，插入/查找/遍历/计数由模板统一提供；**禁止再手写 QHash+order 私有存储或重复的 XXXHub 类**。运行期增删的表（DatasetHub 等）不走此模板，仍用运行期句柄机制。
 
 ## 依赖方向（严格向下，禁止逆向）
 
@@ -186,13 +186,13 @@ core 过渡层已整体删除，目录不存在。任何新增代码**禁止重�
 **写 UI 的两条通道**（模块/扩展永不直接碰 MainWindow）：
 
 1. **声明式**（IUiContext 契约，`libs/module`）：override `contributes()` 返回动作与面板位的纯数据——宿主统一灌回，零 Widgets 依赖
-2. **工厂式**（PanelFactory，`libs/registry`）：视图 TU 里 `PS_REGISTER_PANEL(type, ...)` 静态自注册工厂函数；运行期 `ui()->requestPanel(Region, type)` 按枚举区域创建、经 ShellBinder 放置。工厂签名带 `AppContext + IIntentExecutor`——**视图取数与 CLI/脚本走同一条意图路径**，没有第二条取数通道
+2. **声明式打开**（IUiContext 契约，A2c/A2d 定稿）：视图在模块呈现层 TU 里经 `installXxxViewFactories` 装配——views/editor 声明 + provider 注册同 TU 同次完成；运行期 `ui()->openView(viewId)` / `ui()->openEditor(viewType, ref)` 按声明落区（viewsContainers[].area）创建、经 ShellBinder 放置。provider 签名带 `AppContext + IIntentExecutor`——**视图取数与 CLI/脚本走同一条意图路径**，没有第二条取数通道（旧工厂表/宏通道 A2d 已整体退场）。
 
-**装载链**（谁装载）：GUI 可执行文件链接各 `*_gui` OBJECT 库 → 进程启动时静态注册对象构造、工厂表自动填好 → `host.activate()` → 模块 `onAttach` 请求面板/动作 → `GuiContext` 路由 → `PanelFactory::create` → `ShellBinder` 放置（带去重复用）。CLI 只链 headless 目标，UI 通道整体缺席。
+**装载链**（谁装载）：GUI 可执行文件链接各 `*_gui` OBJECT 库 → 进程启动时装配 TU 注册声明与 provider → `host.activate()` → 模块 `onAttach` 声明动作并 openView/openEditor → `GuiContext` 路由 → views/editor provider 创建 → `ShellBinder` 放置（带去重复用）。CLI 只链 headless 目标，UI 通道整体缺席。
 
 ### when 可见条件与三层作用域
 
-动作/面板/视图标题项的可见性用 `when` 串表达（`UiAction::when` / `PanelSpec::when` / `ViewTitleActionSpec::when`）。**registry 只存字符串**，不认识求值器；求值统一归 `libs/command` 的 `WhenExpression`，外壳装配时调用命令层求值器，机制层不得反向依赖命令库。
+动作/面板/视图标题项的可见性用 `when` 串表达（`UiAction::when` / `ViewTitleActionSpec::when`）。**registry 只存字符串**，不认识求值器；求值统一归 `libs/command` 的 `WhenExpression`，外壳装配时调用命令层求值器，机制层不得反向依赖命令库。
 
 - **白名单语法**：`!`（非）、`&&`、`||`、括号分组；比较 `==` `!=` `<` `<=` `>` `>=`；集合 `in` / `not in`；正则 `=~` / `not =~`。未定义键求值为假（不报错）；解析失败折成恒假并带 error。
 - **三层作用域**（`ContextStack`，从最内层往外查，先命中者胜）：

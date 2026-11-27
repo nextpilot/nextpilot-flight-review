@@ -42,7 +42,6 @@ RuntimeHost::RuntimeHost(nextpilot::plotscope::context::AppContext &appCtx, QObj
     // M2.8 R4：static 注册表的节点宿主在装配期显式构造上树（QPointer 弱引用，
     // 析构自动摘除；节点实例归 RuntimeHost 父子树——树不托管 static 节点生命周期，
     // 红线 4；libs 禁 Meyers 单例，节点宿主按契约放 host 层）。
-    m_panelFactoryNode = new PanelFactoryNode(m_appCtx.registryTree(), this);
     m_builtinModuleNode = new BuiltinModuleNode(m_appCtx.registryTree(), this);
     // M2.8 遗留 4 收口：Parser / RecordingFormat / RecordingBackend 三张存量静态表
     // 全量上树（与 R4 两节点同一装配路径，diag.registries 无盲区）。
@@ -216,7 +215,7 @@ void RuntimeHost::deactivateAll()
     for (const QString &id : ids)
         deactivate(id);
     // 只清模块注册的 handler；系统级 data.load 入口保留。
-    for (auto it = m_handlers.begin(); it != m_handlers.end(); )
+    for (auto it = m_handlers.begin(); it != m_handlers.end();)
         if (it.key().startsWith(QStringLiteral("@system/")))
             ++it;
         else

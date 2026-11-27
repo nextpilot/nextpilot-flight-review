@@ -21,11 +21,11 @@
 
 #include <cstdio>
 
+using nextpilot::plotscope::dataset::Dataset;
+using nextpilot::plotscope::registry::kindName;
 using nextpilot::plotscope::registry::RegistryKind;
 using nextpilot::plotscope::registry::RegistryNode;
 using nextpilot::plotscope::registry::RegistryTree;
-using nextpilot::plotscope::registry::kindName;
-using nextpilot::plotscope::dataset::Dataset;
 
 #define CHECK(cond)                                                            \
     do                                                                         \
@@ -44,10 +44,7 @@ namespace
 class MockNode : public RegistryNode
 {
 public:
-    MockNode(RegistryTree &tree, RegistryKind kind, const QString &name)
-        : RegistryNode(tree, kind, name)
-    {
-    }
+    MockNode(RegistryTree &tree, RegistryKind kind, const QString &name) : RegistryNode(tree, kind, name) {}
 
     int count() const override { return 2; }
     QStringList keysAsStrings() const override { return {QStringLiteral("a"), QStringLiteral("b")}; }
@@ -79,14 +76,13 @@ int main(int argc, char **argv)
     CHECK(dataset.count() == 2);
     CHECK(dataset.keysAsStrings().size() == 2);
 
-    // --- kindName：diag JSON 用，8 个 kind 全覆盖 ---
+    // --- kindName：diag JSON 用，7 个 kind 全覆盖 ---
     CHECK(kindName(RegistryKind::Dataset) == QStringLiteral("dataset"));
     CHECK(kindName(RegistryKind::Source) == QStringLiteral("source"));
     CHECK(kindName(RegistryKind::DerivedSeries) == QStringLiteral("derived-series"));
     CHECK(kindName(RegistryKind::Interaction) == QStringLiteral("interaction"));
     CHECK(kindName(RegistryKind::UiSlot) == QStringLiteral("ui-slot"));
     CHECK(kindName(RegistryKind::Extension) == QStringLiteral("extension"));
-    CHECK(kindName(RegistryKind::PanelFactory) == QStringLiteral("panel-factory"));
     CHECK(kindName(RegistryKind::BuiltinModule) == QStringLiteral("builtin-module"));
 
     // --- 2.8.2b 摘树：析构自动摘除 ---
@@ -124,29 +120,29 @@ int main(int argc, char **argv)
     // 空树 → 空列表（独立树，不经 App）。
     {
         RegistryTree bare;
-        nextpilot::plotscope::registry::TypedRegistry<int> lonely(
-            bare, RegistryKind::Interaction, QStringLiteral("孤立表"));
+        nextpilot::plotscope::registry::TypedRegistry<int> lonely(bare, RegistryKind::Interaction,
+                                                                  QStringLiteral("孤立表"));
         // 上树但无条目：count=0、keys 空（空表不是空树，节点仍应枚举到）。
         CHECK(bare.nodes().size() == 1);
         CHECK(lonely.count() == 0);
         CHECK(lonely.keysAsStrings().isEmpty());
     }
     nextpilot::plotscope::foundation::Result<QVariant> out{QVariant{}};
-    // M2.8 遗留5 收口：App 组合根树上 8 个节点全量上树——
+    // M2.8 遗留5 收口：App 组合根树上全量上树——
     // dataset / extension / source / interaction / derived-series / ui-slot
-    // （AppContext+RuntimeHost 成员构造序）+ panel-factory / builtin-module
+    // （AppContext+RuntimeHost 成员构造序）+ builtin-module
     // / parser / recording-format / recording-backend
-    // （host 装配期把五个 static 节点显式挂树，遗留4 收口）。不存在不上树形态。
-    CHECK(application.context().interactions().dispatchViewAction(
-        QStringLiteral("diag.registries"), {}, out));
+    // （host 装配期把四个 static 节点显式挂树，遗留4 收口；A2d：panel-factory
+    // 节点随旧面板工厂表退场）。不存在不上树形态。
+    CHECK(application.context().interactions().dispatchViewAction(QStringLiteral("diag.registries"), {}, out));
     CHECK(out.ok());
     const QVariantList base = out.value().toList();
-    // 11 类节点全量上树、kind 互异（A8b contributes 是 Extension 的属性面，不新增 kind）。
-    CHECK(base.size() == 11);
+    // 10 类节点全量上树、kind 互异（A8b contributes 是 Extension 的属性面，不新增 kind）。
+    CHECK(base.size() == 10);
     QHash<QString, QVariantMap> byKind;
     for (const QVariant &r : base)
         byKind.insert(r.toMap().value(QStringLiteral("kind")).toString(), r.toMap());
-    CHECK(byKind.size() == 11); // kind 互异
+    CHECK(byKind.size() == 10); // kind 互异
     const QVariantMap dsRow = byKind.value(QStringLiteral("dataset"));
     CHECK(dsRow.value(QStringLiteral("name")).toString() == QStringLiteral("数据集"));
     CHECK(dsRow.value(QStringLiteral("count")).toInt() == 0);
@@ -162,22 +158,23 @@ int main(int argc, char **argv)
     CHECK(byKind.value(QStringLiteral("source")).value(QStringLiteral("count")).toInt() == 0);
     CHECK(byKind.value(QStringLiteral("interaction")).value(QStringLiteral("count")).toInt() >= 1);
     // diag.registries 本身就是一条 viewAction，interaction 节点至少含它。
-    CHECK(byKind.value(QStringLiteral("interaction")).value(QStringLiteral("keys")).toStringList()
+    CHECK(byKind.value(QStringLiteral("interaction"))
+              .value(QStringLiteral("keys"))
+              .toStringList()
               .contains(QStringLiteral("diag.registries")));
     CHECK(byKind.value(QStringLiteral("derived-series")).value(QStringLiteral("name")).toString()
           == QStringLiteral("派生序列"));
     CHECK(byKind.value(QStringLiteral("ui-slot")).value(QStringLiteral("count")).toInt() >= 1);
-    CHECK(byKind.value(QStringLiteral("ui-slot")).value(QStringLiteral("keys")).toStringList()
+    CHECK(byKind.value(QStringLiteral("ui-slot"))
+              .value(QStringLiteral("keys"))
+              .toStringList()
               .contains(QStringLiteral("ribbon.page.file")));
-    // static 节点（headless 无 GUI 视图注册 → 面板工厂 count==0；内置模块>=1）。
-    const QVariantMap panelRow = byKind.value(QStringLiteral("panel-factory"));
-    CHECK(panelRow.value(QStringLiteral("name")).toString() == QStringLiteral("面板工厂"));
-    CHECK(panelRow.value(QStringLiteral("count")).toInt() == 0);
+    // static 节点（headless 无 GUI 视图注册 → 内置模块>=1；A2d：panel-factory
+    // 节点随工厂表退场，不再有独立行）。
     const QVariantMap moduleRow = byKind.value(QStringLiteral("builtin-module"));
     CHECK(moduleRow.value(QStringLiteral("name")).toString() == QStringLiteral("内置模块"));
     CHECK(moduleRow.value(QStringLiteral("count")).toInt() >= 1);
-    CHECK(moduleRow.value(QStringLiteral("keys")).toStringList().contains(
-        QStringLiteral("mod.data")));
+    CHECK(moduleRow.value(QStringLiteral("keys")).toStringList().contains(QStringLiteral("mod.data")));
     // 遗留 4 收口的三张存量静态表节点（headless：表内容视装配而定，只验上树与视图口径）。
     CHECK(byKind.value(QStringLiteral("parser")).value(QStringLiteral("name")).toString()
           == QStringLiteral("解析器"));
@@ -191,10 +188,9 @@ int main(int argc, char **argv)
     const int id1 = repo->add(Dataset::create(QStringLiteral("ds-a"), QStringLiteral("mem")));
     const int id2 = repo->add(Dataset::create(QStringLiteral("ds-b"), QStringLiteral("mem")));
     CHECK(id1 >= 0 && id2 > id1);
-    CHECK(application.context().interactions().dispatchViewAction(
-        QStringLiteral("diag.registries"), {}, out));
+    CHECK(application.context().interactions().dispatchViewAction(QStringLiteral("diag.registries"), {}, out));
     const QVariantList rows = out.value().toList();
-    CHECK(rows.size() == 11); // 11 类节点全量上树，数量不随数据集增删变化
+    CHECK(rows.size() == 10); // 10 类节点全量上树，数量不随数据集增删变化
     const QVariantMap row = rows.first().toMap();
     CHECK(row.value(QStringLiteral("kind")).toString() == QStringLiteral("dataset"));
     CHECK(row.value(QStringLiteral("count")).toInt() == 2);

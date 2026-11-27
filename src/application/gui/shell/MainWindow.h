@@ -100,6 +100,14 @@ public:
     // 启动装配：建骨架、声明插槽、装载模块（GUI 模式）。
     void build(nextpilot::plotscope::host::RuntimeHost &host);
 
+    // 对话框启动器注入（A2d 第⑤步）：组合根（gui_main）把按 id 触发的启动回调
+    // 注进来，壳只存回调、零 libs/registry 引用；未注入（测试/极简装配）时
+    // 对话框动作 no-op。返回值恒真——壳拿到回调即视为已处理。
+    void setDialogLauncher(std::function<bool(const QString &actionId)> launcher)
+    {
+        m_dialogLauncher = std::move(launcher);
+    }
+
     // 状态持久化（声明式快照）：
     //   - 保存：关窗时把窗口几何 + ADS 布局 + ribbon 页签写入 Workspace 作用域；
     //   - 恢复：开窗时读回并应用；缺失的部分安全降级（不影响启动）。
@@ -115,7 +123,7 @@ public:
     KeybindingRegistry *keybindingRegistry() const { return m_keybindings.get(); }
     CommandPalette *commandPalette() const { return m_commandPalette; }
     // 诊断/测试：启动期面板引用校验未命中清单（空 = 全部命中工厂表）。
-    // 三源：包 PanelSpec / Activity panelTypes+centralPanel / 产品默认布局。
+    // 两源（A2d 第②步：旧包声明面退场）：Activity panelTypes+centralPanel / 产品默认布局。
     QStringList panelReferenceIssues() const { return m_panelReferenceIssues; }
 
     // 命令面板/快捷键（测试与 UI 驱动共用）。
@@ -130,7 +138,8 @@ private:
     void declareViewToggleSlots();
 
     // 打开数据对话框已归 data 模块呈现层（D18a/A2a）：由模块自注册启动器
-    // （DialogLauncherHub）处理，外壳按 id 触发、不 include 业务对话框。
+    // 对话框按 id 触发：启动器由组合根注入（A2d 第⑤步——壳零 libs/registry
+    // 引用，DialogLauncherHub 的调用归 gui_main 装配），不 include 业务对话框。
 
     // 来源库项：按指定格式驱动直接弹文件对话框（跳过格式选择步骤），
     // 选中的文件逐条走 data.load 意图——与通用导入、CLI/脚本同一条加载路径。
@@ -205,6 +214,9 @@ private:
     QHash<QString, QLabel *> m_statusLabels;
     // 启动期面板引用校验未命中清单（诊断/测试回读；空 = 全部命中工厂表）。
     QStringList m_panelReferenceIssues;
+
+    // 对话框启动器（组合根注入；见 setDialogLauncher）。
+    std::function<bool(const QString &)> m_dialogLauncher;
     ThemeManager *m_theme = nullptr;   // 系统级主题管理，生命周期归宿主
     // 壳读回服务（A8b-M2 裁定 52441633 §三）：包面板声明/格式提示/扩展主题 token
     // 都经 workbench 接口读回，MainWindow 不直连扩展注册表。借用指针，归装配层。

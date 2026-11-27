@@ -6,6 +6,7 @@
 // `vscode.window.registerWebviewViewProvider` 的消费面 + `viewsContainers` 查询。
 
 #include "ContributionParser.h" // ContributedView / ContributedViewContainer（纯数据）
+#include "ViewRegistry.h"       // ViewFactory（纯类型：std::function 工厂签名）
 
 class QWidget;
 
@@ -44,7 +45,13 @@ public:
     virtual nextpilot::plotscope::registry::ContributedView
     viewForId(const QString &viewId) const = 0;
 
-    // 打开视图内容（工厂经 ViewRegistry::registerViewProvider 注册；未注册返回 nullptr）。
+    // 装配口（A2d 第⑤步）：呈现层装配 TU 经本接口注册 provider——壳/模块侧
+    // 都不再直查 ViewRegistry（先到者为准；owner 参与卸载与校验）。
+    virtual bool registerViewProvider(const QString &viewId,
+                                      nextpilot::plotscope::registry::ViewRegistry::ViewFactory factory,
+                                      const QString &owner) = 0;
+
+    // 打开视图内容（工厂经 registerViewProvider 注册；未注册返回 nullptr）。
     // 已创建则置前（show/raise）并返回原控件，未创建则经工厂创建（A2b 笔 2a）。
     virtual QWidget *openView(const QString &viewId,
                               nextpilot::plotscope::context::AppContext &appCtx,

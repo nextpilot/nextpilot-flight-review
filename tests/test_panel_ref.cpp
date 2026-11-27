@@ -1,17 +1,19 @@
 // 验收 4：面板引用启动期校验。
 //
-// 声明侧三处（包 PanelSpec / Activity panelTypes、centralEditor / 产品默认布局）
-// 引用的面板类型必须在工厂表命中；未命中必须产出 error 诊断，且诊断说清
-// 来源模块、未命中类型、可用类型从哪查。本用例故意声明不存在的面板类型，
-// 断言校验器真的报错（不是"我觉得会炸"）。
+// 声明侧两源（A2d 第②步：旧包面板声明面退场——Activity panelTypes、
+// centralEditor / 产品默认布局）引用的视图 id 必须在声明面（views / customEditors）
+// 命中；未命中必须产出 error 诊断，且诊断说清来源模块、未命中类型、可用类型
+// 从哪查。本用例故意声明不存在的视图 id，断言校验器真的报错（不是"我觉得会炸"）。
+//
+// A2d 第①步：工厂表命中面（旧工厂 types()）随旧工厂类型删除而
+// 退场——命中面 = views 声明（knownViewIds，壳经 IViewsService 判定后传入）
+// ∪ customEditors 声明（customEditorViewTypes）。
 //
 // 独立链接：只链 ps_registry + Qt6::Core，headless 不拉 Widgets。
 
-#include "PanelFactoryHub.h"
 #include "PanelReferenceValidator.h"
 #include "ProductSpec.h"
 #include "RegistryTree.h"
-#include "Region.h"
 #include "ToolboxHub.h"
 #include "UiSlotHub.h"
 
@@ -21,40 +23,23 @@
 #include <cstdio>
 #include <utility>
 
-class QWidget;
-
-using nextpilot::plotscope::context::AppContext;
-using nextpilot::plotscope::intent::IIntentExecutor;
 using nextpilot::plotscope::registry::ActivitySpec;
-using nextpilot::plotscope::registry::PanelFactoryHub;
 using nextpilot::plotscope::registry::PanelReferenceIssue;
-using nextpilot::plotscope::registry::PanelSpec;
-using nextpilot::plotscope::registry::Pack;
 using nextpilot::plotscope::registry::ProductPanelPlacement;
-using nextpilot::plotscope::registry::ProductSpec;
 using nextpilot::plotscope::registry::RegistryTree;
-using nextpilot::plotscope::registry::Region;
-using nextpilot::plotscope::registry::ToolboxHub;
 using nextpilot::plotscope::registry::UiSlotHub;
 
-namespace
-{
+namespace {
 int g_failed = 0;
-#define CHECK(cond)                                                            \
-    do                                                                         \
-    {                                                                          \
-        if (!(cond))                                                           \
-        {                                                                      \
-            std::printf("FAIL line %d: %s\n", __LINE__, #cond);                \
-            ++g_failed;                                                        \
-        }                                                                      \
+#define CHECK(cond)                                                                                                    \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        if (!(cond))                                                                                                   \
+        {                                                                                                              \
+            std::printf("FAIL line %d: %s\n", __LINE__, #cond);                                                        \
+            ++g_failed;                                                                                                \
+        }                                                                                                              \
     } while (0)
-
-// 工厂只占位：签名与真实工厂一致，构造体返回 nullptr（headless 不碰 QWidget 实例）。
-QWidget *dummyFactory(AppContext &, IIntentExecutor &, QWidget *)
-{
-    return nullptr;
-}
 
 const PanelReferenceIssue *findIssue(const QList<PanelReferenceIssue> &issues, const QString &type)
 {
@@ -68,47 +53,37 @@ const PanelReferenceIssue *findIssue(const QList<PanelReferenceIssue> &issues, c
 int main(int argc, char **argv)
 {
     QCoreApplication app(argc, argv);
-    PanelFactoryHub::reset(); // 测试间隔离静态工厂表
 
     RegistryTree tree;
-    ToolboxHub toolbox(tree);
     UiSlotHub slotHub(tree);
-
-    // 命中的工厂类型：后续正向用例声明它，校验器不应报问题。
-    PanelFactoryHub::registerPanel(QStringLiteral("known-panel"), &dummyFactory,
-                                   QStringLiteral("已知面板"));
 
     // --- 基线：空声明、空布局 → 零问题 ---
     {
         const QList<ProductPanelPlacement> emptyPlacements;
-        const auto issues = validatePanelReferences(toolbox, slotHub, emptyPlacements);
+        const auto issues = validatePanelReferences(slotHub, emptyPlacements);
         CHECK(issues.isEmpty());
     }
 
-    // --- 负向：三处来源各声明一个不存在的面板类型 ---
+    // --- 负向：两处来源各声明一个不存在的视图 id ---
     ActivitySpec activity;
     activity.id = QStringLiteral("test.activity");
     activity.panelTypes = {QStringLiteral("bogus-side-panel")};
     activity.centralEditor = QStringLiteral("bogus-central");
     slotHub.registerActivity(activity);
 
-    Pack pack;
-    pack.id = QStringLiteral("pack.test");
-    PanelSpec packPanel;
-    packPanel.id = QStringLiteral("bogus-pack-panel");
-    pack.panels.append(packPanel);
-    CHECK(toolbox.mount(std::move(pack)));
-
     QList<ProductPanelPlacement> placements;
     ProductPanelPlacement placement;
-    placement.region = Region::Panel;
     placement.viewId = QStringLiteral("bogus-placement");
     placements.append(placement);
 
-    const auto issues = validatePanelReferences(toolbox, slotHub, placements);
+    const auto issues = validatePanelReferences(slotHub, placements);
 
-    // 三条来源共四个未命中（activity 两个：panelTypes + centralEditor）。
-    CHECK(issues.size() == 4);
+    // 三条负例各"红"一次：校验器必须逐条报出（可见证据，PR 贴原文）。
+    for (const PanelReferenceIssue &issue : issues)
+        std::printf("  [panel-ref 负例检出] %s :: %s\n", qPrintable(issue.source), qPrintable(issue.type));
+
+    // 两处来源共三个未命中（activity 两个：panelTypes + centralEditor）。
+    CHECK(issues.size() == 3);
 
     const PanelReferenceIssue *side = findIssue(issues, QStringLiteral("bogus-side-panel"));
     CHECK(side != nullptr);
@@ -116,7 +91,7 @@ int main(int argc, char **argv)
     {
         CHECK(side->source.contains(QStringLiteral("test.activity")));
         CHECK(side->message.contains(QStringLiteral("bogus-side-panel")));
-        CHECK(side->message.contains(QStringLiteral("PanelFactoryHub::types()")));
+        CHECK(side->message.contains(QStringLiteral("views 声明")));
     }
 
     const PanelReferenceIssue *central = findIssue(issues, QStringLiteral("bogus-central"));
@@ -124,30 +99,33 @@ int main(int argc, char **argv)
     if (central)
         CHECK(central->source.contains(QStringLiteral("centralEditor")));
 
-    const PanelReferenceIssue *packIssue = findIssue(issues, QStringLiteral("bogus-pack-panel"));
-    CHECK(packIssue != nullptr);
-    if (packIssue)
-    {
-        CHECK(packIssue->source.contains(QStringLiteral("pack.test")));
-        // 第③步顺延必修：消息改述三命中面（工厂 ∪ views ∪ customEditors）。
-        CHECK(packIssue->message.contains(QStringLiteral("三命中面")));
-    }
-
     const PanelReferenceIssue *placementIssue = findIssue(issues, QStringLiteral("bogus-placement"));
     CHECK(placementIssue != nullptr);
     if (placementIssue)
         CHECK(placementIssue->source.contains(QStringLiteral("产品默认布局")));
 
-    // --- 正向：命中工厂表的类型不出现在问题清单里 ---
+    // --- 正向：命中 views 声明面的类型不出现在问题清单里 ---
     ActivitySpec hitActivity;
     hitActivity.id = QStringLiteral("hit.activity");
-    hitActivity.panelTypes = {QStringLiteral("known-panel")};
+    hitActivity.panelTypes = {QStringLiteral("known-view")};
     slotHub.registerActivity(hitActivity);
 
-    const auto afterHit = validatePanelReferences(toolbox, slotHub, placements);
-    CHECK(findIssue(afterHit, QStringLiteral("known-panel")) == nullptr);
+    // known-view 由壳经 IViewsService 判定命中后传入（这里模拟已判定的命中面）。
+    const QStringList knownViewIds{QStringLiteral("known-view")};
+    const auto afterHit = validatePanelReferences(slotHub, placements, knownViewIds, {});
+    CHECK(findIssue(afterHit, QStringLiteral("known-view")) == nullptr);
     // 原有未命中依旧如实上报。
-    CHECK(afterHit.size() == 4);
+    CHECK(afterHit.size() == 3);
+
+    // --- 正向：命中 customEditors 声明面的 centralEditor 不再报问题 ---
+    ActivitySpec hitEditor;
+    hitEditor.id = QStringLiteral("hit.editor");
+    hitEditor.centralEditor = QStringLiteral("known-editor");
+    slotHub.registerActivity(hitEditor);
+    const auto afterEditor =
+        validatePanelReferences(slotHub, placements, knownViewIds, QStringList{QStringLiteral("known-editor")});
+    CHECK(findIssue(afterEditor, QStringLiteral("known-editor")) == nullptr);
+    CHECK(afterEditor.size() == 3);
 
     if (g_failed)
     {

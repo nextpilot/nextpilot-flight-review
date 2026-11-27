@@ -32,7 +32,7 @@ struct AutoRegistrar
 // 免疫跨 TU 静态初始化顺序问题）。策略固定：空 id 拒收、Entry::valid() 拒收、先到者为准。
 //
 // 用法：新增一张静态表 = Entry 结构（带 valid()）+ `using X = StaticHub<Entry>` 别名；
-// 有额外领域方法时继承它补（参考 PanelFactoryHub::create）——只补领域方法，不碰存储。
+// 有额外领域方法时继承它补（如 ViewRegistry 的 openView 领域壳）——只补领域方法，不碰存储。
 // 运行期要增删的表**不用这个**（走 TypedRegistry/Registry 实例，归组合根持有）。
 template <typename Entry, typename Key = QString>
 class StaticHub
@@ -65,9 +65,7 @@ private:
 
 // TU 末尾一行自注册：PS_AUTO_REGISTER(条目类型, 变量名, "id", 构造表达式)
 // 变量名在 TU 内唯一。展开为匿名命名空间的静态对象。
-#define PS_AUTO_REGISTER(EntryType, VarName, Id, Expr)                                    \
-    namespace                                                                            \
-    {                                                                                    \
-    const ::nextpilot::plotscope::registry::AutoRegistrar<EntryType> g_ps_auto_##VarName{ \
-        (Id), (Expr)};                                                                   \
+#define PS_AUTO_REGISTER(EntryType, VarName, Id, Expr)                                                                 \
+    namespace {                                                                                                        \
+    const ::nextpilot::plotscope::registry::AutoRegistrar<EntryType> g_ps_auto_##VarName{(Id), (Expr)};                \
     }

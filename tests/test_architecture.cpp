@@ -74,12 +74,14 @@ private:
 
 // Release(NDEBUG) 下 assert 是空操作；用 CHECK 做真实断言，避免有副作用的
 // 调用被 assert 包裹后在 Release 里整个消失（历史踩过坑）。
-#define CHECK(cond)                                                            \
-    do {                                                                       \
-        if (!(cond)) {                                                         \
-            fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);    \
-            return 1;                                                          \
-        }                                                                      \
+#define CHECK(cond)                                                                                                    \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        if (!(cond))                                                                                                   \
+        {                                                                                                              \
+            fprintf(stderr, "FAIL %s:%d: %s\n", __FILE__, __LINE__, #cond);                                            \
+            return 1;                                                                                                  \
+        }                                                                                                              \
     } while (0)
 
 using namespace nextpilot::plotscope::app;
@@ -471,7 +473,8 @@ int main(int argc, char **argv)
         // 汽车 car.dock.can（CAN 报文面板，原 dock.right），均"待对应视图落地后回归"。
         // 仍在表的：ap.plot.attitude（改挂 ribbon.group.plot.series）、rob.plot.tf、probe.ui.act。
         CHECK(toolbox.uiActions.count() == 3); // 飞控1 + 机器人1 + 探针1（死槽退役 3 条）
-        CHECK(toolbox.panels.count() == 1);
+        // A2d 第②步：旧包面板声明面（Pack.panels）退场——面板清单计数断言
+        // 随通道删除迁移到 GUI 面（test_gui 3b：automotive.canBrowser 经 IViewsService）。
         CHECK(toolbox.scripts.count() == 2);
         CHECK(toolbox.dataAssets.count() == 1);
         CHECK(toolbox.examples.count() == 1);
@@ -506,11 +509,9 @@ int main(int argc, char **argv)
         const DocEntry *ulogDoc = toolbox.docs.find(QStringLiteral("ap.doc.ulog"));
         CHECK(ulogDoc != nullptr);
 
-        // 领域面板的**描述**是纯数据，headless（CLI）也能查到——
-        // 实现（QWidget 工厂）只在 GUI 侧注册，两者用 id 关联。
-        const PanelSpec *canPanel = toolbox.panels.find(QStringLiteral("automotive.canBrowser"));
-        CHECK(canPanel != nullptr);
-        CHECK(canPanel->domain == Domain::Automotive);
+        // A2d 第②步：旧包面板声明面（Pack.panels）退场——汽车面板描述的
+        // headless 断言随通道删除迁移到 GUI 面（test_gui 3b/3c：IViewsService 读回
+        // automotive.canBrowser，owner == "automotive"）。
 
         // UI 插槽：壳级页/组在 host 层 ShellContributions 唯一声明；业务页/组由模块
         // onAttach 自声明，headless 不调 onAttach，因此这里只看到壳的文件/视图两页。
@@ -528,8 +529,8 @@ int main(int argc, char **argv)
         Pack customPack;
         customPack.id = QStringLiteral("pack.custom");
         customPack.name = QStringLiteral("自定义工具箱");
-        customPack.docs.append({QStringLiteral("custom.doc"), QStringLiteral("自定义能力"),
-                                QStringLiteral("docs/custom.md"), QString()});
+        customPack.docs.append(
+            {QStringLiteral("custom.doc"), QStringLiteral("自定义能力"), QStringLiteral("docs/custom.md"), QString()});
         CHECK(toolbox.mount(std::move(customPack)));
         CHECK(toolbox.docs.count() == 6); // 新包条目已进表
         CHECK(toolbox.unmount(QStringLiteral("pack.custom")));    // 按包原子撤销
@@ -560,7 +561,9 @@ int main(int argc, char **argv)
         // （声明了页必须有组、声明了组必须有动作/子组）在 GUI 全装配后的
         // test_gui.cpp 里做——那里模块已 onAttach，消费者可见。
 
-        fprintf(stdout, "[ok] 死插槽检查（headless）：仅 RibbonPage/RibbonGroup 入表，旧 Dock/Canvas/Menu 槽归零；零消费者检查见 test_gui\n");
+        fprintf(
+            stdout,
+            "[ok] 死插槽检查（headless）：仅 RibbonPage/RibbonGroup 入表，旧 Dock/Canvas/Menu 槽归零；零消费者检查见 test_gui\n");
     }
 
     // 2) 意图执行：CSV 扩展产出 Dataset（一张 CSV = 一张表）
@@ -739,12 +742,12 @@ int main(int argc, char **argv)
     // 3b) 脚本自动化：Lua 通过门面 ps.* 发意图，与 GUI/CLI 走同一执行器。
     //     脚本里不认识 CSV/plot 模块，只认识 ps 门面。
     {
-        const QString script =
-            QStringLiteral("local id = ps.data.load('%1', 'csv', 100)\n"
-                           "ps.log('script loaded dataset ' .. id)\n"
-                           "local spec = ps.plot.render(id, 'demo.roll')\n"
-                           "assert(spec.type == 'timeseries')\n"
-                           "assert(spec.column == 'roll')\n").arg(csv);
+        const QString script = QStringLiteral("local id = ps.data.load('%1', 'csv', 100)\n"
+                                              "ps.log('script loaded dataset ' .. id)\n"
+                                              "local spec = ps.plot.render(id, 'demo.roll')\n"
+                                              "assert(spec.type == 'timeseries')\n"
+                                              "assert(spec.column == 'roll')\n")
+                                   .arg(csv);
         Intent runScript;
         runScript.op = QStringLiteral("script.run");
         runScript.params[QStringLiteral("source")] = script.toUtf8();
@@ -1223,7 +1226,8 @@ using namespace nextpilot::plotscope::context;
 #endif
         const QString srcRoot = QStringLiteral(PS_TEST_SRC_ROOT);
         // 对话框物理位置：必须在 modules/protocol/gui，不在 gui/shell。
-        CHECK(QFile::exists(srcRoot + QStringLiteral("/src/application/modules/protocol/gui/ProtocolEditorDialog.cpp")));
+        CHECK(
+            QFile::exists(srcRoot + QStringLiteral("/src/application/modules/protocol/gui/ProtocolEditorDialog.cpp")));
         CHECK(QFile::exists(srcRoot + QStringLiteral("/src/application/modules/protocol/gui/ProtocolInspectorDialog.cpp")));
         CHECK(!QFile::exists(srcRoot + QStringLiteral("/src/application/gui/shell/ProtocolEditorDialog.cpp")));
         CHECK(!QFile::exists(srcRoot + QStringLiteral("/src/application/gui/shell/ProtocolInspectorDialog.cpp")));

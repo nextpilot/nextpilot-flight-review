@@ -8,6 +8,7 @@
 #include "ScriptViewFactories.h"   // script 模块视图装配（A2c）：files/console/debug view + editor/batchSummary editor
 #include "AutomotiveViewFactories.h" // automotive 领域视图装配（A2c）：canBrowser view
 #ifdef PS_HAS_REPORT_GUI
+#include "DialogLaunch.h"   // 装配层：对话框按 id 触发助手（A2d 第⑤步壳零 registry 引用）
 #include "ReportExporter.h" // 装配层：注册 report.export viewAction（业务在 report 模块）
 #endif
 
@@ -92,17 +93,15 @@ int main(int argc, char *argv[])
     QApplication::setApplicationVersion(productSpec.version);
 
     QCommandLineParser parser;
-    parser.setApplicationDescription(
-        QStringLiteral("%1 —— 数据绘图分析软件（图形界面）").arg(productSpec.displayName));
+    parser.setApplicationDescription(QStringLiteral("%1 —— 数据绘图分析软件（图形界面）").arg(productSpec.displayName));
     parser.addHelpOption();
     parser.addVersionOption();
 
     QCommandLineOption openOpt(QStringLiteral("open"),
                                 QStringLiteral("启动时载入数据文件"), QStringLiteral("file"));
     parser.addOption(openOpt);
-    QCommandLineOption datafileOpt(QStringList{ QStringLiteral("d"), QStringLiteral("datafile") },
-                                   QStringLiteral("启动载入数据文件（可重复，对齐 PJ4）"),
-                                   QStringLiteral("file"));
+    QCommandLineOption datafileOpt(QStringList{QStringLiteral("d"), QStringLiteral("datafile")},
+                                   QStringLiteral("启动载入数据文件（可重复，对齐 PJ4）"), QStringLiteral("file"));
     parser.addOption(datafileOpt);
     QCommandLineOption autoplayOpt(QStringLiteral("autoplay"),
                                    QStringLiteral("载入完成后自动开始播放"));
@@ -129,10 +128,9 @@ int main(int argc, char *argv[])
                                          QStringLiteral("窗口就绪并完成载入后退出（退出码 0=成功/1=有失败）"),
                                          QStringLiteral("seconds"), QStringLiteral("3"));
     parser.addOption(exitAfterStartOpt);
-    QCommandLineOption settingsOpt(QStringLiteral("settings"),
-                                   QStringLiteral("设置文件路径（默认 <AppData>/%1/settings.json）")
-                                       .arg(productSpec.id),
-                                   QStringLiteral("file"));
+    QCommandLineOption settingsOpt(
+        QStringLiteral("settings"),
+        QStringLiteral("设置文件路径（默认 <AppData>/%1/settings.json）").arg(productSpec.id), QStringLiteral("file"));
     parser.addOption(settingsOpt);
     parser.process(app);
 
@@ -198,12 +196,18 @@ int main(int argc, char *argv[])
     nextpilot::plotscope::gui::MainWindow window(application.context(), productSpec);
     window.build(application.host());
 
+    // 对话框启动器注入（A2d 第⑤步）：壳零 libs/registry 引用——按 id 触发的
+    // 对话框动作由组合根经装配层助手（DialogLaunch.h）落到模块呈现层注册的启动器。
+    window.setDialogLauncher([&window, &application](const QString &actionId) {
+        nextpilot::plotscope::assembly::launchDialogById(actionId, &window, application.context(), application.host());
+        return true;
+    });
+
     // A8b-M1：把扩展 contributes 的命令接进命令面板。MainWindow 零改动——
     // 装配层用 public getter 拿 CommandRegistry*，激活服务只按声明摆放、不解释 id。
     // 裁定 52441633 §四：只传 AppContext，扩展注册表的获取留在装配层，
     // gui 目录不再出现扩展注册表的获取路径（§9 e) 判据）。
-    nextpilot::plotscope::assembly::ExtensionActivationService extensionActivation(
-        application.context());
+    nextpilot::plotscope::assembly::ExtensionActivationService extensionActivation(application.context());
     extensionActivation.bind(window.commandRegistry(), application.host());
 
     int loadFailures = 0;
@@ -215,8 +219,7 @@ int main(int argc, char *argv[])
         if (!result)
         {
             ++loadFailures;
-            window.statusBar()->showMessage(QStringLiteral("载入失败: %1")
-                                                .arg(result.error().message));
+            window.statusBar()->showMessage(QStringLiteral("载入失败: %1").arg(result.error().message));
         }
     };
 
@@ -245,8 +248,7 @@ int main(int argc, char *argv[])
             if (doc.isNull())
             {
                 ++loadFailures;
-                window.statusBar()->showMessage(QStringLiteral("布局 JSON 解析失败: %1")
-                                                    .arg(perr.errorString()));
+                window.statusBar()->showMessage(QStringLiteral("布局 JSON 解析失败: %1").arg(perr.errorString()));
             }
             else
             {
@@ -266,8 +268,7 @@ int main(int argc, char *argv[])
                     if (!rr)
                     {
                         ++loadFailures;
-                        window.statusBar()->showMessage(QStringLiteral("布局恢复失败: %1")
-                                                            .arg(rr.error().message));
+                        window.statusBar()->showMessage(QStringLiteral("布局恢复失败: %1").arg(rr.error().message));
                     }
                 }
             }
@@ -282,7 +283,7 @@ int main(int argc, char *argv[])
     if (parser.isSet(autoplayOpt))
     {
         QTimer::singleShot(0, &window, [&application] {
-            nextpilot::plotscope::foundation::Result<QVariant> out{ QVariant() };
+            nextpilot::plotscope::foundation::Result<QVariant> out{QVariant()};
             application.host().dispatchViewAction(QStringLiteral("playback.play"), {}, out);
         });
     }

@@ -12,8 +12,7 @@
 #include <QSet>
 #include <QStringList>
 
-namespace nextpilot::plotscope::registry
-{
+namespace nextpilot::plotscope::registry {
 
 class NullContributionSink
 {
@@ -39,14 +38,20 @@ public:
             seen.insert(key);
         };
 
-        for (const auto &a : pack.uiActions) checkId(a.id, "uiAction");
-        for (const auto &p : pack.panels) checkId(p.id, "panel");
-        for (const auto &s : pack.scripts) checkId(s.id, "script");
-        for (const auto &d : pack.dataAssets) checkId(d.id, "dataAsset");
-        for (const auto &d : pack.docs) checkId(d.id, "doc");
-        for (const auto &e : pack.examples) checkId(e.id, "example");
-        for (const auto &r : pack.reports) checkId(r.id, "report");
-        for (const auto &t : pack.themeTokens) checkId(t.id, "themeToken");
+        for (const auto &a : pack.uiActions)
+            checkId(a.id, "uiAction");
+        for (const auto &s : pack.scripts)
+            checkId(s.id, "script");
+        for (const auto &d : pack.dataAssets)
+            checkId(d.id, "dataAsset");
+        for (const auto &d : pack.docs)
+            checkId(d.id, "doc");
+        for (const auto &e : pack.examples)
+            checkId(e.id, "example");
+        for (const auto &r : pack.reports)
+            checkId(r.id, "report");
+        for (const auto &t : pack.themeTokens)
+            checkId(t.id, "themeToken");
 
         // 视图标题/条目上下文：必须指明归属视图与命令（否则壳无法呈现）。
         for (const auto &v : pack.viewTitleActions)

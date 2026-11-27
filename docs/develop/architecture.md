@@ -80,7 +80,7 @@ src/
 
 - 外壳只留一个绑定器 `ShellBinder`（Ribbon 绑定 + dock 绑定），不设 DockManager/RibbonManager 中转类。
 - UI 顺序是纯数据契约：所有槽/组/动作带 `order` 字段，与模块装载顺序解耦。
-- 视图自注册（`PS_REGISTER_PANEL`），领域自带面板形态归 toolbox 的 `gui/`。
+- 视图声明 + provider 装配（views/editor，同 TU 同次完成），领域自带面板形态归领域包的 `gui/`。
 - 主题走 token 化配色（`ThemeManager`），未知 token 返回洋红 `#FF00FF`，便于暴露误用。
 - 产品身份唯一来源 `registry::ProductSpec`（id / 显示名 / 默认 Region 布局 / 模块清单），由装配层注入壳；壳内无产品常量、无产品分支。完整产品与裸壳 `ps_shell_bare`（零模块第二产品，`PS_BUILD_BARE` 默认 ON）共用同一份 `ps_gui`。
 

@@ -15,7 +15,7 @@
 
 // A2c：呈现层归位——本文件从 gui/views 迁入 modules/plot/gui（owner "plot"）。
 // 声明与 provider 注册收进 PlotViewFactories（同 TU 时序不变式：声明先于注册），
-// 不再走 PS_REGISTER_PANEL 自注册。using namespace dataset|parser 归零（A2c
+// 不再走工厂表自注册。using namespace dataset|parser 归零（A2c
 // 判据：gui 面不整段引入 dataset/parser 命名空间），用到的符号显式限定。
 using namespace nextpilot::plotscope::foundation;
 using namespace nextpilot::plotscope::intent;

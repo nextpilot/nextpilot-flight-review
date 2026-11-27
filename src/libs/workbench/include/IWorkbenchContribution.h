@@ -50,17 +50,8 @@ public:
     // 更新 Activity Bar 徽标数量（0 表示不显示）。
     virtual void setActivityBadge(const QString &activityId, int count) = 0;
 
-    // 请求 app 骨架提供一个部件，放到指定逻辑区域——通用面板与扩展包领域面板的唯一入口。
-    //
-    // 模块只描述"我需要什么部件"（用部件类型标识，如 "dataset-tree" / "car.can-browser"），
-    // 由 app 骨架决定用哪个 QWidget 实现并停靠。实现先查模块/视图工厂表，
-    // 未命中再按扩展包 PanelSpec 清单取标题/图标元数据；工厂未注册返回 nullptr。这样：
-    //   - 模块不依赖 Qt Widgets，headless（CLI）构建保持纯净；
-    //   - 新增模块自带界面 = 声明一个部件类型 + 动作，无需改 GUI 层。
-    // 返回部件的宿主引用（QWidget 前置声明），模块可用它设置数据/标题等。
-    virtual QWidget *requestPanel(nextpilot::plotscope::registry::Region region, const QString &panelType) = 0;
-
-    // ---- A2b 笔2b：视图/编辑器打开入口（取代 requestPanel，requestPanel 待旧面清除步删除）----
+    // ---- 视图/编辑器打开入口（A2d 第④步：旧面板请求契约退场，模块面板
+    // 打开/创建一律走这两条声明式入口）----
     // 打开一个已声明视图（落区由 viewsContainers[].area 决定，模块不指定 Region）；
     // 已创建则置前复用。未声明/未注册返回 nullptr。壳内部补齐 AppContext/executor/parent。
     virtual QWidget *openView(const QString &viewId) = 0;
@@ -68,18 +59,8 @@ public:
     // 未注册 provider 或 canOpen 拒绝返回 nullptr。
     virtual QWidget *openEditor(const QString &viewType, const nextpilot::plotscope::registry::ResourceRef &ref) = 0;
 
-    // 查询当前可用的领域面板清单（纯数据，headless 也能问）。
-    //
-    // 模块怎么知道该请求哪个？它不写死 id，而是先问
-    // availableDomainPanels(domain)——拿到该领域提供的面板清单，
-    // 再按 id 走唯一入口 requestPanel 请求。于是：
-    //   - 模块只认**领域**（它的业务范围），不认具体面板；
-    //   - 面板清单由扩展包决定，装/卸扩展包即时反映；
-    //   - headless 下也能问（清单是纯数据）。
-    //
-    // domain 传 Domain::General 表示不限领域，返回全部可用领域面板。
-    virtual QList<nextpilot::plotscope::registry::PanelSpec>
-    availableDomainPanels(nextpilot::plotscope::registry::Domain domain) const = 0;
+    // （A2d 第②步：旧领域面板清单查询入口随旧包面板声明面一并退场——
+    // 模块/壳改经 IViewsService 消费 contributes.views 声明，调用点 A2c 已归零。）
 
     // 宿主执行器：模块在 GUI 里点击动作后，用它发意图（与脚本/CLI 同一路径）。
     virtual nextpilot::plotscope::intent::IIntentExecutor &executor() = 0;

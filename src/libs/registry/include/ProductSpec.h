@@ -19,15 +19,14 @@
 namespace nextpilot::plotscope::registry
 {
 
-// 默认布局里的一条视图占位：哪个区域打开哪个 view。
+// 默认布局里的一条视图占位：装配时打开哪个 view。
 //   · viewId 为空：该区只放空态占位，不打开任何视图；
 //   · 视图未声明/未注册时打开返回 nullptr，壳安全跳过，不算错误；
 //   · raiseAfter：装配后把该视图置前（如完整产品默认停在终端页签）。
-// A2b 笔2b 第①步：panelType → viewId（region 字段保留兼容，第⑦步随落区改造删除，
-// 落区届时来自 viewsContainers[].area；当前仍由 region 决定）。
+// A2b 笔2b 第①步：旧面板类型字段改名 viewId；A2d 第③步：region 字段退场——
+// 落区只来自 contributes.viewsContainers[].area（壳 openView 按声明解析），占位不带落区。
 struct ProductPanelPlacement
 {
-    Region region = Region::Editor;
     QString viewId;
     QString title; // 可选标题覆盖；空 = 取视图自注册标题
     bool raiseAfter = false;

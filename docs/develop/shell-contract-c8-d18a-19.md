@@ -93,13 +93,13 @@ grep -rn "ProtocolInspectorDialog\|ProtocolEditorDialog" src/application/gui/she
 
 **结论：已达标，并把边界写死在这里，防止以后有人往 `ProductSpec` 里塞业务文案。**
 
-| 文案类别                 | 归属                                               | 例子                      |
-| ------------------------ | -------------------------------------------------- | ------------------------- |
-| 面板标题                 | 面板自注册的 `PanelSpec.title`（包内 `gui/` 注册） | `dataset-tree` → "数据源" |
-| 命令标签 / Ribbon 分组名 | 模块 `contributes().actions` / `.ribbonGroups`     | "绘图"、"导出"            |
-| 状态栏项文案             | 模块 `contributes().statuses` + `updateStatus`     | "游标: 12.40 s"           |
-| Activity 标签            | 模块 `contributes().activities`                    | "脚本"                    |
-| 空态/错误提示            | 模块或壳的通用诊断（不含业务名词）                 | "未装载任何数据源"        |
+| 文案类别                 | 归属                                           | 例子                      |
+| ------------------------ | ---------------------------------------------- | ------------------------- |
+| 面板标题                 | 视图声明（contributes.views）的 title/provider | `dataset-tree` → "数据源" |
+| 命令标签 / Ribbon 分组名 | 模块 `contributes().actions` / `.ribbonGroups` | "绘图"、"导出"            |
+| 状态栏项文案             | 模块 `contributes().statuses` + `updateStatus` | "游标: 12.40 s"           |
+| Activity 标签            | 模块 `contributes().activities`                | "脚本"                    |
+| 空态/错误提示            | 模块或壳的通用诊断（不含业务名词）             | "未装载任何数据源"        |
 
 **规则**：`ProductSpec` 只承载**身份 + 装配**（id / displayName / version / reportTitle / aboutText / defaultPanels / moduleIds）。
 `aboutText` 是"这个产品是干什么用的"身份描述，属 19a；`ps_shell_bare` 留空即不带出，实测成立。

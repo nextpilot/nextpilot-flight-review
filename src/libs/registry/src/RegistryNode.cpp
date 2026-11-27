@@ -14,7 +14,6 @@ QString kindName(RegistryKind kind)
     case RegistryKind::Interaction: return QStringLiteral("interaction");
     case RegistryKind::UiSlot: return QStringLiteral("ui-slot");
     case RegistryKind::Extension: return QStringLiteral("extension");
-    case RegistryKind::PanelFactory: return QStringLiteral("panel-factory");
     case RegistryKind::BuiltinModule: return QStringLiteral("builtin-module");
     case RegistryKind::Parser: return QStringLiteral("parser");
     case RegistryKind::RecordingFormat: return QStringLiteral("recording-format");

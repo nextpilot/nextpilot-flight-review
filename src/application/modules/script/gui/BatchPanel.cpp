@@ -43,7 +43,7 @@ QString metricsToText(const QVariant &metrics)
 } // namespace
 
 // 工厂函数（A2c 归位：具名函数外链，ScriptViewFactories 经 registerEditorProvider
-// 登记——原 PS_REGISTER_PANEL_T 具名指针 / 自注册已退场）
+// 登记——原工厂具名指针 / 自注册已退场）
 QWidget *createBatchSummaryPanel(AppContext &app, IIntentExecutor &ex, QWidget *parent)
 {
     return new BatchSummaryPanel(app, ex, parent);
@@ -85,19 +85,19 @@ BatchSummaryPanel::BatchSummaryPanel(AppContext &appCtx, IIntentExecutor &execut
 
     // data.batch.progress：每文件 upsert 一行（重复 run 覆盖同文件行）
     QPointer<BatchSummaryPanel> guard(this);
-    m_app->interactions().registerViewAction(
-        QLatin1String(kActProgress), [guard](const QVariantMap &params) -> Result<QVariant> {
-            if (guard)
-                guard->applyProgress(params);
-            return Result<QVariant>(QVariant(true));
-        });
+    m_app->interactions().registerViewAction(QLatin1String(kActProgress),
+                                             [guard](const QVariantMap &params) -> Result<QVariant> {
+                                                 if (guard)
+                                                     guard->applyProgress(params);
+                                                 return Result<QVariant>(QVariant(true));
+                                             });
     // data.batch.summary：收尾（成败计数 + 取消标记），恢复取消按钮态
-    m_app->interactions().registerViewAction(
-        QLatin1String(kActSummary), [guard](const QVariantMap &params) -> Result<QVariant> {
-            if (guard)
-                guard->applySummary(params);
-            return Result<QVariant>(QVariant(true));
-        });
+    m_app->interactions().registerViewAction(QLatin1String(kActSummary),
+                                             [guard](const QVariantMap &params) -> Result<QVariant> {
+                                                 if (guard)
+                                                     guard->applySummary(params);
+                                                 return Result<QVariant>(QVariant(true));
+                                             });
     // data.batch.pick：目录 + 脚本文件对话框。params 已带 dir+script 时直接透传
     // （脚本/测试免对话框驱动批量；Ribbon 入口无参 → 弹对话框）。
     m_app->interactions().registerViewAction(
@@ -108,8 +108,7 @@ BatchSummaryPanel::BatchSummaryPanel(AppContext &appCtx, IIntentExecutor &execut
             if (params.contains(QStringLiteral("dir"))
                 && params.contains(QStringLiteral("script")))
                 return Result<QVariant>(QVariant(params));
-            const QString dir = QFileDialog::getExistingDirectory(
-                guard, QStringLiteral("选择批量数据目录"));
+            const QString dir = QFileDialog::getExistingDirectory(guard, QStringLiteral("选择批量数据目录"));
             if (dir.isEmpty())
                 return Result<QVariant>(QVariant());
             const QString script = QFileDialog::getOpenFileName(
@@ -189,5 +188,5 @@ QTreeWidgetItem *BatchSummaryPanel::upsertRow(const QString &file)
 
 } // namespace nextpilot::plotscope::script
 
-// A2c：PS_REGISTER_PANEL_TI 自注册已删——script.batchSummary 由 ScriptViewFactories
+// A2c：工厂表自注册已删——script.batchSummary 由 ScriptViewFactories
 // 装配（editor 声明 + provider 登记，owner "script"）。工厂函数本体保留。

@@ -614,7 +614,7 @@ PS_REGISTER_MODULE(SourceModule)   // 需提供 moduleInfo() / create()
 
 **贡献体系纪律（无虚基类、无包装类、无 kind 字符串索引）**：
 
-- 六类贡献 = 六个纯数据 struct（`UiAction` / `PanelSpec` / `ScriptSpec` /
+- 五类贡献 = 五个纯数据 struct（`UiAction` / `ScriptSpec` /
   `DataAsset` / `DocEntry` / `ExampleEntry`，见 `Contribution.h`），身份
   （id / provider / domain）是字段，不是虚函数；provider/domain 由 mount()
   自动写入，包作者永远不填。
@@ -712,7 +712,7 @@ gui/
 
 **plot 的演进方向**：绘图会被抽取成一个类似 Qwt 的独立库（`modules/plot/gui/` 是它的
 前身），所以它**不属于任何模块、不聚合进 `modules/`**——它是能力库，模块
-（`PlotModule`）只是通过 `requestPanel(Region::Editor, "plot.axes")` 使用它。
+（`PlotModule`）只是通过 `openView`/`openEditor`（views/editor 声明）使用它。
 这也决定了它必须留在 `gui/views/`（或未来的 `libs/plot/`），而非功能目录。
 
 #### 统一定则：物理位置与逻辑位置正交
@@ -763,8 +763,8 @@ modules/data/                     一个"数据"功能，物理聚合
 > 颜色由宿主在 `applyPalette()` 里从 palette 注入，曲线色在 `pushToPlot` 时按当时主题取——
 > 库保持纯净，定制在宿主侧做。集成测试：`fastplot_*` 四套 + `ps_test_plot_io`。
 
-关键：**物理聚合不改逻辑解耦**——模块仍只发字符串 id（`requestPanel`），
-不 include 视图头；视图靠 `PS_REGISTER_PANEL` 自注册到 core 工厂表。
+关键：**物理聚合不改逻辑解耦**——模块仍只发字符串 id（`openView`），
+不 include 视图头；视图经 views/editor 声明 + provider 装配（同 TU 同次完成）。
 CMake 保证 CLI 只链 headless 那一半：`ldd` 验证 CLI 与 headless 测试
 都无 `libQt6Widgets`，也不含 `DataManagerPanel.cpp.o`。
 
@@ -788,22 +788,22 @@ CMake 保证 CLI 只链 headless 那一半：`ldd` 验证 CLI 与 headless 测�
 加第三个视图（比如"频谱面板"）时，它只要订阅同一个信号即可，
 **谁都不用改**。若改成视图间直接调用，就成了网状结构，加一个视图要改多个文件。
 
-### 6.2 视图层自注册
+### 6.2 视图层声明 + provider 装配
 
-每个视图在自己的 TU 里静态登记自己的工厂：
+每个视图在自己所属呈现层的装配 TU 里声明并注册（同 TU 同次完成，A2c/A2d 定稿）：
 
 ```cpp
-// modules/data/DataManagerPanel.cpp 末尾（功能专属视图已聚合进功能目录）
-QWidget *createDatasetTreePanel(AppContext &, IIntentExecutor &, QWidget *);
-PS_REGISTER_PANEL("dataset-tree", datasetTree, createDatasetTreePanel)
+// modules/plot/gui/PlotViewFactories.cpp（功能专属视图已聚合进功能目录）
+views->declareView({"plot.workspace", "plot", "plot"});
+views->registerViewProvider("plot.workspace", createPlotWorkspacePanel);
 ```
 
-模块只声明类型字符串（`ui.requestPanel(Region::PrimarySidebar, "dataset-tree")`），
+模块只发 viewId 字符串（`ui.openView("plot.workspace")`），
 不依赖 Qt Widgets——CLI 保持纯 Core。
 
-**工程要点**：`ps_gui` 必须是 **OBJECT 库**。静态库中未被引用的目标文件会被
-链接器丢弃、静态初始化不执行，自注册会**静默失效**（工厂表为空、功能消失
-且无任何报错）。契约测试显式断言两个视图都已登记，守住这条不变量。
+**工程要点**：各呈现层必须是 **OBJECT 库**。静态库中未被引用的目标文件会被
+链接器丢弃、静态初始化不执行，装配会**静默失效**（声明/provider 缺席、功能消失
+且无任何报错）。契约测试显式断言声明与 provider 都已登记，守住这条不变量。
 
 ### 6.3 领域自带面板：形态随业务变
 
@@ -816,11 +816,11 @@ PS_REGISTER_PANEL("dataset-tree", datasetTree, createDatasetTreePanel)
 
 分工是本机制的核心：
 
-| 层                  | 载体                                         | 内容                                      | 谁可见                                                   |
-| ------------------- | -------------------------------------------- | ----------------------------------------- | -------------------------------------------------------- |
-| **描述**（纯数据）  | `registry::IPanelContribution` / `PanelSpec` | id / 标题 / 建议区域 / 图标 / 附加数据    | headless 也可见（CLI `--list-contributions panel` 可查） |
-| **机制**（纯数据）  | `registry::PanelFactory`                     | `QHash<id, 工厂>`；`QWidget` 只前置声明   | registry，谁都能调                                       |
-| **实现**（QWidget） | 扩展的**呈现层**                             | 真正的面板类，TU 末尾 `PS_REGISTER_PANEL` | 仅 GUI                                                   |
+| 层                  | 载体                                     | 内容                                         | 谁可见                                    |
+| ------------------- | ---------------------------------------- | -------------------------------------------- | ----------------------------------------- |
+| **声明**（纯数据）  | `contributes.viewsContainers/views` 声明 | id / 标题 / 容器 area / 图标                 | 壳经 IViewsService 读回（启动期校验可见） |
+| **机制**（纯数据）  | `IViewsService` / `IEditorService`       | `QHash<viewId, 声明+工厂>`；QWidget 前置声明 | registry/workbench，谁都能调              |
+| **实现**（QWidget） | 扩展的**呈现层**                         | 真正的面板类，`installXxxViewFactories` 装配 | 仅 GUI                                    |
 
 描述与实现用**同一个 id** 关联。扩展因此拆成两个产物：
 
@@ -833,26 +833,24 @@ toolbox/<域>/gui/              呈现层：QWidget 面板（只 GUI 链接）
 **模块侧的用法**（它不知道面板是领域还是通用、由谁提供）：
 
 ```cpp
-// 1) 按领域问清单（纯数据，headless 也成立）
-auto specs = ui.availableDomainPanels(FormatDomain::Automotive);
-// 2) 按清单里的 id 请求；实现来自同一张工厂表，通用/领域面板同一入口
-QWidget *p = ui.requestPanel(spec.area, spec.id);
+// 按 id 打开；实现来自同一组 views 声明，通用/领域视图同一入口
+QWidget *p = ui.openView("automotive.canBrowser");
 ```
 
-`requestPanel` 在工厂缺标题/图标时回退 `PanelSpec::label/icon`——
-领域面板的形态（含标题）由扩展决定，而不是被 `SecondarySidebar` 的"属性"覆盖掉。
+标题/图标来自 views 声明——领域面板的形态（含标题）由扩展决定，
+而不是被 `SecondarySidebar` 的"属性"覆盖掉。
 
 **两条工程不变量**（都在契约测试里钉死）：
 
-1. **呈现层必须是 OBJECT 库**：自注册靠 TU 静态对象构造函数，STATIC 库会丢弃未引用目标文件。
+1. **呈现层必须是 OBJECT 库**：装配 TU 的注册靠链接参与，STATIC 库会丢弃未引用目标文件。
 2. **每个需要领域面板的可执行文件都必须显式链接呈现层**——包括 GUI 测试。
    这一点曾经踩坑：测试可执行文件没链 `ps_toolbox_automotive_gui`，`CanBrowserPanel.cpp.o`
-   根本没进测试二进制，注册自然不发生，表现为"工厂表里只有两个通用视图"。
+   根本没进测试二进制，装配自然不发生，表现为"views 声明在、provider 缺席"。
    headless 测试则**故意不链**，借此守住 CLI 不含 `libQt6Widgets`。
 
-`test_gui` 的闭环：扩展声明描述 → 工厂表出现实现 → 模块按领域查清单 →
-按 id 请求到面板 → 标题/形态由扩展决定。`test_architecture` 则确认描述是纯数据，
-headless 也能查到。
+`test_gui` 的闭环：扩展经 contributes.views 声明 → provider 装配生效 → 模块
+按 id openView 打开到面板 → 标题/形态由扩展决定。启动期校验（验收 4）确保
+引用面与声明面对账。
 
 ### 6.4 主题子系统：token 化配色，深浅双主题
 
@@ -1113,7 +1111,7 @@ toolbox/             扩展（领域知识）：common / autopilot / automotive 
 > `ps_gui` 不编译任何业务对话框。外壳只按动作 id 经 `DialogLauncherHub`（libs/registry）触发，
 > 不 include、不构造业务对话框；未注册（裸壳/headless）时启动器为 no-op。模块呈现层在各自 TU
 > 用 `PS_REGISTER_DIALOG_LAUNCHER` 自注册，启动器签名带 `QWidget* parent`、`AppContext&`、
-> `IIntentExecutor&`，模块不持有外壳指针。这与 `PanelFactoryHub` 同构，壳与业务对话框双向解耦。
+> `IIntentExecutor&`，模块不持有外壳指针。这与其他声明式登记面同构，壳与业务对话框双向解耦。
 >
 > 上述分层是机制视角。各目录的**定位、放什么/禁放什么、可依赖/禁依赖**以 [`LAYERS.md`](LAYERS.md) 为准——新增代码先在那里判归属。跨层依赖由 `cmake/LayerContractGuard.cmake` 在 configure 期强制，物理 include 边界由 `cmake/LibBoundaryGuard.cmake` 强制。
 
@@ -1217,12 +1215,12 @@ ai.status / ai.tools.list / ai.tool.call   （MCP 桥消费）
 
 ## 附录 B 脚本工作台与 Lua 调试器
 
-**脚本工作台**：四个独立 ADS 停靠面板（`ScriptPanels.cpp`，视图层自注册
-`PS_REGISTER_PANEL_T`，`ps_module_script_gui` 目标库）——
+**脚本工作台**：四个独立 ADS 停靠面板（`ScriptPanels.cpp`，由 `ScriptViewFactories`
+装配 views/editor 声明 + provider，`ps_module_script_gui` 目标库）——
 
-- `script-files`（`Region::PrimarySidebar`，脚本库）/ `script-editor`（中央页签，**按需创建**，
-  不与画布争位）/ `script-debug`（`Region::SecondarySidebar`，调用栈+变量+API 速查）/
-  `script-console`（`Region::Panel`，持久 VM REPL）；
+- `script.files`（`PrimarySidebar`，脚本库）/ `script.editor`（中央页签，**按需创建**，
+  不与画布争位）/ `script.debug`（`SecondarySidebar`，调用栈+变量+API 速查）/
+  `script.console`（`Panel`，持久 VM REPL）；
 - 面板间协作零新机制：全部走 `InteractionHub` 的 viewAction 通道
   （`script.open/.new/.goto/.console.append/.debug.update/...`）。
 
@@ -1263,12 +1261,12 @@ readColumnRows` 按**行号**区间读取（区别于 readWindow 的按时间窗
 
 **面板与联动**：`DataTablePanel`（中央页签，按需创建）+ 两段式通道——
 模块层 `data.table.open`（DataModule 于 initialize 注册，经 m_ui 按需
-requestPanel 创建面板）→ 面板层 `data.table.show`（绑定数据集表）。
+openEditor 打开面板）→ 面板层 `data.table.show`（绑定数据集表）。
 数据树表节点/列右键"查看数据表格"进表格；表格右键"添加为曲线"走
 `setActiveChannel`（与树"画到当前画布"同路径，画布自动追加）；
 "列统计"全列读取 + kernel 单遍统计（总体标准差语义），底部摘要栏显示。
 
-**外壳去重**：`GuiContext::requestPanel` 按 (area, panelType) 缓存既有面板
+**外壳去重**：`GuiContext::openView` 按 viewId 缓存既有面板
 （QPointer 兜底：页签关闭后缓存失效可重建）——重复"打开"是聚焦语义，
 不再堆叠页签；脚本编辑器同样受益。
 

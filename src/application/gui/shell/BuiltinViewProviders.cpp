@@ -5,12 +5,12 @@
 #include "OutputPanel.h"
 #include "ProblemsPanel.h"
 
-#include "ContributionParser.h"
+#include "IViewsService.h"
 #include "InstantiationService.h"
-#include "ViewRegistry.h"
 
 // 注册半（复审必修 2）：工厂实现留 gui/views、经头文件导出，本 TU 在 gui 层
-// 把它们登记进 ViewRegistry；property-panel 归 plot 模块（笔 4），不在此列。
+// 经 IViewsService 装配口登记（A2d 第⑤步：壳不再直查 ViewRegistry）；
+// property-panel 归 plot 模块（笔 4），不在此列。
 
 namespace nextpilot::plotscope::gui {
 
@@ -18,7 +18,8 @@ bool installBuiltinWorkbenchViewProviders(instantiation::InstantiationService *s
 {
     if (!services)
         return false;
-    auto *views = services->getService<nextpilot::plotscope::registry::ViewRegistry>(QStringLiteral("views.registry"));
+    auto *views =
+        services->getService<nextpilot::plotscope::workbench::IViewsService>(QStringLiteral("views.readback"));
     if (!views)
         return false;
 

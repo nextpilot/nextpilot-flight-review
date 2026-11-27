@@ -118,7 +118,7 @@ offscreen 截图 + Qt 事件注入的可复用工具，用于人工目检、场�
 | `plot-all-channels`  | `dataset`（可选）          | 数据集全部数值通道上图（等价于逐列双击）                                          |
 | `intent`             | `intent`、`params`         | 执行任意意图；params 支持 `$lastSource`/`$lastDataset` 引用前序产出               |
 | `view-action`        | `action`、`params`         | 走 `dispatchViewAction`（与 ribbon 点击同路径）                                   |
-| `panel`              | `slot`、`panel`            | 打开面板（`requestPanel`）                                                        |
+| `panel`              | `slot`、`panel`            | 打开面板（`openView`）                                                            |
 | `raise-panel`        | `area`、`class`            | 把 dock 区某类面板置顶（类名按后缀匹配）                                          |
 | `cursor`             | `t`                        | 游标读数 + A/B 区间 + 书签（画布真实 API）                                        |
 | `hover-toolbar`      | —                          | 浮出活动格工具栏                                                                  |

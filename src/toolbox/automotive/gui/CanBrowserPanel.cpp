@@ -17,8 +17,6 @@
 
 #include "AppContext.h"
 #include "IIntentExecutor.h"
-#include "PanelFactoryHub.h"
-
 #include <QHeaderView>
 #include <QTableWidget>
 #include <QVBoxLayout>
@@ -34,8 +32,8 @@ CanBrowserPanel::CanBrowserPanel(nextpilot::plotscope::context::AppContext &appC
 
     m_table = new QTableWidget(this);
     m_table->setColumnCount(4);
-    m_table->setHorizontalHeaderLabels({QStringLiteral("ID"), QStringLiteral("名称"),
-                                         QStringLiteral("DLC"), QStringLiteral("周期(ms)")});
+    m_table->setHorizontalHeaderLabels(
+        {QStringLiteral("ID"), QStringLiteral("名称"), QStringLiteral("DLC"), QStringLiteral("周期(ms)")});
     m_table->horizontalHeader()->setStretchLastSection(true);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
@@ -86,6 +84,6 @@ QWidget *createCanBrowserPanel(nextpilot::plotscope::context::AppContext &appCtx
 
 } // namespace nextpilot::plotscope::ext::automotive
 
-// A2c：PS_REGISTER_PANEL_I 自注册已删——automotive.canBrowser 由
+// A2c：工厂表自注册已删——automotive.canBrowser 由
 // AutomotiveViewFactories 装配（views 声明 + provider 登记，owner "automotive"）。
 // ⚠️ 无 VSCode 对位：领域面板形态归领域包，差异登记 docs/develop/vscode-alignment.md。

@@ -45,7 +45,6 @@ struct Pack
     Domain domain = Domain::General;
 
     QList<UiAction> uiActions;
-    QList<PanelSpec> panels;
     QList<ScriptSpec> scripts;
     QList<DataAsset> dataAssets;
     QList<DocEntry> docs;
@@ -150,7 +149,6 @@ public:
     // === 数据表（机制唯一：Registry<T>；内容全是数据，直接读）===
     Registry<PackInfo> packs;        // 包自我声明
     Registry<UiAction> uiActions;
-    Registry<PanelSpec> panels;
     Registry<ScriptSpec> scripts;
     Registry<DataAsset> dataAssets;
     Registry<DocEntry> docs;
@@ -231,10 +229,8 @@ private:
 //   static std::unique_ptr<nextpilot::plotscope::registry::Pack> build();
 //
 // 宏必须带完整命名空间：它在调用处的命名空间作用域展开。
-#define PS_REGISTER_PACK(FQN)                                                             \
-    namespace {                                                                           \
-    const bool g_ps_pack_reg_ =                                                           \
-        ::nextpilot::plotscope::registry::ToolboxHub::registerBuiltinPack(         \
-            FQN::packId(),                                                                \
-            []() -> std::unique_ptr<::nextpilot::plotscope::registry::Pack> { return FQN::build(); }); \
+#define PS_REGISTER_PACK(FQN)                                                                                          \
+    namespace {                                                                                                        \
+    const bool g_ps_pack_reg_ = ::nextpilot::plotscope::registry::ToolboxHub::registerBuiltinPack(                     \
+        FQN::packId(), []() -> std::unique_ptr<::nextpilot::plotscope::registry::Pack> { return FQN::build(); });      \
     }

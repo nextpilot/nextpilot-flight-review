@@ -203,13 +203,11 @@ public:
             p->setBrush(pal.color(QPalette::Text));
             p->setPen(Qt::NoPen);
             if (expanded)
-                p->drawPolygon(QPolygonF({QPointF(arrowX - 3, arrowY - 2),
-                                          QPointF(arrowX + 4, arrowY - 2),
-                                          QPointF(arrowX, arrowY + 3)}));
+                p->drawPolygon(QPolygonF(
+                    {QPointF(arrowX - 3, arrowY - 2), QPointF(arrowX + 4, arrowY - 2), QPointF(arrowX, arrowY + 3)}));
             else
-                p->drawPolygon(QPolygonF({QPointF(arrowX - 2, arrowY - 4),
-                                          QPointF(arrowX - 2, arrowY + 4),
-                                          QPointF(arrowX + 4, arrowY)}));
+                p->drawPolygon(QPolygonF(
+                    {QPointF(arrowX - 2, arrowY - 4), QPointF(arrowX - 2, arrowY + 4), QPointF(arrowX + 4, arrowY)}));
         }
 
         // 两行文字：名称（12px，正常色）+ 摘要（10px，dim）
@@ -354,14 +352,14 @@ struct DeriveRecipe
     const char *params;
 };
 const DeriveRecipe kDeriveRecipes[] = {
-    {"absolute",       "绝对值",     "{}"},
-    {"normalize",      "归一化",     "{}"},
-    {"scale",          "缩放/偏移",  "{\"value_scale\":1,\"value_offset\":0}"},
-    {"derivative",     "微分",       "{}"},
-    {"integral",       "积分",       "{}"},
-    {"moving_average", "滑动平均",   "{\"window\":10}"},
-    {"moving_rms",     "滑动均方根", "{\"window\":10}"},
-    {"moving_variance","滑动方差",   "{\"window\":10}"},
+    {"absolute", "绝对值", "{}"},
+    {"normalize", "归一化", "{}"},
+    {"scale", "缩放/偏移", "{\"value_scale\":1,\"value_offset\":0}"},
+    {"derivative", "微分", "{}"},
+    {"integral", "积分", "{}"},
+    {"moving_average", "滑动平均", "{\"window\":10}"},
+    {"moving_rms", "滑动均方根", "{\"window\":10}"},
+    {"moving_variance", "滑动方差", "{\"window\":10}"},
 };
 
 bool isKeyValueTable(const Table *t)
@@ -398,9 +396,9 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     addBtn->setCursor(Qt::PointingHandCursor);
     addBtn->setFixedSize(20, 20);
     addBtn->setPopupMode(QToolButton::InstantPopup);
-    addBtn->setStyleSheet(QStringLiteral(
-        "QToolButton{border:none;border-radius:4px;font-size:14px;color:palette(window-text);}"
-        "QToolButton:hover{background:palette(midlight);}"));
+    addBtn->setStyleSheet(
+        QStringLiteral("QToolButton{border:none;border-radius:4px;font-size:14px;color:palette(window-text);}"
+                       "QToolButton:hover{background:palette(midlight);}"));
     auto *addMenu = new QMenu(addBtn);
     QAction *addOpen = addMenu->addAction(QStringLiteral("打开日志…"));
     QAction *addLive = addMenu->addAction(QStringLiteral("连接实时源…"));
@@ -423,12 +421,12 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     auto *chipLay = new QHBoxLayout(chipHost);
     chipLay->setContentsMargins(6, 2, 6, 2);
     chipLay->setSpacing(4);
-    const QString chipQss = QStringLiteral(
-        "QToolButton#sourceChip{background:palette(button);border:1px solid palette(mid);"
-        "border-radius:9px;color:palette(button-text);font-size:11px;padding:2px 8px;}"
-        "QToolButton#sourceChip:hover{border-color:palette(highlight);}"
-        "QToolButton#sourceChip:checked{background:palette(highlight);color:palette(highlighted-text);"
-        "border-color:palette(highlight);}");
+    const QString chipQss =
+        QStringLiteral("QToolButton#sourceChip{background:palette(button);border:1px solid palette(mid);"
+                       "border-radius:9px;color:palette(button-text);font-size:11px;padding:2px 8px;}"
+                       "QToolButton#sourceChip:hover{border-color:palette(highlight);}"
+                       "QToolButton#sourceChip:checked{background:palette(highlight);color:palette(highlighted-text);"
+                       "border-color:palette(highlight);}");
     const char *chipLabels[3] = {"字段 0", "参数 0", "消息 0"};
     for (int i = 0; i < 3; ++i)
     {
@@ -490,7 +488,8 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
         if (action == SourceRowAction::Config)
         {
             const DataSourceInfo *info = m_sources.get(sourceId);
-            QMessageBox::information(this, QStringLiteral("配置数据源"),
+            QMessageBox::information(
+                this, QStringLiteral("配置数据源"),
                 QStringLiteral("「%1」是文件数据源，使用打开时的解析选项；\n如需更换解析方式，请移除后重新打开。")
                     .arg(info ? (info->name.isEmpty() ? info->origin : info->name) : QStringLiteral("该源")));
             return;
@@ -545,9 +544,9 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
     m_liveStatus->setObjectName(QStringLiteral("liveStatus"));
     m_liveStatus->setTextFormat(Qt::RichText);  // 状态行用彩点区分 live/录制，故走富文本
     m_liveStatus->setContentsMargins(8, 3, 8, 4);
-    m_liveStatus->setStyleSheet(QStringLiteral(
-        "QLabel#liveStatus{background:palette(alternate-base);border-top:1px solid palette(mid);"
-        "color:palette(window-text);font-size:11px;}"));
+    m_liveStatus->setStyleSheet(
+        QStringLiteral("QLabel#liveStatus{background:palette(alternate-base);border-top:1px solid palette(mid);"
+                       "color:palette(window-text);font-size:11px;}"));
     m_liveStatus->hide();
     lay->addWidget(m_liveStatus);
     m_liveTimer = new QTimer(this);
@@ -618,8 +617,7 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
                 ep.insert(QStringLiteral("dataset"), p.value(QStringLiteral("datasetId")));
                 ep.insert(QStringLiteral("table"), p.value(QStringLiteral("table")));
                 Result<QVariant> eout{QVariant()};
-                if (!m_appCtx.interactions().dispatchViewAction(
-                        QStringLiteral("plot.expandColumns"), ep, eout))
+                if (!m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.expandColumns"), ep, eout))
                 {
                     QMessageBox::information(this, QStringLiteral("展开数据列"),
                                              eout.error().message);
@@ -628,11 +626,10 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
                 // 截断要说清：静默只画 8 条会让人以为丢数据。
                 const QVariantMap m = eout.value().toMap();
                 if (m.value(QStringLiteral("truncated")).toBool())
-                    QMessageBox::information(
-                        this, QStringLiteral("展开数据列"),
-                        QStringLiteral("已画前 %1 列（共 %2 列数值列），其余请单独添加")
-                            .arg(m.value(QStringLiteral("drawn")).toInt())
-                            .arg(m.value(QStringLiteral("total")).toInt()));
+                    QMessageBox::information(this, QStringLiteral("展开数据列"),
+                                             QStringLiteral("已画前 %1 列（共 %2 列数值列），其余请单独添加")
+                                                 .arg(m.value(QStringLiteral("drawn")).toInt())
+                                                 .arg(m.value(QStringLiteral("total")).toInt()));
                 return;
             }
             if (chosen != viewTable)
@@ -661,8 +658,7 @@ DataManagerPanel::DataManagerPanel(AppContext &appCtx, IIntentExecutor &executor
         if (!item || !item->data(0, kRoleDatasetId).isValid()
             || !item->data(0, kRoleTable).isValid() || !item->data(0, kRoleColumn).isValid())
             return;
-        deriveColumn(item, m_tree->viewport()->mapToGlobal(
-            m_tree->visualItemRect(item).center()));
+        deriveColumn(item, m_tree->viewport()->mapToGlobal(m_tree->visualItemRect(item).center()));
     });
 
     registerPropertyProviders();
@@ -916,8 +912,7 @@ void DataManagerPanel::registerPropertyProviders()
                                       i < vals.size() ? vals.at(i) : QString());
                     if (tbl->rows > n)
                         o.rows << row(QStringLiteral("more"), QStringLiteral("…"),
-                                      QStringLiteral("另有 %1 项（data.params 可取全量）")
-                                          .arg(tbl->rows - n));
+                                      QStringLiteral("另有 %1 项（data.params 可取全量）").arg(tbl->rows - n));
                 }
             }
         }
@@ -1138,8 +1133,7 @@ void DataManagerPanel::rebuildTree()
                     if (tbl->rows > nKeys)
                     {
                         auto *more = new QTreeWidgetItem(pItem);
-                        more->setText(0, QStringLiteral("…另有 %1 项（展开上限 200）")
-                                             .arg(tbl->rows - nKeys));
+                        more->setText(0, QStringLiteral("…另有 %1 项（展开上限 200）").arg(tbl->rows - nKeys));
                         more->setData(0, kRoleNodeKind, QStringLiteral("param-more"));
                         more->setFlags(more->flags() & ~Qt::ItemIsDragEnabled
                                        & ~Qt::ItemIsSelectable);
@@ -1163,7 +1157,8 @@ void DataManagerPanel::rebuildTree()
                         continue;
                     auto *mItem = new QTreeWidgetItem(srcItem);
                     mItem->setText(0, tbl->name);
-                    mItem->setText(1, QStringLiteral("%1 字段 · %2 s").arg(tbl->columns.size())
+                    mItem->setText(1, QStringLiteral("%1 字段 · %2 s")
+                                          .arg(tbl->columns.size())
                                           .arg(tbl->firstTimeNs / 1000000000.0, 0, 'f', 2));
                     mItem->setData(0, kRoleNodeKind, QStringLiteral("msg"));
                     mItem->setData(0, kRoleDatasetId, dsId);
@@ -1334,8 +1329,7 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
         p.insert(QStringLiteral("dataset"), cmpDataset);
         p.insert(QStringLiteral("column"), chosen->data().toString());
         Result<QVariant> out{QVariant()};
-        if (!m_appCtx.interactions().dispatchViewAction(
-                QStringLiteral("plot.compareSame"), p, out))
+        if (!m_appCtx.interactions().dispatchViewAction(QStringLiteral("plot.compareSame"), p, out))
             QMessageBox::information(this, QStringLiteral("对比同名"), out.error().message);
         return;
     }
@@ -1364,7 +1358,8 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
             }
             if (base < 0 || base == sourceId)
             {
-                QMessageBox::information(this, QStringLiteral("时间对齐"),
+                QMessageBox::information(
+                    this, QStringLiteral("时间对齐"),
                     QStringLiteral("需要另一个数据源作为基准：请先打开第二个源，或把它设为活动数据源。"));
                 return;
             }
@@ -1412,10 +1407,11 @@ void DataManagerPanel::showSourceMenu(int sourceId, const QPoint &globalPos)
         const QString bytes = info->bytesTotal > 0
             ? QStringLiteral("%1 / %2").arg(info->bytesRead).arg(info->bytesTotal)
             : QStringLiteral("%1（总量未知）").arg(info->bytesRead);
-        QMessageBox::information(this, QStringLiteral("数据源信息"),
+        QMessageBox::information(
+            this, QStringLiteral("数据源信息"),
             QStringLiteral("名称：%1\n来源：%2\n类型：%3　状态：%4\n字节：%5\n解析器：%6　数据集：%7%8")
-                .arg(info->name.isEmpty() ? QStringLiteral("(未命名)") : info->name,
-                     info->origin, kindText, stateText, bytes)
+                .arg(info->name.isEmpty() ? QStringLiteral("(未命名)") : info->name, info->origin, kindText, stateText,
+                     bytes)
                 .arg(info->parsers.size())
                 .arg(info->datasetIds.size())
                 .arg(info->error.isEmpty() ? QString() : QStringLiteral("\n错误：%1").arg(info->error)));
@@ -1583,9 +1579,8 @@ void DataManagerPanel::showColumnMenu(QTreeWidgetItem *item, const QPoint &globa
     QHash<QString, QVariant> itemCtx;
     itemCtx.insert(QStringLiteral("item.kind"), QStringLiteral("column"));
     itemCtx.insert(QStringLiteral("item.multiSelect"), false);
-    itemCtx.insert(QStringLiteral("item.id"), QStringLiteral("%1/%2/%3")
-                                                   .arg(dsId.toInt())
-                                                   .arg(table.toString(), column.toString()));
+    itemCtx.insert(QStringLiteral("item.id"),
+                   QStringLiteral("%1/%2/%3").arg(dsId.toInt()).arg(table.toString(), column.toString()));
     for (const nextpilot::plotscope::registry::ItemContextSpec &spec :
          m_appCtx.toolbox().itemContextsFor(QStringLiteral("data.datasetTree")))
     {
@@ -1665,8 +1660,7 @@ QAction *chosen = menu.exec(globalPos);
         intent.params[QStringLiteral("table")] = tableName;
         intent.params[QStringLiteral("column")] = columnName;
         intent.params[QStringLiteral("transform")] = QVariant(req);
-        const QString label = m_appCtx.transforms().get(
-            req.value(QStringLiteral("descriptorId")).toString()).label;
+        const QString label = m_appCtx.transforms().get(req.value(QStringLiteral("descriptorId")).toString()).label;
         intent.params[QStringLiteral("name")] = tableName + QLatin1Char('.') + columnName
                                                + QStringLiteral(".") + label;
         const auto r = m_executor.execute(intent);
@@ -1675,17 +1669,17 @@ QAction *chosen = menu.exec(globalPos);
         else
         {
             const int count = r.value().payload.toMap().value(QStringLiteral("count")).toInt();
-            QMessageBox::information(this, QStringLiteral("衍生完成"),
-                QStringLiteral("变换「%1」已算出 %2 点并叠加到画布，原数据未改动。")
-                    .arg(label).arg(count));
+            QMessageBox::information(
+                this, QStringLiteral("衍生完成"),
+                QStringLiteral("变换「%1」已算出 %2 点并叠加到画布，原数据未改动。").arg(label).arg(count));
         }
         return;
     }
     if (chosen == openFilter)
     {
         // 有状态过滤器编辑器：选过滤器 + 参数表单 → data.filter 意图（只读叠加到画布）。
-        const QJsonObject req = FilterEditorDialog::run(
-            this, m_appCtx, QStringLiteral("%1.%2").arg(tableName, columnName));
+        const QJsonObject req =
+            FilterEditorDialog::run(this, m_appCtx, QStringLiteral("%1.%2").arg(tableName, columnName));
         if (req.isEmpty())
             return;
         Intent intent;
@@ -1702,8 +1696,9 @@ QAction *chosen = menu.exec(globalPos);
         {
             const int count = r.value().payload.toMap().value(QStringLiteral("count")).toInt();
             QMessageBox::information(this, QStringLiteral("过滤完成"),
-                QStringLiteral("过滤器「%1」已算出 %2 点并叠加到画布，原数据未改动。")
-                    .arg(intent.params.value(QStringLiteral("filter")).toString()).arg(count));
+                                     QStringLiteral("过滤器「%1」已算出 %2 点并叠加到画布，原数据未改动。")
+                                         .arg(intent.params.value(QStringLiteral("filter")).toString())
+                                         .arg(count));
         }
         return;
     }
@@ -1739,9 +1734,10 @@ QAction *chosen = menu.exec(globalPos);
             const int count = pm.value(QStringLiteral("count")).toInt();
             const bool truncated = pm.value(QStringLiteral("truncated")).toBool();
             QMessageBox::information(this, QStringLiteral("派生完成"),
-                QStringLiteral("已将「%1」送到画布叠加显示（%2 点%3）。\n原始数据未改动。")
-                    .arg(name).arg(count)
-                    .arg(truncated ? QStringLiteral("，已截取前 %1 点").arg(count) : QString()));
+                                     QStringLiteral("已将「%1」送到画布叠加显示（%2 点%3）。\n原始数据未改动。")
+                                         .arg(name)
+                                         .arg(count)
+                                         .arg(truncated ? QStringLiteral("，已截取前 %1 点").arg(count) : QString()));
         }
         break;
     }
@@ -1808,7 +1804,8 @@ void DataManagerPanel::removeDerivedChannels(QTreeWidgetItem *item)
     }
     if (keys.isEmpty())
     {
-        QMessageBox::information(this, QStringLiteral("删除派生通道"),
+        QMessageBox::information(
+            this, QStringLiteral("删除派生通道"),
             QStringLiteral("「%1」当前没有派生曲线。\n（NG 派生为只读叠加，不写回数据集）").arg(prefix));
         return;
     }
@@ -2003,7 +2000,7 @@ QWidget *createDatasetTreePanel(AppContext &appCtx, IIntentExecutor &exec, QWidg
     return new DataManagerPanel(appCtx, exec, parent);
 }
 
-// 旧工厂表注册（PS_REGISTER_PANEL_TI "dataset-tree"）已删（A2b 笔2b 第③步）：
+// 旧工厂表注册（"dataset-tree"）已删（A2b 笔2b 第③步）：
 // 本视图由 DataViewFactories 经 ViewRegistry::registerViewProvider 登记
 // （viewId "data.datasetTree"、owner "data"；views 声明在 DataModule::initialize，
 // 壳不替 data 声明——§7 打回线 1）。

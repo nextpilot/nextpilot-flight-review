@@ -37,7 +37,7 @@ private:
 
 // 视图工厂（A2b 笔2b 第②步导出）：装配层（BuiltinWorkbenchViews）经它把本视图
 // 注册进 ViewRegistry（registerViewProvider，owner core.workbench）——旧
-// PS_REGISTER_PANEL 工厂表注册已随之删除。
+// 旧工厂表注册已随之删除（A2d 连宏本体一并退场）。
 QWidget *createDiagnosticsPanel(nextpilot::plotscope::context::AppContext &appCtx,
                                 nextpilot::plotscope::intent::IIntentExecutor &exec, QWidget *parent);
 

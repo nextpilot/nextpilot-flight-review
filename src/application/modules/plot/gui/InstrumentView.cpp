@@ -1,7 +1,6 @@
 #include "InstrumentView.h"
 
 #include "AppContext.h"
-#include "PanelFactoryHub.h"
 #include "IIntentExecutor.h"
 #include "Intent.h"
 #include "Result.h"
@@ -25,10 +24,10 @@
 namespace nextpilot::plotscope::gui
 {
 using nextpilot::plotscope::context::AppContext;
+using nextpilot::plotscope::foundation::Result;
 using nextpilot::plotscope::intent::IIntentExecutor;
 using nextpilot::plotscope::intent::Intent;
 using nextpilot::plotscope::intent::IntentResult;
-using nextpilot::plotscope::foundation::Result;
 namespace err = nextpilot::plotscope::foundation::err;
 
 namespace
@@ -176,9 +175,8 @@ bool InstrumentView::renderFromActive(const QString &kind)
     }
     else if (kind == QStringLiteral("compass"))
     {
-        roles[QStringLiteral("yaw")] = findColumn(
-            ds, table, {QStringLiteral("yaw"), QStringLiteral("heading"),
-                        QStringLiteral("course")});
+        roles[QStringLiteral("yaw")] =
+            findColumn(ds, table, {QStringLiteral("yaw"), QStringLiteral("heading"), QStringLiteral("course")});
         if (roles.value(QStringLiteral("yaw")).toString().isEmpty())
             roles[QStringLiteral("yaw")] = fallback;
     }
@@ -197,8 +195,8 @@ bool InstrumentView::renderFromActive(const QString &kind)
     }
     else if (kind == QStringLiteral("track"))
     {
-        roles[QStringLiteral("lon")] = findColumn(
-            ds, table, {QStringLiteral("lon"), QStringLiteral("lng"), QStringLiteral("long")});
+        roles[QStringLiteral("lon")] =
+            findColumn(ds, table, {QStringLiteral("lon"), QStringLiteral("lng"), QStringLiteral("long")});
         roles[QStringLiteral("lat")] =
             findColumn(ds, table, {QStringLiteral("lat")});
     }
@@ -369,8 +367,8 @@ void InstrumentView::renderInstrument(dataset::DatasetId datasetId, const QStrin
             if (b.value.isEmpty())
                 continue;
             ++m_revision;
-            m_wfData.push_back(nextpilot::plotscope::fastplot::ArrayData(
-                b.time.constData(), b.value.constData(), b.value.size(), m_revision));
+            m_wfData.push_back(nextpilot::plotscope::fastplot::ArrayData(b.time.constData(), b.value.constData(),
+                                                                         b.value.size(), m_revision));
             data.push_back(&m_wfData.last());
             colors.push_back(kPalette.at(i % kPalette.size()));
         }
@@ -391,17 +389,17 @@ QWidget *createInstrumentPanel(AppContext &appCtx, IIntentExecutor &executor,
     // 图库切图型：仪表盘/罗盘/地平仪/3D 等由外壳切到本视图后，
     // 通过这个 view action 指定 kind 并**立即从当前活动通道喂数据**
     // （与脚本/回放同一入口，不再留空表盘）。
-    appCtx.interactions().registerViewAction(QStringLiteral("plot.instrument.setKind"),
-                              [view](const QVariantMap &params) -> Result<QVariant> {
-                                  const QString kind = params.value(QStringLiteral("kind")).toString();
-                                  if (kind.isEmpty())
-                                      return nextpilot::plotscope::foundation::fail(err::Kind, QStringLiteral("缺少仪表 kind"));
-                                  view->switchKind(kind);
-                                  // 绑定失败（无活动数据集/无匹配通道）不使切型失败：仪表明仍切过去
-                                  // 显示空态，由调用方决定如何提示。
-                                  view->renderFromActive(kind);
-                                  return QVariant(kind);
-                              });
+    appCtx.interactions().registerViewAction(
+        QStringLiteral("plot.instrument.setKind"), [view](const QVariantMap &params) -> Result<QVariant> {
+            const QString kind = params.value(QStringLiteral("kind")).toString();
+            if (kind.isEmpty())
+                return nextpilot::plotscope::foundation::fail(err::Kind, QStringLiteral("缺少仪表 kind"));
+            view->switchKind(kind);
+            // 绑定失败（无活动数据集/无匹配通道）不使切型失败：仪表明仍切过去
+            // 显示空态，由调用方决定如何提示。
+            view->renderFromActive(kind);
+            return QVariant(kind);
+        });
     // 数据集树双击新通道时，若当前仪表可见则跟着刷新——与画布 addChannel 并列，
     // 走同一活动通道信号，不引入仪表对数据源的直接依赖。
     QObject::connect(&appCtx, &AppContext::activeChannelChanged, view,

@@ -9,7 +9,6 @@
 #include "GridPickPopup.h"
 #include "IIntentExecutor.h"
 #include "InstrumentView.h"
-#include "PanelFactoryHub.h"
 #include "AxesView.h"
 #include "PlaybackEngine.h"
 #include "TimelineWidget.h"
@@ -262,7 +261,7 @@ void PlotWorkspace::registerCanvasActions()
                                     return QVariant(applied);
                                 });
     // 图型切换：workspace 直接处理（曲线在画布切、专用图型在 cell 内切页），
-    // 不再需要外壳 requestPanel 替换整个中央——多画布形态得以保留。
+    // 不再需要外壳代开面板替换整个中央——多画布形态得以保留。
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.setType"),
                                 [this](const QVariantMap &params) -> Result<QVariant> {
                                     const QString kind = params.value(QStringLiteral("type")).toString();

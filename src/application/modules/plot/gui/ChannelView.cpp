@@ -3,7 +3,6 @@
 #include "AppContext.h"
 #include "IIntentExecutor.h"
 #include "Intent.h"
-#include "PanelFactoryHub.h"
 #include "Result.h"
 #include "ErrorCodes.h"
 #include "Transform.h"
@@ -139,8 +138,7 @@ void ChannelView::clearChannels()
         m_canvas->clear();
 }
 
-int ChannelView::rebindDataset(
-    const std::function<int(DatasetId, const QString &, const QString &)> &resolve)
+int ChannelView::rebindDataset(const std::function<int(DatasetId, const QString &, const QString &)> &resolve)
 {
     int rebound = 0;
     for (int i = 0; i < m_channels.size(); ++i)
@@ -199,8 +197,8 @@ bool ChannelView::renderOne(PlotSeries &series, QString *err)
         // kind 从注册表补全（TransformRequest::fromJson 依赖 kind 分派执行器）。
         const TransformDescriptor d = m_transforms.get(series.yTransformId);
         QJsonObject req{
-            { QStringLiteral("descriptorId"), series.yTransformId },
-            { QStringLiteral("kind"), transformKindName(d.kind) },
+            {QStringLiteral("descriptorId"), series.yTransformId},
+            {QStringLiteral("kind"), transformKindName(d.kind)},
         };
         if (!series.yTransformParamsJson.isEmpty())
         {

@@ -19,9 +19,9 @@ QJsonObject collect(App &application)
 
     // 应用与环境
     root[QStringLiteral("application")] = QJsonObject{
-        { QStringLiteral("name"), QCoreApplication::applicationName() },
-        { QStringLiteral("version"), QCoreApplication::applicationVersion() },
-        { QStringLiteral("qt"), QString::fromLatin1(qVersion()) },
+        {QStringLiteral("name"), QCoreApplication::applicationName()},
+        {QStringLiteral("version"), QCoreApplication::applicationVersion()},
+        {QStringLiteral("qt"), QString::fromLatin1(qVersion())},
     };
 
     // 模块模块
@@ -29,8 +29,8 @@ QJsonObject collect(App &application)
     for (const ModuleInfo &info : application.host().availableModules())
     {
         modules.append(QJsonObject{
-            { QStringLiteral("id"), info.id },
-            { QStringLiteral("provides"), QJsonArray::fromStringList(info.provides) },
+            {QStringLiteral("id"), info.id},
+            {QStringLiteral("provides"), QJsonArray::fromStringList(info.provides)},
         });
     }
     root[QStringLiteral("modules")] = modules;
@@ -46,33 +46,30 @@ QJsonObject collect(App &application)
     const auto &toolbox = application.host().toolbox();
     for (const auto &pack : toolbox.packs.values())
     {
-        const int entries = toolbox.uiActions.count() + toolbox.panels.count()
-                            + toolbox.scripts.count() + toolbox.dataAssets.count()
-                            + toolbox.docs.count() + toolbox.examples.count();
-        Q_UNUSED(entries);
         packs.append(QJsonObject{
-            { QStringLiteral("id"), pack.id },
-            { QStringLiteral("name"), pack.name },
-            { QStringLiteral("domain"), QString::fromLatin1(domainKey(pack.domain)) },
+            {QStringLiteral("id"), pack.id},
+            {QStringLiteral("name"), pack.name},
+            {QStringLiteral("domain"), QString::fromLatin1(domainKey(pack.domain))},
         });
     }
     root[QStringLiteral("packs")] = packs;
 
     // 数据面：数据集/源数量（载入前为 0，诊断截屏常配合 --datafile 使用）
     root[QStringLiteral("data")] = QJsonObject{
-        { QStringLiteral("datasets"), application.context().data().count() },
+        {QStringLiteral("datasets"), application.context().data().count()},
     };
 
     // AI 工具目录（MCP 桥/意图工具层的白名单面）
     const QJsonArray tools = AIToolsHandler::toolCatalog();
     root[QStringLiteral("aiTools")] = QJsonObject{
-        { QStringLiteral("count"), tools.size() },
-        { QStringLiteral("names"), [&] {
+        {QStringLiteral("count"), tools.size()},
+        {QStringLiteral("names"),
+         [&] {
              QStringList names;
              for (const QJsonValue &v : tools)
                  names << v.toObject().value(QStringLiteral("name")).toString();
              return QJsonArray::fromStringList(names);
-         }() },
+         }()},
     };
 
     return root;

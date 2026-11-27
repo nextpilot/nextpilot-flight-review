@@ -358,14 +358,6 @@ class PanelsServiceAdapter : public wb::IPanelsService
 public:
     explicit PanelsServiceAdapter(ctx::AppContext &appCtx) : m_appCtx(appCtx) {}
 
-    const registry::PanelSpec *panelSpec(const QString &panelType) const override
-    {
-        return m_appCtx.toolbox().panels.find(panelType);
-    }
-    QList<registry::PanelSpec> panels() const override
-    {
-        return m_appCtx.toolbox().panels.values();
-    }
     QList<registry::ViewTitleActionSpec> titleActions(const QString &viewId) const override
     {
         return m_appCtx.toolbox().titleActionsFor(viewId);
@@ -410,10 +402,7 @@ private:
 class ThemeServiceAdapter : public wb::IThemeService
 {
 public:
-    ThemeServiceAdapter(ctx::AppContext &appCtx, host::RuntimeHost &hostRef)
-        : m_appCtx(appCtx), m_hostRef(hostRef)
-    {
-    }
+    ThemeServiceAdapter(ctx::AppContext &appCtx, host::RuntimeHost &hostRef) : m_appCtx(appCtx), m_hostRef(hostRef) {}
 
     QList<registry::ThemeTokenSpec> tokens() const override
     {
@@ -429,10 +418,9 @@ public:
             if (!dup)
                 out.append(t);
         }
-        std::stable_sort(out.begin(), out.end(),
-                         [](const registry::ThemeTokenSpec &a, const registry::ThemeTokenSpec &b) {
-                             return a.id < b.id;
-                         });
+        std::stable_sort(
+            out.begin(), out.end(),
+            [](const registry::ThemeTokenSpec &a, const registry::ThemeTokenSpec &b) { return a.id < b.id; });
         return out;
     }
 
@@ -505,6 +493,12 @@ class ViewsServiceAdapter final : public wb::IViewsService
 {
 public:
     explicit ViewsServiceAdapter(registry::ViewRegistry &views) : m_views(views) {}
+
+    bool registerViewProvider(const QString &viewId, registry::ViewRegistry::ViewFactory factory,
+                              const QString &owner) override
+    {
+        return m_views.registerViewProvider(viewId, std::move(factory), owner);
+    }
 
     QList<registry::ContributedViewContainer> containersIn(const QString &area) const override
     {

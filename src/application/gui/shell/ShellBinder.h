@@ -22,21 +22,17 @@ class QWidget;
 // SARibbon（vendored，MIT）：全局命名空间类。
 class SARibbonBar;
 
-namespace ads
-{
+namespace ads {
 class CDockAreaWidget;
 class CDockManager;
 class CDockWidget;
 }
 
-namespace nextpilot::plotscope::workbench
-{
-class IPanelsService;
+namespace nextpilot::plotscope::workbench {
 class IEditorService;
 }
 
-namespace nextpilot::plotscope::gui
-{
+namespace nextpilot::plotscope::gui {
 
 class ActivityBar;
 
@@ -81,8 +77,7 @@ public:
     // 中央内容（画布区）。首个到达者占据中央 dock（画布）；之后到达的
     // （如脚本编辑器）并成同区页签、与画布平级——写代码需要全宽，
     // 这是"中央区页签化"（方案 A）的入口。title 为后续页签的显示文本。
-    void setCentralContent(QWidget *content, const QString &title = QString(),
-                           const QString &icon = QString());
+    void setCentralContent(QWidget *content, const QString &title = QString(), const QString &icon = QString());
 
     // 重新绑定 ribbon（插槽或动作变化后调用）。
     void rebuildRibbon();
@@ -96,8 +91,7 @@ public:
 
     // 视图标题栏动作：模块/包声明（ViewTitleActionSpec），外壳把描述变成 QAction。
     // 提供者是外壳注入的 lambda（binder 不认识命令库与工具箱），返回已接好线的动作。
-    void setViewTitleActionProvider(
-        std::function<QList<QAction *>(QWidget *parent, const QString &viewId)> provider);
+    void setViewTitleActionProvider(std::function<QList<QAction *>(QWidget *parent, const QString &viewId)> provider);
     // 某视图已挂上的标题栏动作数（诊断/测试口径）。
     int viewTitleActionCount(const QString &viewId) const;
 
@@ -109,22 +103,20 @@ public:
     // 诊断/状态栏用：pageKey 对应页签的标题（找不到返回空串）。
     QString dockPageTitle(const QString &pageKey) const;
 
-    // 注入面板引用校验所需的另外两源：包面板声明（经 IPanelsService，裁定
-    // 52441633 §三——壳不直连扩展注册表）与产品默认布局；viewsService 可空，
-    // 非空时校验加第二命中面：views 声明命中（A2b 笔2b 第②步——gui 内置面板
-    // 已迁 ViewRegistry、不再在工厂表的 id 由此放行；旧工厂路径⑦步删）；
-    // editorService 可空，非空时加第三命中面：customEditors 声明的 viewType
-    // （A2b 笔2b 第③步顺延必修——centralEditor 命中不再靠工厂表侥幸）。
+    // 注入面板引用校验所需的两源：产品默认布局 + 两个声明命中面服务。
+    // viewsService 可空，非空时命中面加：views 声明（viewsContainers/views，
+    // IViewsService 读回——A2d 第⑤步起这是唯一视图声明命中面）；
+    // editorService 可空，非空时命中面加：customEditors 声明的 viewType
+    // （IEditorService::customEditors() 读回）。
     // 由外壳在模块 onAttach 完成后注入；未注入时退化为只查 Activity panelTypes。
-    void setPanelReferenceContext(const workbench::IPanelsService *panels,
-                                  const QList<registry::ProductPanelPlacement> &placements,
+    void setPanelReferenceContext(const QList<registry::ProductPanelPlacement> &placements,
                                   workbench::IViewsService *viewsService = nullptr,
                                   workbench::IEditorService *editorService = nullptr);
 
     // --- Activity Bar / Side Bar ---
-    // 启动期校验（验收 4）：声明侧引用的面板类型必须在面板工厂表命中。
-    // 三源：包 PanelSpec / Activity panelTypes+centralPanel / 产品 defaultPanels。
-    // 返回未命中的 "source:panelType" 列表；空 = 全部命中。本方法只收集不打印，
+    // 启动期校验（验收 4）：声明侧引用的视图 id 必须命中声明面。
+    // 两源（A2d 第②步：旧包声明面退场）：Activity panelTypes+centralPanel / 产品 defaultPanels。
+    // 返回未命中的 "source:视图id" 列表；空 = 全部命中。本方法只收集不打印，
     // 统一诊断由外壳 MainWindow 入口输出，同一问题不打两遍。测试直接断言此列表为空。
     QStringList missingPanelTypes() const;
 
@@ -171,7 +163,7 @@ public:
 
     // 面板内容与标题（诊断/测试用）。
     QWidget *panelWidget(nextpilot::plotscope::registry::Region area) const;
-    // 把面板页签**置前**（"再打开=聚焦"语义：重复 requestPanel 同一面板时调用；
+    // 把面板页签**置前**（"再打开=聚焦"语义：重复 openView 同一视图时调用；
     // 调试暂停时编辑器/模块也会用它把调试面板顶到前台）。
     void raisePanel(QWidget *panel);
     // 按区域+页签标题聚焦（用于启动默认面板：面板装配顺序不该决定初始显示）。
@@ -220,8 +212,7 @@ public:
     // 按 id 触发 Ribbon 动作（命令面板与 ribbon 共用同一条意图路径）。
     bool triggerAction(const QString &actionId);
     // 无 Ribbon 按钮的动作/纯 op：直接走同一个意图调度器。
-    bool dispatchAction(const QString &actionId, const QString &intentOp,
-                        const QString &data = QString());
+    bool dispatchAction(const QString &actionId, const QString &intentOp, const QString &data = QString());
 
     // 底部 Panel 整组显隐（Ctrl+J）。
     bool bottomPanelVisible() const;
@@ -304,7 +295,6 @@ private:
     // 未装配（bare 壳）为 nullptr，全部读点判空退化为空清单。
     nextpilot::plotscope::workbench::ISlotsService *m_slots = nullptr;
     // 面板引用校验的另外两源（外壳注入；空 = 退化为只查 Activity panelTypes）。
-    const nextpilot::plotscope::workbench::IPanelsService *m_panelsService = nullptr;
     QList<nextpilot::plotscope::registry::ProductPanelPlacement> m_placements;
     // views 命中面（A2b 笔2b 第②步）：非空时校验器把 views 声明也当命中来源。
     nextpilot::plotscope::workbench::IViewsService *m_viewsRefService = nullptr;
@@ -317,7 +307,7 @@ private:
 
     // SARibbon
     SARibbonBar *m_ribbon = nullptr;
-    int m_currentPage = 0;   // 当前页签下标（状态快照用）
+    int m_currentPage = 0;        // 当前页签下标（状态快照用）
     int m_pendingRibbonPage = -1; // applyState 登记的待恢复页，-1 表示无
 
     // ADS
@@ -336,8 +326,8 @@ private:
     // Activity Bar + 视图 dock：每个视图一个 CDockWidget，可跨左/右/底停靠。
     QWidget *m_shellFrame = nullptr;
     ActivityBar *m_activityBar = nullptr;
-    QStringList m_leftPageKeys; // 初始停靠在左槽的视图 pageKey
-    QSet<QString> m_collapsedViews; // 用户收起的视图 pageKey
+    QStringList m_leftPageKeys;             // 初始停靠在左槽的视图 pageKey
+    QSet<QString> m_collapsedViews;         // 用户收起的视图 pageKey
     QHash<QString, QString> m_viewActivity; // pageKey -> 用户拖到 Activity Bar 后的归属
     QString m_activeActivity;
     QStringList m_activityOrder;
@@ -347,19 +337,20 @@ private:
     ActivityActivatedHandler m_activityHandler;
     SettingsHandler m_settingsHandler;
     QHash<nextpilot::plotscope::registry::Region, ads::CDockAreaWidget *> m_lastArea; // region -> 该侧最后一个 DockArea
-    QHash<nextpilot::plotscope::registry::Region, ads::CDockWidget *> m_panels;      // region -> 该侧主 dock
-    QHash<nextpilot::plotscope::registry::Region, QList<ads::CDockWidget *>> m_docksByArea; // region -> 全部页签（按放置顺序）
+    QHash<nextpilot::plotscope::registry::Region, ads::CDockWidget *> m_panels;       // region -> 该侧主 dock
+    QHash<nextpilot::plotscope::registry::Region, QList<ads::CDockWidget *>>
+        m_docksByArea; // region -> 全部页签（按放置顺序）
     // pageKey（面板类型 id）-> dock 页签：视图页逐页开关按钮的定位表。
     QHash<QString, ads::CDockWidget *> m_dockByKey;
     // 面板内容 widget -> 持有它的 dock 页签（raisePanel 置前用；
     // ADS 自带的 dockWidgetsMap 按 objectName 索引，撞名会互相覆盖不可靠）。
     QHash<QWidget *, ads::CDockWidget *> m_dockByWidget;
-    int m_dockSeq = 0;                        // dock objectName 消歧序号
+    int m_dockSeq = 0; // dock objectName 消歧序号
 
     // 动作
     QHash<QString, int> m_actionTriggers;    // actionId -> 触发次数
-    QHash<QString, QAction *> m_actionById;   // actionId -> 已建动作（图标/文字就地更新用）
-    ActionMenuProvider m_actionMenuProvider;  // 下拉菜单来源（可为空）
+    QHash<QString, QAction *> m_actionById;  // actionId -> 已建动作（图标/文字就地更新用）
+    ActionMenuProvider m_actionMenuProvider; // 下拉菜单来源（可为空）
 
     IntentDispatcher m_dispatch;
 };

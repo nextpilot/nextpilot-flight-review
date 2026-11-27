@@ -2,7 +2,7 @@
 
 // DialogLauncherHub —— 模态对话框启动器表（D18a）。
 //
-// 外壳与"业务模态对话框"之间的解耦点，与 PanelFactoryHub 同构：
+// 外壳与"业务模态对话框"之间的解耦点，与其他声明式登记面同构：
 //   外壳只知道一个动作 id（如 "app.action.protocolEditor"），不 include、不构造
 //   任何业务对话框；对话框的呈现层在自己的 TU 里按 id 注册一个启动器。
 //
@@ -65,14 +65,12 @@ public:
 // 注册宏：模块呈现层 TU 末尾一行。
 //   PS_REGISTER_DIALOG_LAUNCHER("app.action.protocolEditor", protocolEditorLauncher, var)
 // Fn 签名：void(QWidget *, AppContext &, IIntentExecutor &)。
-#define PS_REGISTER_DIALOG_LAUNCHER(Id, VarName, Fn)                                       \
-    namespace                                                                              \
-    {                                                                                      \
-    const bool g_ps_dialog_launch_##VarName = [] {                                         \
-        ::nextpilot::plotscope::registry::DialogLauncherHub::registerLauncher(             \
-            QStringLiteral(Id), &Fn);                                                      \
-        return true;                                                                       \
-    }();                                                                                   \
+#define PS_REGISTER_DIALOG_LAUNCHER(Id, VarName, Fn)                                                                   \
+    namespace {                                                                                                        \
+    const bool g_ps_dialog_launch_##VarName = [] {                                                                     \
+        ::nextpilot::plotscope::registry::DialogLauncherHub::registerLauncher(QStringLiteral(Id), &Fn);                \
+        return true;                                                                                                   \
+    }();                                                                                                               \
     }
 
 } // namespace nextpilot::plotscope::registry

@@ -31,9 +31,7 @@ constexpr auto kActShow = "data.table.show";
 } // namespace
 
 DataTablePanel::DataTablePanel(AppContext &appCtx, IIntentExecutor &executor, QWidget *parent)
-    : QWidget(parent)
-    , m_app(appCtx)
-    , m_executor(executor)
+    : QWidget(parent), m_app(appCtx), m_executor(executor)
 {
     auto *lay = new QVBoxLayout(this);
     lay->setContentsMargins(4, 4, 4, 4);
@@ -176,6 +174,6 @@ void DataTablePanel::addColumnAsCurve(int columnIndex)
 
 } // namespace nextpilot::plotscope::data
 
-// 旧工厂表注册（PS_REGISTER_PANEL_TI "data.table"）已删（A2b 笔2b 第③步）：
+// 旧工厂表注册（"data.table"）已删（A2b 笔2b 第③步）：
 // 本面板改由 DataViewFactories 经 ViewRegistry::registerEditorProvider 登记
 // （viewType "data.table"、owner "data"，声明在 DataModule::initialize）。

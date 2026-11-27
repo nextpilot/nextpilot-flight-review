@@ -14,7 +14,6 @@
 #include "GridPickPopup.h"
 #include "IIntentExecutor.h"
 #include "InstrumentView.h"
-#include "PanelFactoryHub.h"
 #include "AxesView.h"
 #include "WorkspaceHistory.h"
 #include "playback/PlaybackController.h"
@@ -351,10 +350,9 @@ PlotWorkspace::Cell PlotWorkspace::makeCell(QWidget *parentForStack)
     stack->installEventFilter(this);
     // 列节点拖到画布 → 画布只解码 MIME 发信号 → 这里切活动通道
     // （与数据集树双击同一路径，activity 路由回当前 cell）。
-    QObject::connect(canvas, &AxesView::channelDropped, this,
-                     [this](int datasetId, const QString &t, const QString &c) {
-                         m_appCtx.setActiveChannel(datasetId, t, c);
-                     });
+    QObject::connect(
+        canvas, &AxesView::channelDropped, this,
+        [this](int datasetId, const QString &t, const QString &c) { m_appCtx.setActiveChannel(datasetId, t, c); });
     // 曲线从一个画布拖到另一个画布：目标是"接收方"，源按 MIME 里的 canvasId 回找。
     // 先让目标加上，成功后才删源——目标失败（比如数据集已卸载）时源不受影响，
     // 也就不会出现"两边都没有"的半截状态。
@@ -1019,10 +1017,7 @@ bool PlotWorkspace::createXyCanvasFor(dataset::DatasetId dsY, const QString &tY,
     setActive(cellIdx);
     m_appCtx.messages().append(
         QStringLiteral("info"), QStringLiteral("plot.canvas"),
-        QStringLiteral("XY 图：X=%1.%2（%3 点），Y=%4.%5")
-            .arg(x.table, x.column)
-            .arg(xy.size())
-            .arg(tY, cY));
+        QStringLiteral("XY 图：X=%1.%2（%3 点），Y=%4.%5").arg(x.table, x.column).arg(xy.size()).arg(tY, cY));
     return true;
 }
 
@@ -1329,9 +1324,10 @@ void PlotWorkspace::connectCanvasSignals(AxesView *canvas)
             initial);
         if (req.isEmpty())
             return;
-        canvas->setSeriesYTransform(key,
-            req.value(QStringLiteral("descriptorId")).toString(),
-            QString::fromUtf8(QJsonDocument(req.value(QStringLiteral("params")).toObject()).toJson(QJsonDocument::Compact)));
+        canvas->setSeriesYTransform(
+            key, req.value(QStringLiteral("descriptorId")).toString(),
+            QString::fromUtf8(
+                QJsonDocument(req.value(QStringLiteral("params")).toObject()).toJson(QJsonDocument::Compact)));
     });
 }
 
@@ -1349,10 +1345,9 @@ void PlotWorkspace::registerViewActions()
     registerPlaybackActions();
 
     // 全工作区快照 undo（第3仗 3b）：与画布局部视口撤销 plot.view.undo 分栈。
-    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.workspace.undo"),
-        [this](const QVariantMap &) -> Result<QVariant> {
-            return QVariant(undoHistory());
-        });
+    m_appCtx.interactions().registerViewAction(
+        QStringLiteral("plot.workspace.undo"),
+        [this](const QVariantMap &) -> Result<QVariant> { return QVariant(undoHistory()); });
 
     // 参考线（第3仗 3c / F-2）：脚本/快捷键与右键菜单同一语义；存相对时间轴值。
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.reference.set"),
@@ -1582,8 +1577,8 @@ bool PlotWorkspace::applyDocumentSpec(const plot::PlotDocumentSpec &spec,
                     {
                         // 显隐回放（第3仗 3b）：addChannel 默认可见，存盘为隐藏的补一刀。
                         if (!savedVisibleByChannel.value(channel, true))
-                            cell.canvas->setSeriesVisible(
-                                QStringLiteral("%1|%2|%3").arg(datasetId).arg(table, column), false);
+                            cell.canvas->setSeriesVisible(QStringLiteral("%1|%2|%3").arg(datasetId).arg(table, column),
+                                                          false);
                     }
                 }
             }
@@ -1605,8 +1600,7 @@ bool PlotWorkspace::applyDocumentSpec(const plot::PlotDocumentSpec &spec,
                 m_appCtx.sources().demandOrigin(c.datasetOrigin);
                 m_appCtx.messages().append(
                     QStringLiteral("info"), QStringLiteral("plot.document"),
-                    QStringLiteral("画布 %1 的数据源未到：%2，已挂起等待晚到绑定")
-                        .arg(p.title, c.datasetOrigin));
+                    QStringLiteral("画布 %1 的数据源未到：%2，已挂起等待晚到绑定").arg(p.title, c.datasetOrigin));
             }
 
             // 视口属于视图、与数据无关：无论曲线是否绑成功都要恢复。restoreViewState
@@ -1686,8 +1680,8 @@ QStringList PlotWorkspace::preflightDocumentSpec(const plot::PlotDocumentSpec &s
             }
             if (info->datasetIds.isEmpty())
             {
-                issues << QStringLiteral("画布 %1 的源 %2 尚无数据集（live 流可能还没吐数据）")
-                                      .arg(name, c.datasetOrigin);
+                issues
+                    << QStringLiteral("画布 %1 的源 %2 尚无数据集（live 流可能还没吐数据）").arg(name, c.datasetOrigin);
                 continue;
             }
 
@@ -1715,13 +1709,11 @@ QStringList PlotWorkspace::preflightDocumentSpec(const plot::PlotDocumentSpec &s
                 const dataset::Table *t = ds->table(table);
                 if (t == nullptr)
                 {
-                    issues << QStringLiteral("画布 %1 的表 %2 在数据集里不存在（协议/表头可能变了）")
-                                          .arg(name, table);
+                    issues << QStringLiteral("画布 %1 的表 %2 在数据集里不存在（协议/表头可能变了）").arg(name, table);
                     continue;
                 }
                 if (t->column(column) == nullptr)
-                    issues << QStringLiteral("画布 %1 的列 %2.%3 在数据集里不存在")
-                                          .arg(name, table, column);
+                    issues << QStringLiteral("画布 %1 的列 %2.%3 在数据集里不存在").arg(name, table, column);
             }
         }
     }
@@ -1793,8 +1785,7 @@ void PlotWorkspace::tryBindPending()
                 boundAny = true;
                 // 显隐回放（第3仗 3b）：存盘为隐藏的通道接回后保持隐藏。
                 if (!p.visibleByChannel.value(channel, true))
-                    cell.canvas->setSeriesVisible(
-                        QStringLiteral("%1|%2|%3").arg(datasetId).arg(table, column), false);
+                    cell.canvas->setSeriesVisible(QStringLiteral("%1|%2|%3").arg(datasetId).arg(table, column), false);
             }
         }
         if (!boundAny)
@@ -1805,11 +1796,10 @@ void PlotWorkspace::tryBindPending()
         if (!p.state.isEmpty() && cell.canvas)
             cell.canvas->restoreViewState(p.state);
 
-        m_appCtx.messages().append(
-            QStringLiteral("info"), QStringLiteral("plot.document"),
-            QStringLiteral("晚到绑定：画布 %1 的数据源 %2 已接上（%3 条通道）")
-                .arg(p.title, p.origin)
-                .arg(boundAny ? p.channels.size() : 0));
+        m_appCtx.messages().append(QStringLiteral("info"), QStringLiteral("plot.document"),
+                                   QStringLiteral("晚到绑定：画布 %1 的数据源 %2 已接上（%3 条通道）")
+                                       .arg(p.title, p.origin)
+                                       .arg(boundAny ? p.channels.size() : 0));
 
         m_appCtx.sources().releaseOrigin(p.origin);
         m_pendingBinds.removeAt(k);
@@ -1867,15 +1857,13 @@ int PlotWorkspace::rebindStaleCurves()
     {
         if (cell.view == nullptr)
             continue;
-        rebound += cell.view->rebindDataset(
-            [this](int oldId, const QString &table, const QString &column) {
-                return resolveRebindTarget(oldId, table, column);
-            });
+        rebound += cell.view->rebindDataset([this](int oldId, const QString &table, const QString &column) {
+            return resolveRebindTarget(oldId, table, column);
+        });
     }
     if (rebound > 0)
-        m_appCtx.messages().append(
-            QStringLiteral("info"), QStringLiteral("plot.document"),
-            QStringLiteral("数据集重绑：%1 条曲线按 table.column 接到新数据集").arg(rebound));
+        m_appCtx.messages().append(QStringLiteral("info"), QStringLiteral("plot.document"),
+                                   QStringLiteral("数据集重绑：%1 条曲线按 table.column 接到新数据集").arg(rebound));
     return rebound;
 }
 
@@ -1904,12 +1892,11 @@ int PlotWorkspace::resolveRebindTarget(int oldId, const QString &table, const QS
     if (carriers.isEmpty())
         return -1;
     if (carriers.size() > 1)
-        m_appCtx.messages().append(
-            QStringLiteral("warn"), QStringLiteral("plot.document"),
-            QStringLiteral("通道 %1.%2 有 %3 个数据集可接，重绑到第一个（datasetId=%4）")
-                .arg(table, column)
-                .arg(carriers.size())
-                .arg(carriers.first()));
+        m_appCtx.messages().append(QStringLiteral("warn"), QStringLiteral("plot.document"),
+                                   QStringLiteral("通道 %1.%2 有 %3 个数据集可接，重绑到第一个（datasetId=%4）")
+                                       .arg(table, column)
+                                       .arg(carriers.size())
+                                       .arg(carriers.first()));
     return carriers.first();
 }
 

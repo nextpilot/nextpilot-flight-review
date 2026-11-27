@@ -32,10 +32,7 @@ bool producesFrames(const IMessageParser *p)
 
 } // namespace
 
-ToolboxHub::ToolboxHub(RegistryTree &tree)
-    : RegistryNode(tree, RegistryKind::Extension, QStringLiteral("扩展包"))
-{
-}
+ToolboxHub::ToolboxHub(RegistryTree &tree) : RegistryNode(tree, RegistryKind::Extension, QStringLiteral("扩展包")) {}
 
 // RegistryNode 可观测：扩展 id = 内置包 id ∪ contributes owner（去重）。
 // 内置包与外部 manifest 是同一个 ExtensionRegistry 的两种来源，diagnostics 必须
@@ -108,9 +105,6 @@ bool ToolboxHub::mount(Pack pack)
     for (const UiAction &a : pack.uiActions)
         if (!checkId(a.id) || uiActions.contains(a.id))
             return false;
-    for (const PanelSpec &p : pack.panels)
-        if (!checkId(p.id) || panels.contains(p.id))
-            return false;
     for (const ScriptSpec &s : pack.scripts)
         if (!checkId(s.id) || scripts.contains(s.id))
             return false;
@@ -150,11 +144,6 @@ bool ToolboxHub::mount(Pack pack)
     {
         stamp(a);
         uiActions.insert(a.id, a);
-    }
-    for (PanelSpec &p : pack.panels)
-    {
-        stamp(p);
-        panels.insert(p.id, p);
     }
     for (ScriptSpec &s : pack.scripts)
     {
@@ -225,7 +214,6 @@ bool ToolboxHub::unmount(const QString &packId)
         }
     };
     dropByProvider(uiActions);
-    dropByProvider(panels);
     dropByProvider(scripts);
     dropByProvider(dataAssets);
     dropByProvider(docs);
@@ -466,10 +454,9 @@ bool ToolboxHub::mountContribution(const ContributesDoc &doc)
     {
         if (m_contribEditorViewTypes.contains(item.viewType))
         {
-            recordContributionIssue(
-                doc.owner, QStringLiteral("customEditors.") + item.viewType,
-                QStringLiteral("owner %2 的 viewType 已被 owner %1 声明，跳过（先到者保留）")
-                    .arg(m_contribEditorViewTypes.value(item.viewType), doc.owner));
+            recordContributionIssue(doc.owner, QStringLiteral("customEditors.") + item.viewType,
+                                    QStringLiteral("owner %2 的 viewType 已被 owner %1 声明，跳过（先到者保留）")
+                                        .arg(m_contribEditorViewTypes.value(item.viewType), doc.owner));
             continue;
         }
         m_contribEditorViewTypes.insert(item.viewType, doc.owner);

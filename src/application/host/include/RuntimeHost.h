@@ -175,7 +175,6 @@ private:
     };
 
     // M2.8 R4：static 注册表的节点宿主（生命周期归本宿主，树侧 QPointer 弱引用）。
-    PanelFactoryNode *m_panelFactoryNode = nullptr;
     BuiltinModuleNode *m_builtinModuleNode = nullptr;
     // M2.8 遗留 4 收口：三张存量静态表全量上树（diag.registries 无盲区）。
     ParserNode *m_parserNode = nullptr;

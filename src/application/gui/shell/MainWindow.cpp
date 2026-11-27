@@ -8,7 +8,6 @@
 #include "KeybindingDialog.h"
 #include "command/KeybindingRegistry.h"
 #include "PreferencesIntentHandler.h"
-#include "DialogLauncherHub.h"
 #include "ShellBinder.h"
 #include "theme/IconRegistry.h" // A2c：缩略图绘制器归位 modules/plot/gui，壳只查 IconRegistry
 #include "ThemeManager.h"
@@ -93,8 +92,9 @@ class ShellIntentHandler final : public QObject, public intent::IIntentHandler
 public:
     using Action = std::function<bool(const QString &op, QString *error)>;
 
-    explicit ShellIntentHandler(Action action, QObject *parent = nullptr)
-        : QObject(parent), m_action(std::move(action)) {}
+    explicit ShellIntentHandler(Action action, QObject *parent = nullptr) : QObject(parent), m_action(std::move(action))
+    {
+    }
 
     bool canHandle(const intent::Intent &i) const override
     {
@@ -346,8 +346,7 @@ void MainWindow::build(RuntimeHost &host)
         }
         return actions;
     });
-    m_context = new GuiContext(this, m_slotsService, m_binder, m_appCtx, &host, m_panelsService, m_viewsService,
-                               m_editorService, this);
+    m_context = new GuiContext(this, m_slotsService, m_binder, m_appCtx, &host, m_viewsService, m_editorService, this);
     // 状态栏：先接好信号，模块 onAttach（activate 内）声明状态项时即可排布（验收 7）。
     setupStatusBar();
 
@@ -436,18 +435,19 @@ void MainWindow::build(RuntimeHost &host)
     m_binder->rebuildRibbon();
     m_binder->rebuildActivityBar();
 
-    // 3.0a) 面板引用启动期校验（验收 4）：三源（包 PanelSpec / Activity panelTypes、
-    // centralPanel / 产品 defaultPanels）必须命中——命中面二选一：旧工厂表，或
-    // views 声明（A2b 笔2b 第②步：gui 内置面板已迁 ViewRegistry）。binder 只收集，
-    // 这里统一进 AppContext error 诊断 + stderr，同一问题不打两遍；不 abort。
-    // 缺失列表由 test_gui 断言为空。
-    m_binder->setPanelReferenceContext(m_panelsService, m_spec.defaultPanels, m_viewsService, m_editorService);
+    // 3.0a) 面板引用启动期校验（验收 4）：两源（A2d 第②步后：Activity panelTypes、
+    // centralPanel / 产品 defaultPanels）必须命中声明面——views 声明
+    // （viewsContainers/views，IViewsService 读回）∪ customEditors 声明
+    // （IEditorService::customEditors() 读回；A2d 第⑤步起这是全部命中面）。
+    // binder 只收集，这里统一进 AppContext error 诊断 + stderr，同一问题不打两遍；
+    // 不 abort。缺失列表由 test_gui 断言为空。
+    m_binder->setPanelReferenceContext(m_spec.defaultPanels, m_viewsService, m_editorService);
     m_panelReferenceIssues = m_binder->missingPanelTypes();
     for (const QString &entry : m_panelReferenceIssues)
     {
         m_appCtx.appendMessage(QStringLiteral("error"), QStringLiteral("panel-ref"),
-                               QStringLiteral("[panelTypes] 未命中工厂表: %1").arg(entry));
-        fprintf(stderr, "[panelTypes] 未命中工厂表: %s\n", entry.toUtf8().constData());
+                               QStringLiteral("[panelTypes] 未命中声明面: %1").arg(entry));
+        fprintf(stderr, "[panelTypes] 未命中声明面: %s\n", entry.toUtf8().constData());
     }
 
     // 3.0-) 模块 onAttach 已完成声明，把模块贡献的语义色合并进主题（验收 8）。
@@ -456,9 +456,8 @@ void MainWindow::build(RuntimeHost &host)
     // 3.0) 默认面板布局：清单来自产品 spec（完整产品 / 裸壳各一份）。
     // A2c 收工：12 个业务面板注册点全部迁 views 声明（owner data/plot/script/
     // automotive），壳内置 5 点早已迁（A2b 第②步）——defaultPanels 全走 openView，
-    // 落区由 viewsContainers[].area 决定，旧工厂 requestPanel 回退分支随之删除
-    // （壳侧调用点 0；requestPanel 接口本体与 PanelFactoryHub 类型留 A2d 删）。
-    // placement.region 字段保留至 A2d（类型本体不删）。
+    // 落区由 viewsContainers[].area 决定（A2d：旧打开入口接口本体与旧工厂类型
+    // 已随旧契约删除；placement.region 字段本卡删除）。
     for (const auto &placement : m_spec.defaultPanels)
     {
         if (placement.viewId.isEmpty())
@@ -486,21 +485,20 @@ void MainWindow::build(RuntimeHost &host)
         // 注意两者不可混用：id 是 UI 元素标识，intentOp 才是要发的意图 op。
         // 打开数据对话框已归 data 模块呈现层（D18a）：外壳按 id 经启动器表触发，
         // 不 include、不构造业务对话框；未注册（裸壳/headless）时 no-op。
-        if (actionId == QStringLiteral("app.action.openData"))
+        if (actionId == QStringLiteral("app.action.openData") && m_dialogLauncher)
         {
-            registry::DialogLauncherHub::launch(actionId, this, m_appCtx, host);
+            m_dialogLauncher(actionId);
             return;
         }
         // 协议对话框归模块呈现层（D18a）：外壳只把 id 交给启动器表，不 include、
         // 不构造任何业务对话框。未注册（裸壳/headless）时 launch 为 no-op。
-        if (actionId == QStringLiteral("app.action.protocolInspector")
-            || actionId == QStringLiteral("app.action.protocolEditor")
-            || actionId == QStringLiteral("protocol.new")
-            || actionId == QStringLiteral("protocol.open")
-            || actionId == QStringLiteral("protocol.validate")
-            || actionId == QStringLiteral("protocol.editor"))
+        if ((actionId == QStringLiteral("app.action.protocolInspector") ||
+             actionId == QStringLiteral("app.action.protocolEditor") || actionId == QStringLiteral("protocol.new") ||
+             actionId == QStringLiteral("protocol.open") || actionId == QStringLiteral("protocol.validate") ||
+             actionId == QStringLiteral("protocol.editor")) &&
+            m_dialogLauncher)
         {
-            registry::DialogLauncherHub::launch(actionId, this, m_appCtx, host);
+            m_dialogLauncher(actionId);
             return;
         }
         // 工作区预设：需要输入/选择预设名，外壳按 id 特判，落盘与重建仍走意图层。
@@ -515,15 +513,15 @@ void MainWindow::build(RuntimeHost &host)
             return;
         }
         // 报告导出 GUI 交互（选路径）归 report 模块呈现层（D18a）：按 id 触发启动器。
-        if (actionId == QStringLiteral("report.workbench.export"))
+        if (actionId == QStringLiteral("report.workbench.export") && m_dialogLauncher)
         {
-            registry::DialogLauncherHub::launch(actionId, this, m_appCtx, host);
+            m_dialogLauncher(actionId);
             return;
         }
         // 视图页面板开关：动作 id = "view.toggleDock." + 面板类型 id（pageKey）。
         // 语义是"一个按钮管一个页签"：点击一次出现、再点一次消失，只影响
         // 自己，不动同区其它页签。所有底部页签（含诊断）在装配期就已创建，
-        // 不存在"首次点击才 requestPanel"的特判。
+        // 不存在"首次点击才开面板"的特判。
         if (actionId.startsWith(QStringLiteral("view.toggleDock.")))
         {
             const QString pageKey = actionId.mid(QStringLiteral("view.toggleDock.").size());
@@ -540,9 +538,8 @@ void MainWindow::build(RuntimeHost &host)
         // 运行脚本：选 .lua/.py 文件 → script.run 意图（与 CLI --run 同一路径）。
         if (actionId == QStringLiteral("app.action.runScript"))
         {
-            const QString path = QFileDialog::getOpenFileName(
-                this, QStringLiteral("运行脚本"), QString(),
-                QStringLiteral("脚本 (*.lua *.py);;全部 (*)"));
+            const QString path = QFileDialog::getOpenFileName(this, QStringLiteral("运行脚本"), QString(),
+                                                              QStringLiteral("脚本 (*.lua *.py);;全部 (*)"));
             if (path.isEmpty())
                 return;
             Intent script;
@@ -569,9 +566,9 @@ void MainWindow::build(RuntimeHost &host)
         // 导出设置：把当前 SettingsStore 的键值导出为 JSON（file.exportSettings）。
         if (actionId == QStringLiteral("file.exportSettings"))
         {
-            const QString path = QFileDialog::getSaveFileName(
-                this, QStringLiteral("导出设置"), m_spec.id + QStringLiteral("-settings.json"),
-                QStringLiteral("JSON (*.json)"));
+            const QString path = QFileDialog::getSaveFileName(this, QStringLiteral("导出设置"),
+                                                              m_spec.id + QStringLiteral("-settings.json"),
+                                                              QStringLiteral("JSON (*.json)"));
             if (path.isEmpty())
                 return;
             QJsonObject root;
@@ -907,16 +904,14 @@ void MainWindow::writeSessionSnapshot()
     WorkspaceDataConfig cfg = WorkspaceDataConfig::load(m_appCtx.settings());
     config.insert(QStringLiteral("sources"),
                   cfg.toJson().value(QStringLiteral("sources")).toArray());
-    config.insert(QStringLiteral("plots"),
-                  collected.value(QStringLiteral("document"))
-                      .toObject()
-                      .value(QStringLiteral("plot.document"))
-                      .toObject());
+    config.insert(
+        QStringLiteral("plots"),
+        collected.value(QStringLiteral("document")).toObject().value(QStringLiteral("plot.document")).toObject());
     root.insert(QStringLiteral("config"), config);
     root.insert(QStringLiteral("session"), collected.value(QStringLiteral("session")).toObject());
 
-    const QString dir = QDir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation))
-                            .filePath(QStringLiteral("session"));
+    const QString dir =
+        QDir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)).filePath(QStringLiteral("session"));
     QDir().mkpath(dir);
     // QSaveFile：写临时文件再原子替换，崩溃不会留下半截快照。
     QSaveFile file(QDir(dir).filePath(QStringLiteral("last-session")));
@@ -932,8 +927,8 @@ void MainWindow::writeSessionSnapshot()
 
 void MainWindow::restoreSessionSnapshot()
 {
-    const QString dir = QDir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation))
-                            .filePath(QStringLiteral("session"));
+    const QString dir =
+        QDir(QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)).filePath(QStringLiteral("session"));
     QFile file(QDir(dir).filePath(QStringLiteral("last-session")));
     if (!file.exists() || !file.open(QIODevice::ReadOnly))
         return;
@@ -1051,18 +1046,16 @@ void MainWindow::applyWorkspaceUiConfig()
     if (order.isValid())
         m_binder->setActivityOrder(order.toStringList());
 
-    const QVariant activityVisible = settings.scopedValue(
-        SettingsScope::Workspace, QStringLiteral("ui.activityBar.visible"));
+    const QVariant activityVisible =
+        settings.scopedValue(SettingsScope::Workspace, QStringLiteral("ui.activityBar.visible"));
     if (activityVisible.isValid())
         m_binder->setActivityBarVisible(activityVisible.toBool());
 
-    const QVariant sideVisible = settings.scopedValue(
-        SettingsScope::Workspace, QStringLiteral("ui.sideBar.visible"));
+    const QVariant sideVisible = settings.scopedValue(SettingsScope::Workspace, QStringLiteral("ui.sideBar.visible"));
     if (sideVisible.isValid())
         m_binder->setSideBarVisible(sideVisible.toBool());
 
-    const QVariant sideWidth = settings.scopedValue(
-        SettingsScope::Workspace, QStringLiteral("ui.sideBar.width"));
+    const QVariant sideWidth = settings.scopedValue(SettingsScope::Workspace, QStringLiteral("ui.sideBar.width"));
     if (sideWidth.isValid())
         m_binder->setSideBarWidth(sideWidth.toInt());
 }
@@ -1133,11 +1126,9 @@ void MainWindow::buildCommandLayer(RuntimeHost &host)
         });
 
     // shell UI 命令 op 注册为系统级意图，与模块业务意图走同一条执行路径。
-    host.registerSystemHandler(QStringLiteral("@system/shell"),
-                               new ShellIntentHandler(
-                                   [this](const QString &op, QString *error) {
-                                       return runShellAction(op, error);
-                                   }, this));
+    host.registerSystemHandler(
+        QStringLiteral("@system/shell"),
+        new ShellIntentHandler([this](const QString &op, QString *error) { return runShellAction(op, error); }, this));
 
     // 命令接缝注入上下文：模块呈现层（右键/标题栏/设置页）没法反向依赖外壳，
     // 由外壳把"执行"与"when 求值"两个能力挂到 AppContext 上。
@@ -1617,8 +1608,8 @@ void MainWindow::applyKeybindingConfig()
 {
     if (!m_keybindings || !m_host)
         return;
-    const QVariant raw = m_host->app().settings().scopedValue(
-        SettingsScope::Workspace, QStringLiteral("ui.keybindings"));
+    const QVariant raw =
+        m_host->app().settings().scopedValue(SettingsScope::Workspace, QStringLiteral("ui.keybindings"));
     QJsonObject object = QJsonDocument::fromJson(raw.toString().toUtf8()).object();
     QHash<QString, QString> overrides;
     for (auto it = object.constBegin(); it != object.constEnd(); ++it)
@@ -1634,9 +1625,8 @@ void MainWindow::saveKeybindingConfig()
     const QHash<QString, QString> overrides = m_keybindings->overrides();
     for (auto it = overrides.constBegin(); it != overrides.constEnd(); ++it)
         object.insert(it.key(), it.value());
-    m_host->app().settings().setScopedValue(
-        SettingsScope::Workspace, QStringLiteral("ui.keybindings"),
-        QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact)));
+    m_host->app().settings().setScopedValue(SettingsScope::Workspace, QStringLiteral("ui.keybindings"),
+                                            QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact)));
 }
 
 void MainWindow::rebuildKeybindingActions()
@@ -1692,16 +1682,14 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *event)
         return QMainWindow::eventFilter(watched, event);
 
     auto *key = static_cast<QKeyEvent *>(event);
-    const QString sequence = QKeySequence(key->keyCombination())
-                                 .toString(QKeySequence::PortableText);
+    const QString sequence = QKeySequence(key->keyCombination()).toString(QKeySequence::PortableText);
     if (sequence.isEmpty())
         return QMainWindow::eventFilter(watched, event);
 
     bool scriptTabs = false;
     for (QWidget *w = QApplication::focusWidget(); w; w = w->parentWidget())
     {
-        if (!QString::fromLatin1(w->metaObject()->className())
-                 .contains(QStringLiteral("ScriptEditorPanel")))
+        if (!QString::fromLatin1(w->metaObject()->className()).contains(QStringLiteral("ScriptEditorPanel")))
             continue;
         QTabWidget *tabs = w->findChild<QTabWidget *>();
         scriptTabs = tabs && tabs->count() > 1;
@@ -1795,9 +1783,7 @@ void MainWindow::restoreState()
 
 bool MainWindow::hasSavedState() const
 {
-    return m_host && !m_host->app().settings().json(SettingsScope::Workspace,
-                                                     QStringLiteral("window/state"))
-                        .isEmpty();
+    return m_host && !m_host->app().settings().json(SettingsScope::Workspace, QStringLiteral("window/state")).isEmpty();
 }
 
 } // namespace nextpilot::plotscope::gui

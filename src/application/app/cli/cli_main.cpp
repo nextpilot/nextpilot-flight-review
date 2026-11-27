@@ -293,7 +293,6 @@ int main(int argc, char **argv)
                         u8(c.provider));
         };
         listTable("ui", "界面", toolbox.uiActions);
-        listTable("panel", "面板", toolbox.panels);
         listTable("script", "脚本", toolbox.scripts);
         listTable("data", "数据", toolbox.dataAssets);
         listTable("example", "示例", toolbox.examples);
@@ -338,10 +337,9 @@ int main(int argc, char **argv)
         // 工具箱按业务领域分组展示（通用 / 飞控 / 汽车 / 机器人 / 卫导 / 视频）。
         const auto &toolbox = application.host().toolbox();
         const nextpilot::plotscope::registry::Domain order[] = {
-            nextpilot::plotscope::registry::Domain::General, nextpilot::plotscope::registry::Domain::Autopilot,
+            nextpilot::plotscope::registry::Domain::General,    nextpilot::plotscope::registry::Domain::Autopilot,
             nextpilot::plotscope::registry::Domain::Automotive, nextpilot::plotscope::registry::Domain::Robotics,
-            nextpilot::plotscope::registry::Domain::Gnss, nextpilot::plotscope::registry::Domain::Video
-        };
+            nextpilot::plotscope::registry::Domain::Gnss,       nextpilot::plotscope::registry::Domain::Video};
         for (auto domain : order)
         {
             const auto drivers = toolbox.driversByDomain(domain);
@@ -497,14 +495,11 @@ int main(int argc, char **argv)
                 return 2;
             }
             out.write(doc.toJson(QJsonDocument::Indented));
-            fprintf(stdout, "汇总已写入 %s（%s 共 %d 个文件：%s）\n",
-                    u8(jsonOut), u8(dir),
+            fprintf(stdout, "汇总已写入 %s（%s 共 %d 个文件：%s）\n", u8(jsonOut), u8(dir),
                     r.value().payload.toMap().value(QStringLiteral("total")).toInt(),
                     u8(QStringLiteral("%1 成功 / %2 失败")
-                                   .arg(r.value().payload.toMap()
-                                            .value(QStringLiteral("ok")).toInt())
-                                   .arg(r.value().payload.toMap()
-                                            .value(QStringLiteral("failed")).toInt())));
+                           .arg(r.value().payload.toMap().value(QStringLiteral("ok")).toInt())
+                           .arg(r.value().payload.toMap().value(QStringLiteral("failed")).toInt())));
         }
         else
         {

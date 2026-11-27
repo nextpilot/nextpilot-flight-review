@@ -9,7 +9,6 @@
 #include "GridPickPopup.h"
 #include "IIntentExecutor.h"
 #include "InstrumentView.h"
-#include "PanelFactoryHub.h"
 #include "AxesView.h"
 #include "PlaybackEngine.h"
 #include "TimelineWidget.h"
@@ -105,33 +104,34 @@ void PlotWorkspace::registerSeriesActions()
 
     // —— plotting 全套操作意图 ——
     // 全部落到 active cell 的 AxesView 真实能力，不造空按钮。
-    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.series.visible"),
-                                [this](const QVariantMap &params) -> Result<QVariant> {
-                                    const QString key = params.value(QStringLiteral("key")).toString();
-                                    const bool vis = params.value(QStringLiteral("visible"), true).toBool();
-                                    if (key.isEmpty())
-                                        return fail(err::Key, QStringLiteral("缺少曲线 key"));
-                                    if (!activeCanvas() || !activeCanvas()->setSeriesVisible(key, vis))
-                                        return fail(err::NoEnt, QStringLiteral("曲线不存在"));
-                                    return QVariant(true);
-                                });
-    m_appCtx.interactions().registerViewAction(QStringLiteral("plot.series.color"),
-                                [this](const QVariantMap &params) -> Result<QVariant> {
-                                    const QString key = params.value(QStringLiteral("key")).toString();
-                                    const QColor color = params.value(QStringLiteral("color")).value<QColor>();
-                                    if (key.isEmpty() || !color.isValid())
-                                        return fail(err::Key, QStringLiteral("缺少曲线 key 或颜色"));
-                                    if (!activeCanvas() || !activeCanvas()->setSeriesInk(key, color))
-                                        return fail(err::NoEnt, QStringLiteral("曲线不存在"));
-                                    return QVariant(true);
-                                });
+    m_appCtx.interactions().registerViewAction(
+        QStringLiteral("plot.series.visible"), [this](const QVariantMap &params) -> Result<QVariant> {
+            const QString key = params.value(QStringLiteral("key")).toString();
+            const bool vis = params.value(QStringLiteral("visible"), true).toBool();
+            if (key.isEmpty())
+                return fail(err::Key, QStringLiteral("缺少曲线 key"));
+            if (!activeCanvas() || !activeCanvas()->setSeriesVisible(key, vis))
+                return fail(err::NoEnt, QStringLiteral("曲线不存在"));
+            return QVariant(true);
+        });
+    m_appCtx.interactions().registerViewAction(
+        QStringLiteral("plot.series.color"), [this](const QVariantMap &params) -> Result<QVariant> {
+            const QString key = params.value(QStringLiteral("key")).toString();
+            const QColor color = params.value(QStringLiteral("color")).value<QColor>();
+            if (key.isEmpty() || !color.isValid())
+                return fail(err::Key, QStringLiteral("缺少曲线 key 或颜色"));
+            if (!activeCanvas() || !activeCanvas()->setSeriesInk(key, color))
+                return fail(err::NoEnt, QStringLiteral("曲线不存在"));
+            return QVariant(true);
+        });
     m_appCtx.interactions().registerViewAction(QStringLiteral("plot.series.remove"),
-                                [this](const QVariantMap &params) -> Result<QVariant> {
-                                    const QString key = params.value(QStringLiteral("key")).toString();
-                                    if (key.isEmpty())
-                                        return fail(err::Key, QStringLiteral("缺少曲线 key"));
-                                    if (!activeCanvas() || !activeCanvas()->removeSeries(key))
-                                        return fail(err::NoEnt, QStringLiteral("曲线不存在"));
-                                    return QVariant(true);
-                                });}
+                                               [this](const QVariantMap &params) -> Result<QVariant> {
+                                                   const QString key = params.value(QStringLiteral("key")).toString();
+                                                   if (key.isEmpty())
+                                                       return fail(err::Key, QStringLiteral("缺少曲线 key"));
+                                                   if (!activeCanvas() || !activeCanvas()->removeSeries(key))
+                                                       return fail(err::NoEnt, QStringLiteral("曲线不存在"));
+                                                   return QVariant(true);
+                                               });
+}
 } // namespace nextpilot::plotscope::gui

@@ -61,7 +61,7 @@ private:
 };
 
 // 工厂（A2c 归位）：PlotViewFactories 装配时经 registerViewProvider 登记
-// （view id "plot.properties"，owner "plot"）；原 PS_REGISTER_PANEL_TI 自注册已删。
+// （view id "plot.properties"，owner "plot"）；原工厂表自注册已删。
 QWidget *createPropertyPanel(nextpilot::plotscope::context::AppContext &appCtx,
                              nextpilot::plotscope::intent::IIntentExecutor &executor, QWidget *parent);
 

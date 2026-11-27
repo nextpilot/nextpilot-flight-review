@@ -54,7 +54,7 @@ class LuaHighlighter;
 //   script.debug.done {}                     module → editor  调试结束解除高亮
 //   script.editor.run {debug?}               module → editor  执行当前标签（Ribbon 同路径）
 //
-// 实例由 PS_REGISTER_PANEL 工厂创建（GUI 专属，headless 不链）。
+// 实例由 ScriptViewFactories 装配（GUI 专属，headless 不链）。
 // ============================================================================
 
 // ---------------------------------------------------------------------------
@@ -246,7 +246,7 @@ private:
 namespace nextpilot::plotscope::script {
 // 工厂（A2c 归位）：ScriptViewFactories 装配时经 registerViewProvider /
 // registerEditorProvider 登记（view id script.files/console/debug，editor viewType
-// script.editor，owner "script"）；原 PS_REGISTER_PANEL_TI 自注册已删。
+// script.editor，owner "script"）；原工厂表自注册已删。
 QWidget *createScriptFilesPanel(context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor &executor,
                                 QWidget *parent);
 QWidget *createScriptEditorPanel(context::AppContext &appCtx, nextpilot::plotscope::intent::IIntentExecutor &executor,

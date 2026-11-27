@@ -9,7 +9,6 @@
 #include "GridPickPopup.h"
 #include "IIntentExecutor.h"
 #include "InstrumentView.h"
-#include "PanelFactoryHub.h"
 #include "AxesView.h"
 #include "PlaybackEngine.h"
 #include "TimelineWidget.h"
@@ -172,7 +171,8 @@ void PlotWorkspace::registerPropertyProviders()
     });
 
     // --- 画布 ---
-    m_appCtx.interactions().registerPropertyProvider(SelectionKind::Canvas, [this, row, cornerLabel](const Selection &sel) {
+    m_appCtx.interactions().registerPropertyProvider(SelectionKind::Canvas, [this, row,
+                                                                             cornerLabel](const Selection &sel) {
         AxesView *canvas = activeCanvas();
         PropertySchema schema;
         schema.title = QStringLiteral("画布属性");
@@ -197,12 +197,14 @@ void PlotWorkspace::registerPropertyProviders()
     });
 
     // --- setter：把属性写回活动画布 ---
-    m_appCtx.interactions().registerPropertySetter(SelectionKind::Series,
+    m_appCtx.interactions().registerPropertySetter(
+        SelectionKind::Series,
         [this](const Selection &sel, const QString &, const QString &key, const QString &value, QString *err) {
             AxesView *canvas = activeCanvas();
             if (!canvas)
             {
-                if (err) *err = QStringLiteral("没有活动画布");
+                if (err)
+                    *err = QStringLiteral("没有活动画布");
                 return false;
             }
             const QString k = sel.ids.value(QStringLiteral("seriesKey")).toString();
@@ -218,16 +220,19 @@ void PlotWorkspace::registerPropertyProviders()
                 return canvas->setSeriesXOffset(k, value.toDouble());
             if (key == QStringLiteral("yTransform"))
                 return canvas->setSeriesYTransform(k, value);
-            if (err) *err = QStringLiteral("未知属性: %1").arg(key);
+            if (err)
+                *err = QStringLiteral("未知属性: %1").arg(key);
             return false;
         });
 
-    m_appCtx.interactions().registerPropertySetter(SelectionKind::Axis,
+    m_appCtx.interactions().registerPropertySetter(
+        SelectionKind::Axis,
         [this](const Selection &sel, const QString &, const QString &key, const QString &value, QString *err) {
             AxesView *canvas = activeCanvas();
             if (!canvas || !canvas->plotWidget())
             {
-                if (err) *err = QStringLiteral("没有活动画布");
+                if (err)
+                    *err = QStringLiteral("没有活动画布");
                 return false;
             }
             if (key == QStringLiteral("grid"))
@@ -240,22 +245,26 @@ void PlotWorkspace::registerPropertyProviders()
                 // 轴变换通过 TransformHub 的 id 生效；实际执行在曲线内（Task #123）。
                 if (!value.isEmpty() && !m_appCtx.transforms().contains(value))
                 {
-                    if (err) *err = QStringLiteral("未知变换 id: %1").arg(value);
+                    if (err)
+                        *err = QStringLiteral("未知变换 id: %1").arg(value);
                     return false;
                 }
                 canvas->setAxisTransform(sel.ids.value(QStringLiteral("axis")).toString(), value);
                 return true;
             }
-            if (err) *err = QStringLiteral("未知属性: %1").arg(key);
+            if (err)
+                *err = QStringLiteral("未知属性: %1").arg(key);
             return false;
         });
 
-    m_appCtx.interactions().registerPropertySetter(SelectionKind::Canvas,
-        [this, cornerLabel](const Selection &, const QString &, const QString &key, const QString &value, QString *err) {
+    m_appCtx.interactions().registerPropertySetter(
+        SelectionKind::Canvas, [this, cornerLabel](const Selection &, const QString &, const QString &key,
+                                                   const QString &value, QString *err) {
             AxesView *canvas = activeCanvas();
             if (!canvas)
             {
-                if (err) *err = QStringLiteral("没有活动画布");
+                if (err)
+                    *err = QStringLiteral("没有活动画布");
                 return false;
             }
             if (key == QStringLiteral("legend"))
@@ -268,13 +277,15 @@ void PlotWorkspace::registerPropertyProviders()
                 const int idx = kCornerLabels.indexOf(value);
                 if (idx < 0)
                 {
-                    if (err) *err = QStringLiteral("属性未生效：未知图例位置 %1").arg(value);
+                    if (err)
+                        *err = QStringLiteral("属性未生效：未知图例位置 %1").arg(value);
                     return false;
                 }
                 canvas->setLegendCorner(idx);
                 return true;
             }
-            if (err) *err = QStringLiteral("未知属性: %1").arg(key);
+            if (err)
+                *err = QStringLiteral("未知属性: %1").arg(key);
             return false;
         });
 }

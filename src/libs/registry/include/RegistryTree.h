@@ -3,7 +3,7 @@
 // M2.8 Registry 机制整改（R1）：全系统注册树（等价 rt_object kernel object container）。
 //
 // 组合根（AppContext）创建持有——不做静态单例，测试间树完全隔离。
-// 树只存节点的**弱引用**（QPointer）：static 节点（M2.8 R4 的 PanelFactory/
+// 树只存节点的**弱引用**（QPointer）：static 节点（M2.8 R4 的 BuiltinModule/
 // BuiltinModule）生命周期不归树管，进程退出时对象自灭、树侧指针自动变空。
 
 #include "RegistryNode.h"

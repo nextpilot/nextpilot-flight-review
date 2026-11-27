@@ -8,7 +8,6 @@
 #include "InstrumentView.h"
 #include "PlotViewFactories.h"
 #include "IEditorService.h"
-#include "PanelFactoryHub.h"
 
 #include "DatasetHub.h"
 #include "Dataset.h"
@@ -37,12 +36,14 @@ using namespace nextpilot::plotscope::context;
 using namespace nextpilot::plotscope::gui;
 using namespace nextpilot::plotscope::host;
 
-#define CHECK(cond)                                                                      \
-    do {                                                                                 \
-        if (!(cond)) {                                                                   \
-            fprintf(stderr, "[FAIL] %s:%d  %s\n", __FILE__, __LINE__, #cond);            \
-            std::exit(1);                                                                \
-        }                                                                                \
+#define CHECK(cond)                                                                                                    \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        if (!(cond))                                                                                                   \
+        {                                                                                                              \
+            fprintf(stderr, "[FAIL] %s:%d  %s\n", __FILE__, __LINE__, #cond);                                          \
+            std::exit(1);                                                                                              \
+        }                                                                                                              \
     } while (0)
 
 #define OK(msg) fprintf(stdout, "[ok] %s\n", msg)
@@ -168,8 +169,7 @@ int main(int argc, char *argv[])
         intent.params[QStringLiteral("roles")] = roles;
         const auto result = application.host().execute(intent);
         CHECK(result);
-        CHECK(result.value().payload.toMap().value(QStringLiteral("scalars")).toMap()
-                  .contains(QStringLiteral("yaw")));
+        CHECK(result.value().payload.toMap().value(QStringLiteral("scalars")).toMap().contains(QStringLiteral("yaw")));
 
         view.renderInstrument(dsId, QStringLiteral("compass"), roles, {}, {});
         CHECK(view.currentKind() == QStringLiteral("compass"));
@@ -244,8 +244,7 @@ int main(int argc, char *argv[])
 
     // --- 6) 瀑布：channels 列表 ---
     {
-        const QVariantList channels{
-            QStringLiteral("trace.a"), QStringLiteral("trace.b"), QStringLiteral("trace.c")};
+        const QVariantList channels{QStringLiteral("trace.a"), QStringLiteral("trace.b"), QStringLiteral("trace.c")};
         Intent intent;
         intent.op = QStringLiteral("plot.instrument");
         intent.params[QStringLiteral("dataset")] = dsId;
@@ -274,8 +273,7 @@ int main(int argc, char *argv[])
         missing.op = QStringLiteral("plot.instrument");
         missing.params[QStringLiteral("dataset")] = dsId;
         missing.params[QStringLiteral("kind")] = QStringLiteral("gauge");
-        missing.params[QStringLiteral("roles")] = QVariantMap{
-            {QStringLiteral("value"), QStringLiteral("nope.nope")}};
+        missing.params[QStringLiteral("roles")] = QVariantMap{{QStringLiteral("value"), QStringLiteral("nope.nope")}};
         CHECK(!application.host().execute(missing));
 
         Intent noDataset;
@@ -307,8 +305,8 @@ int main(int argc, char *argv[])
         b.op = QStringLiteral("plot.instrument");
         b.params[QStringLiteral("dataset")] = dsId;
         b.params[QStringLiteral("kind")] = QStringLiteral("bar");
-        b.params[QStringLiteral("channels")] = QVariantList{
-            QStringLiteral("trace.a"), QStringLiteral("trace.b"), QStringLiteral("trace.c")};
+        b.params[QStringLiteral("channels")] =
+            QVariantList{QStringLiteral("trace.a"), QStringLiteral("trace.b"), QStringLiteral("trace.c")};
         const auto barResult = application.host().execute(b);
         CHECK(barResult);
         CHECK(barResult.value().payload.toMap().value(QStringLiteral("channels")).toList().size() == 3);
@@ -405,9 +403,8 @@ int main(int argc, char *argv[])
             InstrumentView realView(application.host());
             realView.resize(360, 300);
 
-            const QVariantMap attitudeRoles{
-                {QStringLiteral("roll"), QStringLiteral("attitude.roll")},
-                {QStringLiteral("pitch"), QStringLiteral("attitude.pitch")}};
+            const QVariantMap attitudeRoles{{QStringLiteral("roll"), QStringLiteral("attitude.roll")},
+                                            {QStringLiteral("pitch"), QStringLiteral("attitude.pitch")}};
             realView.renderInstrument(realId, QStringLiteral("attitude"), attitudeRoles, {}, {});
             CHECK(inkPixels(realView.grabInstrument()) > 300);
             realView.grabInstrument().save(QDir::currentPath() + "/instrument_real_attitude.png");

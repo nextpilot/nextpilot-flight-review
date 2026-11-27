@@ -10,7 +10,7 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
 #     MainWindow                  窗口骨架与装配
 #     ShellBinder                 唯一知道 SARibbon / ADS 的地方
 #     GuiContext                  host::UiContext 的实现
-#   （部件工厂表 PanelFactoryHub 已下沉到 core —— 它是纯数据，
+#   （视图/编辑器声明的注册机制在 core 的 ViewRegistry —— 纯数据，
 #    知识包的呈现层要能注册领域面板，就不能依赖整个 gui 层）
 #
 # 绘图视图（原 views/plot）已下沉到绘图模块的 gui 呈现层（c4）；
@@ -21,9 +21,9 @@ find_package(Qt6 REQUIRED COMPONENTS Core Widgets Gui)
 #   - **外壳不认识视图**。MainWindow 不 include 任何业务视图头文件，
 #     视图之间的协作走 AppContext 的共享状态（星形而非网状）。
 #
-# OBJECT 库：承载视图层的自注册 TU（PS_REGISTER_PANEL）。
+# OBJECT 库：承载视图层的自注册 TU（views/editor 声明 + provider 注册，同 TU 同次完成）。
 # 静态库中未被引用的目标文件会被链接器丢弃、静态初始化不执行，
-# 自注册会**静默失效**（部件工厂表为空，requestPanel 拿不到东西）。
+# 自注册会**静默失效**（声明进不了 ViewRegistry，openView 拿不到东西）。
 # 主题：横向 GUI 基础设施（token 化配色 + 双主题 + QSS/palette）。
 #
 # 独立 OBJECT 库，而非并进 ps_gui：主题是**被依赖的服务**，不只外壳用——
@@ -66,7 +66,7 @@ add_library(ps_gui OBJECT
     shell/CommandPalette.h
     shell/KeybindingDialog.cpp
     shell/KeybindingDialog.h
-    # 导入对话框已迁至 modules/data/gui（D18a）：外壳按 id 经 DialogLauncherHub 触发。
+    # 导入对话框已迁至 modules/data/gui（D18a）：外壳按 id 经装配注入的启动器回调触发。
     # 协议编辑器/检查器对话框已迁至 modules/protocol/gui（D18a）：
     # 外壳零业务对话框，只通过意图触发；ps_gui 不再编译任何协议 UI。
     # 设置入口（preferences.open）：只转派到工作台内置 Settings editor，不提供界面。

@@ -3,11 +3,9 @@
 #include "ActivityBar.h"
 #include "ShellBinder.h"
 
-#include "PanelFactoryHub.h"
 #include "PanelReferenceValidator.h"
 #include "ContributionParser.h"
 #include "IEditorService.h"
-#include "IPanelsService.h"
 #include "theme/IconRegistry.h" // A2c：缩略图查表（绘制器已归位 modules/plot/gui）
 
 #include "Intent.h"
@@ -113,7 +111,8 @@ QWidget *childOfSplitter(QWidget *widget, QSplitter *splitter)
 
 ShellBinder::ShellBinder(QMainWindow *window, nextpilot::plotscope::workbench::ISlotsService *slotSvc)
     : m_window(window), m_slots(slotSvc)
-{}
+{
+}
 
 ShellBinder::~ShellBinder()
 {
@@ -211,10 +210,9 @@ void ShellBinder::ensureActivityShell()
         if (m_settingsHandler)
             m_settingsHandler();
     });
-    QObject::connect(m_activityBar, &ActivityBar::dockDropped, m_activityBar,
-                     [this](ads::CDockWidget *dock, const QString &activityId) {
-                         pinDockToActivity(dock, activityId);
-                     });
+    QObject::connect(
+        m_activityBar, &ActivityBar::dockDropped, m_activityBar,
+        [this](ads::CDockWidget *dock, const QString &activityId) { pinDockToActivity(dock, activityId); });
 
     rebuildActivityBar();
 }
@@ -266,12 +264,10 @@ void ShellBinder::rebuildActivityBar()
 }
 
 void ShellBinder::setPanelReferenceContext(
-    const nextpilot::plotscope::workbench::IPanelsService *panels,
     const QList<nextpilot::plotscope::registry::ProductPanelPlacement> &placements,
     nextpilot::plotscope::workbench::IViewsService *viewsService,
     nextpilot::plotscope::workbench::IEditorService *editorService)
 {
-    m_panelsService = panels;
     m_placements = placements;
     m_viewsRefService = viewsService;
     m_editorRefService = editorService;
@@ -282,8 +278,8 @@ QStringList ShellBinder::missingPanelTypes() const
     using namespace nextpilot::plotscope::registry;
     QStringList missing;
 
-    // 已注入包面板声明与产品布局时走 lib 级三源校验器；否则退化为只查 Activity panelTypes。
-    if (m_panelsService)
+    // 已注入产品布局与声明命中面服务时走 lib 级两源校验器；否则退化为只查 Activity panelTypes。
+    if (m_viewsRefService)
     {
         // views 命中面（A2b 笔2b 第②步）：已迁 ViewRegistry 的 id（gui 内置面板，
         // 注册不再走工厂表）经 IViewsService::viewForId 判声明命中——壳只查
@@ -336,15 +332,14 @@ QStringList ShellBinder::missingPanelTypes() const
                         if (!v.id.isEmpty())
                             knownViewIds << v.id;
         }
-        const auto issues = validatePanelReferences(m_panelsService->panels(), slotActivities, m_placements,
-                                                    knownViewIds, customEditorViewTypes);
+        const auto issues = validatePanelReferences(slotActivities, m_placements, knownViewIds, customEditorViewTypes);
         for (const PanelReferenceIssue &issue : issues)
             missing << QStringLiteral("%1:%2").arg(issue.source, issue.type);
         return missing;
     }
-    // A2c：旧工厂 fallback 分支已删（工厂表 12→0 退场，find 调用点归零；三命中面
-    // 校验器本体与退化路径一并归 A2d 删）。m_panelsService 未注入（极简装配）
-    // 时视为零校验面。
+    // A2d：工厂表命中面与 IPanelsService 声明面均已随旧契约退场（第①/②/⑤步），
+    // 命中面只剩 views ∪ customEditors。两个声明面服务未注入（极简装配）时
+    // 视为零校验面。
     return missing;
 }
 

@@ -15,7 +15,7 @@
 //
 // kind 是身份不是行为，构造时定死，子类零样板。
 // kind 集合 = 核心封闭集（Dataset/Source/DerivedSeries/Interaction/UiSlot/Extension，
-// M3 扩展包贡献条目不新增）+ 存量静态表节点集（PanelFactory/BuiltinModule/Parser/
+// M3 扩展包贡献条目不新增）+ 存量静态表节点集（BuiltinModule/Parser/
 // RecordingFormat/RecordingBackend——M2.8 遗留 4 收口：全量上树无盲区后扩容，
 // 之后只减不增，M3 插件贡献经既有 kind 表达）。
 
@@ -40,13 +40,12 @@ enum class RegistryKind : quint8
     Interaction,
     UiSlot,
     Extension,
-    PanelFactory,
     BuiltinModule,
     Parser,
     RecordingFormat,
     RecordingBackend
     // A8b：contributes 是 Extension 的属性面（ToolboxHub 内），不另立 kind——
-    // "贡献"与"扩展包"是同一个注册表，diag.registries 保持 11 类。
+    // "贡献"与"扩展包"是同一个注册表，diag.registries 保持 10 类（A2d：随工厂表退场的节点不再单列）。
 };
 
 // kind → 诊断字符串（kebab：dataset / builtin-module ...）。

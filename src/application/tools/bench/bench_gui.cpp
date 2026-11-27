@@ -16,7 +16,6 @@
 #include "AxesView.h"
 #include "PlotWorkspace.h"
 #include "PlotDocument.h"
-#include "PanelFactoryHub.h"
 #include "ShellBinder.h"
 
 #include "Dataset.h"
@@ -57,13 +56,14 @@ static long rssKb()
 }
 
 namespace {
-#define CHECK_APPLY(stmt, tag) \
-    do { \
-        if (!(stmt)) \
-        { \
-            fprintf(stderr, "applyDocumentSpec #%d failed\n", (tag)); \
-            return 1; \
-        } \
+#define CHECK_APPLY(stmt, tag)                                                                                         \
+    do                                                                                                                 \
+    {                                                                                                                  \
+        if (!(stmt))                                                                                                   \
+        {                                                                                                              \
+            fprintf(stderr, "applyDocumentSpec #%d failed\n", (tag));                                                  \
+            return 1;                                                                                                  \
+        }                                                                                                              \
     } while (0)
 
 const char *u8(const QString &s)

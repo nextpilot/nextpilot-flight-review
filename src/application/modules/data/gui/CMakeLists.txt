@@ -10,7 +10,7 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
 # 依赖方向：呈现层 -> core（面板工厂表在 core，纯数据）。
 #   不依赖 ps_gui —— 否则模块就要依赖整个外壳层，依赖方向就反了。
 #
-# OBJECT 库：保证 PS_REGISTER_PANEL 的自注册 TU 一定参与链接
+# OBJECT 库：保证 views/editor 声明 + provider 注册 TU 一定参与链接
 # （静态库中未被引用的目标文件会被链接器丢弃，自注册会静默失效）。
 add_library(ps_module_data_gui OBJECT
     DataViewFactories.cpp

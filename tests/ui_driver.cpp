@@ -433,7 +433,9 @@ int main(int argc, char *argv[])
                 continue;
             }
             lastDataset = r.value().payload.toMap().value(QStringLiteral("dataset")).toInt();
-            ok(QStringLiteral("data.load %1 -> 数据集 %2").arg(step.value(QStringLiteral("path")).toString()).arg(lastDataset));
+            ok(QStringLiteral("data.load %1 -> 数据集 %2")
+                   .arg(step.value(QStringLiteral("path")).toString())
+                   .arg(lastDataset));
         }
         else if (op == QStringLiteral("plot-all-channels"))
         {
@@ -501,9 +503,8 @@ int main(int argc, char *argv[])
         }
         else if (op == QStringLiteral("activity-badge"))
         {
-            window.binder()->setActivityBadge(
-                step.value(QStringLiteral("id")).toString(),
-                step.value(QStringLiteral("count")).toInt());
+            window.binder()->setActivityBadge(step.value(QStringLiteral("id")).toString(),
+                                              step.value(QStringLiteral("count")).toInt());
         }
         else if (op == QStringLiteral("pin-view"))
         {
@@ -555,9 +556,9 @@ int main(int argc, char *argv[])
         }
         else if (op == QStringLiteral("panel"))
         {
-            const bool created = window.context()->requestPanel(
-                toRegion(step.value(QStringLiteral("slot")).toString()),
-                step.value(QStringLiteral("panel")).toString());
+            // A2d：旧工厂入口（旧面板请求）已删——面板按 views 声明 id 经
+            // openView 打开（落区由 viewsContainers[].area 决定，驱动脚本不再指定）。
+            QWidget *created = window.context()->openView(step.value(QStringLiteral("panel")).toString());
             if (!created)
             {
                 fail(op, QStringLiteral("面板创建失败: %1").arg(step.value(QStringLiteral("panel")).toString()));
@@ -592,8 +593,7 @@ int main(int argc, char *argv[])
         }
         else if (op == QStringLiteral("cursor"))
         {
-            auto *ws = qobject_cast<PlotWorkspace *>(
-                window.binder() ? window.binder()->centralContent() : nullptr);
+            auto *ws = qobject_cast<PlotWorkspace *>(window.binder() ? window.binder()->centralContent() : nullptr);
             AxesView *pc = ws ? ws->activeCanvas() : nullptr;
             const double t = step.value(QStringLiteral("t")).toDouble();
             if (!pc)
@@ -606,12 +606,13 @@ int main(int argc, char *argv[])
             pc->addBookmark(t, QStringLiteral("游标书签"));
             QApplication::processEvents();
             ok(QStringLiteral("游标 t=%1, ab=%2, bookmarks=%3")
-                   .arg(t).arg(int(pc->abActive())).arg(int(pc->bookmarks().size())));
+                   .arg(t)
+                   .arg(int(pc->abActive()))
+                   .arg(int(pc->bookmarks().size())));
         }
         else if (op == QStringLiteral("hover-toolbar"))
         {
-            auto *ws = qobject_cast<PlotWorkspace *>(
-                window.binder() ? window.binder()->centralContent() : nullptr);
+            auto *ws = qobject_cast<PlotWorkspace *>(window.binder() ? window.binder()->centralContent() : nullptr);
             if (!ws || !ws->activeCanvas())
             {
                 fail(op, QStringLiteral("无活动画布"));
@@ -637,7 +638,8 @@ int main(int argc, char *argv[])
             application.context().setActiveSourceId(liveId);
             QApplication::processEvents();
             ok(QStringLiteral("演示 live 源 id=%1 name=%2 state=%3")
-                   .arg(liveId).arg(name, paused ? QStringLiteral("Paused") : QStringLiteral("Streaming")));
+                   .arg(liveId)
+                   .arg(name, paused ? QStringLiteral("Paused") : QStringLiteral("Streaming")));
         }
         else if (op == QStringLiteral("click") || op == QStringLiteral("dblclick"))
         {
@@ -672,8 +674,8 @@ int main(int argc, char *argv[])
             else if (step.contains(QStringLiteral("text")))
                 QTest::keyClicks(w, step.value(QStringLiteral("text")).toString());
             QApplication::processEvents();
-            ok(QStringLiteral("key %1").arg(step.value(QStringLiteral("keys")).toString(
-                step.value(QStringLiteral("text")).toString())));
+            ok(QStringLiteral("key %1").arg(
+                step.value(QStringLiteral("keys")).toString(step.value(QStringLiteral("text")).toString())));
         }
         else if (op == QStringLiteral("type"))
         {

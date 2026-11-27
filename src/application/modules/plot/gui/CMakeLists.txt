@@ -9,7 +9,7 @@ find_package(Qt6 REQUIRED COMPONENTS Widgets Gui)
 # 依赖方向：呈现层 -> core / 横向 GUI 基础设施，**不依赖 ps_gui 外壳**
 # （否则模块就要依赖整个外壳层，依赖方向反转，见 D18/D21）。
 #
-# OBJECT 库：保证 PS_REGISTER_PANEL 的自注册 TU 一定参与链接
+# OBJECT 库：保证 views/editor 声明 + provider 注册 TU 一定参与链接
 # （静态库中未被引用的目标文件会被链接器丢弃，自注册会静默失效）。
 add_library(ps_module_plot_gui OBJECT
     PlotViewFactories.cpp

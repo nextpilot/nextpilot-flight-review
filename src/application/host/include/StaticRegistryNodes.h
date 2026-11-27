@@ -13,7 +13,6 @@
 // 运行期增删时节点视图自动跟随，无需信号（diag 面板刷新即见最新）。
 
 #include "BuiltinModuleHub.h"
-#include "PanelFactoryHub.h"
 #include "ParserHub.h"
 #include "RecordingBackend.h"
 #include "RecordingFormat.h"
@@ -22,38 +21,15 @@
 
 #include <QStringList>
 
-namespace nextpilot::plotscope::host
-{
-
-// 面板工厂节点：部件类型经节点间接可枚举（diag.registries 用）。
-class PanelFactoryNode : public nextpilot::plotscope::registry::RegistryNode
-{
-public:
-    explicit PanelFactoryNode(nextpilot::plotscope::registry::RegistryTree &tree,
-                              QObject *parent = nullptr)
-        : RegistryNode(tree, nextpilot::plotscope::registry::RegistryKind::PanelFactory,
-                       QStringLiteral("面板工厂"), parent)
-    {
-    }
-
-    int count() const override
-    {
-        return nextpilot::plotscope::registry::PanelFactoryHub::types().size();
-    }
-    QStringList keysAsStrings() const override
-    {
-        return nextpilot::plotscope::registry::PanelFactoryHub::types();
-    }
-};
+namespace nextpilot::plotscope::host {
 
 // 内置模块节点：模块清单经节点间接可枚举（diag.registries 用）。
 class BuiltinModuleNode : public nextpilot::plotscope::registry::RegistryNode
 {
 public:
-    explicit BuiltinModuleNode(nextpilot::plotscope::registry::RegistryTree &tree,
-                               QObject *parent = nullptr)
-        : RegistryNode(tree, nextpilot::plotscope::registry::RegistryKind::BuiltinModule,
-                       QStringLiteral("内置模块"), parent)
+    explicit BuiltinModuleNode(nextpilot::plotscope::registry::RegistryTree &tree, QObject *parent = nullptr)
+        : RegistryNode(tree, nextpilot::plotscope::registry::RegistryKind::BuiltinModule, QStringLiteral("内置模块"),
+                       parent)
     {
     }
 
@@ -66,60 +42,41 @@ public:
 class ParserNode : public nextpilot::plotscope::registry::RegistryNode
 {
 public:
-    explicit ParserNode(nextpilot::plotscope::registry::RegistryTree &tree,
-                        QObject *parent = nullptr)
-        : RegistryNode(tree, nextpilot::plotscope::registry::RegistryKind::Parser,
-                       QStringLiteral("解析器"), parent)
+    explicit ParserNode(nextpilot::plotscope::registry::RegistryTree &tree, QObject *parent = nullptr)
+        : RegistryNode(tree, nextpilot::plotscope::registry::RegistryKind::Parser, QStringLiteral("解析器"), parent)
     {
     }
 
     int count() const override { return nextpilot::plotscope::parser::ParserHub::count(); }
-    QStringList keysAsStrings() const override
-    {
-        return nextpilot::plotscope::parser::ParserHub::ids();
-    }
+    QStringList keysAsStrings() const override { return nextpilot::plotscope::parser::ParserHub::ids(); }
 };
 
 // 录制格式节点：格式清单经节点间接可枚举（diag.registries 用）。
 class RecordingFormatNode : public nextpilot::plotscope::registry::RegistryNode
 {
 public:
-    explicit RecordingFormatNode(nextpilot::plotscope::registry::RegistryTree &tree,
-                                 QObject *parent = nullptr)
-        : RegistryNode(tree, nextpilot::plotscope::registry::RegistryKind::RecordingFormat,
-                       QStringLiteral("录制格式"), parent)
+    explicit RecordingFormatNode(nextpilot::plotscope::registry::RegistryTree &tree, QObject *parent = nullptr)
+        : RegistryNode(tree, nextpilot::plotscope::registry::RegistryKind::RecordingFormat, QStringLiteral("录制格式"),
+                       parent)
     {
     }
 
-    int count() const override
-    {
-        return nextpilot::plotscope::rec::RecordingFormatHub::count();
-    }
-    QStringList keysAsStrings() const override
-    {
-        return nextpilot::plotscope::rec::RecordingFormatHub::keys();
-    }
+    int count() const override { return nextpilot::plotscope::rec::RecordingFormatHub::count(); }
+    QStringList keysAsStrings() const override { return nextpilot::plotscope::rec::RecordingFormatHub::keys(); }
 };
 
 // 录制后端节点：后端清单经节点间接可枚举（diag.registries 用）。
 class RecordingBackendNode : public nextpilot::plotscope::registry::RegistryNode
 {
 public:
-    explicit RecordingBackendNode(nextpilot::plotscope::registry::RegistryTree &tree,
-                                  QObject *parent = nullptr)
-        : RegistryNode(tree, nextpilot::plotscope::registry::RegistryKind::RecordingBackend,
-                       QStringLiteral("录制后端"), parent)
+    explicit RecordingBackendNode(nextpilot::plotscope::registry::RegistryTree &tree, QObject *parent = nullptr)
+        : RegistryNode(tree, nextpilot::plotscope::registry::RegistryKind::RecordingBackend, QStringLiteral("录制后端"),
+                       parent)
     {
     }
 
-    int count() const override
-    {
-        return nextpilot::plotscope::rec::RecordingBackendHub::count();
-    }
-    QStringList keysAsStrings() const override
-    {
-        return nextpilot::plotscope::rec::RecordingBackendHub::keys();
-    }
+    int count() const override { return nextpilot::plotscope::rec::RecordingBackendHub::count(); }
+    QStringList keysAsStrings() const override { return nextpilot::plotscope::rec::RecordingBackendHub::keys(); }
 };
 
 } // namespace nextpilot::plotscope::host

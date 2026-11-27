@@ -48,8 +48,8 @@ namespace nextpilot::plotscope::script
 {
 
 using context::AppContext;
-using intent::IIntentExecutor;
 using context::InteractionHub;
+using intent::IIntentExecutor;
 
 namespace
 {
@@ -134,10 +134,10 @@ public:
         QTextCharFormat kw;
         kw.setForeground(QColor(0x7c, 0x3a, 0xed));
         kw.setFontWeight(QFont::Bold);
-        m_rules.append({QRegularExpression(
-                            QStringLiteral("\\b(local|function|end|if|then|else|elseif|for|while|do|"
-                                           "return|break|nil|true|false|and|or|not|in|repeat|until)\\b")),
-                        kw});
+        m_rules.append(
+            {QRegularExpression(QStringLiteral("\\b(local|function|end|if|then|else|elseif|for|while|do|"
+                                               "return|break|nil|true|false|and|or|not|in|repeat|until)\\b")),
+             kw});
         // 字符串（绿）
         QTextCharFormat str;
         str.setForeground(QColor(0x05, 0x96, 0x69));
@@ -194,12 +194,12 @@ public:
         QTextCharFormat kw;
         kw.setForeground(QColor(0x7c, 0x3a, 0xed));
         kw.setFontWeight(QFont::Bold);
-        m_rules.append({QRegularExpression(QStringLiteral(
-                            "\\b(def|class|return|if|elif|else|for|while|in|break|continue|"
-                            "import|from|as|with|try|except|finally|raise|lambda|yield|"
-                            "global|nonlocal|pass|assert|del|None|True|False|and|or|not|"
-                            "is|async|await)\\b")),
-                        kw});
+        m_rules.append(
+            {QRegularExpression(QStringLiteral("\\b(def|class|return|if|elif|else|for|while|in|break|continue|"
+                                               "import|from|as|with|try|except|finally|raise|lambda|yield|"
+                                               "global|nonlocal|pass|assert|del|None|True|False|and|or|not|"
+                                               "is|async|await)\\b")),
+             kw});
         // 字符串（绿）
         QTextCharFormat str;
         str.setForeground(QColor(0x05, 0x96, 0x69));
@@ -320,8 +320,7 @@ bool ScriptCodeEditor::eventFilter(QObject *obj, QEvent *ev)
     if (obj == m_gutter && ev->type() == QEvent::MouseButtonPress)
     {
         auto *me = static_cast<QMouseEvent *>(ev);
-        const int line = static_cast<int>(
-            cursorForPosition(QPoint(0, me->position().y())).blockNumber()) + 1;
+        const int line = static_cast<int>(cursorForPosition(QPoint(0, me->position().y())).blockNumber()) + 1;
         if (m_breakpoints.contains(line))
             m_breakpoints.remove(line);
         else
@@ -508,8 +507,7 @@ ScriptEditorPanel::ScriptEditorPanel(AppContext &appCtx, IIntentExecutor &execut
             &ScriptEditorPanel::onTabCloseRequested);
     connect(m_tabs, &QTabWidget::currentChanged, this, &ScriptEditorPanel::onTabChanged);
     // 空态提示
-    m_tabs->setStyleSheet(QStringLiteral(
-        "QTabWidget::pane { border: 1px solid #e5e7eb; }"));
+    m_tabs->setStyleSheet(QStringLiteral("QTabWidget::pane { border: 1px solid #e5e7eb; }"));
     lay->addWidget(m_tabs, 1);
 
     // 空标签页占位：加一个只读编辑器提示页
@@ -699,10 +697,7 @@ void ScriptEditorPanel::reconcileDrafts()
     if (!idxFile.open(QIODevice::ReadOnly))
         return;
 
-    QJsonArray list = QJsonDocument::fromJson(idxFile.readAll())
-                          .object()
-                          .value(QStringLiteral("docs"))
-                          .toArray();
+    QJsonArray list = QJsonDocument::fromJson(idxFile.readAll()).object().value(QStringLiteral("docs")).toArray();
     idxFile.close();
 
     QStringList ids;
@@ -720,10 +715,10 @@ void ScriptEditorPanel::reconcileDrafts()
     if (ids.isEmpty())
         return;
 
-    const auto answer = QMessageBox::question(
-        this, QStringLiteral("恢复草稿"),
-        QStringLiteral("发现 %1 份上次未正常退出时留下的草稿，是否还原？").arg(ids.size()),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
+    const auto answer =
+        QMessageBox::question(this, QStringLiteral("恢复草稿"),
+                              QStringLiteral("发现 %1 份上次未正常退出时留下的草稿，是否还原？").arg(ids.size()),
+                              QMessageBox::Yes | QMessageBox::No, QMessageBox::No);
     if (answer != QMessageBox::Yes)
     {
         clearDrafts();
@@ -1061,11 +1056,10 @@ void ScriptEditorPanel::onTabCloseRequested(int index)
         return;
     if (d->dirty)
     {
-        const auto ret = QMessageBox::question(
-            this, QStringLiteral("未保存"),
-            QStringLiteral("%1 有未保存的修改，关闭前保存？")
-                .arg(d->name.isEmpty() ? QStringLiteral("untitled") : d->name),
-            QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
+        const auto ret = QMessageBox::question(this, QStringLiteral("未保存"),
+                                               QStringLiteral("%1 有未保存的修改，关闭前保存？")
+                                                   .arg(d->name.isEmpty() ? QStringLiteral("untitled") : d->name),
+                                               QMessageBox::Save | QMessageBox::Discard | QMessageBox::Cancel);
         if (ret == QMessageBox::Cancel)
             return;
         if (ret == QMessageBox::Save)
@@ -1221,14 +1215,12 @@ ScriptConsolePanel::ScriptConsolePanel(AppContext &appCtx, IIntentExecutor &exec
 
     // console.append：供 ScriptModule（运行输出/REPL 打印）与 editor 面板回显
     QPointer<ScriptConsolePanel> guard(this);
-    m_app->interactions().registerViewAction(
-        kActConsoleAppend, [guard](const QVariantMap &params) -> Result<QVariant> {
-            if (!guard)
-                return fail(err::NoEnt, QStringLiteral("控制台已关闭"));
-            guard->append(params.value(QStringLiteral("text")).toString(),
-                          params.value(QStringLiteral("error")).toBool());
-            return Result<QVariant>(QVariant(true));
-        });
+    m_app->interactions().registerViewAction(kActConsoleAppend, [guard](const QVariantMap &params) -> Result<QVariant> {
+        if (!guard)
+            return fail(err::NoEnt, QStringLiteral("控制台已关闭"));
+        guard->append(params.value(QStringLiteral("text")).toString(), params.value(QStringLiteral("error")).toBool());
+        return Result<QVariant>(QVariant(true));
+    });
 }
 
 ScriptConsolePanel::~ScriptConsolePanel() = default;
@@ -1236,8 +1228,7 @@ ScriptConsolePanel::~ScriptConsolePanel() = default;
 void ScriptConsolePanel::append(const QString &text, bool isError)
 {
     if (isError)
-        m_out->appendHtml(QStringLiteral("<span style=\"color:#dc2626\">%1</span>")
-                              .arg(text.toHtmlEscaped()));
+        m_out->appendHtml(QStringLiteral("<span style=\"color:#dc2626\">%1</span>").arg(text.toHtmlEscaped()));
     else
         m_out->appendPlainText(text);
 }
@@ -1375,10 +1366,9 @@ void ScriptFilesPanel::onOpen(QListWidgetItem *item)
 void ScriptFilesPanel::onNew()
 {
     bool ok = false;
-    const QString name = QInputDialog::getText(
-        this, QStringLiteral("新建脚本"),
-        QStringLiteral("脚本名（小写字母/数字/_/-；.py 结尾走 Python 引擎）："),
-        QLineEdit::Normal, QStringLiteral("myscript"), &ok);
+    const QString name = QInputDialog::getText(this, QStringLiteral("新建脚本"),
+                                               QStringLiteral("脚本名（小写字母/数字/_/-；.py 结尾走 Python 引擎）："),
+                                               QLineEdit::Normal, QStringLiteral("myscript"), &ok);
     if (!ok || name.trimmed().isEmpty())
         return;
     QVariantMap p;
@@ -1455,18 +1445,16 @@ ScriptDebugPanel::ScriptDebugPanel(AppContext &appCtx, IIntentExecutor &executor
 
     // script.debug.update / clear
     QPointer<ScriptDebugPanel> guard(this);
-    m_app->interactions().registerViewAction(
-        kActDebugUpdate, [guard](const QVariantMap &params) -> Result<QVariant> {
-            if (guard)
-                guard->applyUpdate(params);
-            return Result<QVariant>(QVariant(true));
-        });
-    m_app->interactions().registerViewAction(
-        kActDebugClear, [guard](const QVariantMap &) -> Result<QVariant> {
-            if (guard)
-                guard->clearPause();
-            return Result<QVariant>(QVariant(true));
-        });
+    m_app->interactions().registerViewAction(kActDebugUpdate, [guard](const QVariantMap &params) -> Result<QVariant> {
+        if (guard)
+            guard->applyUpdate(params);
+        return Result<QVariant>(QVariant(true));
+    });
+    m_app->interactions().registerViewAction(kActDebugClear, [guard](const QVariantMap &) -> Result<QVariant> {
+        if (guard)
+            guard->clearPause();
+        return Result<QVariant>(QVariant(true));
+    });
 }
 
 void ScriptDebugPanel::applyUpdate(const QVariantMap &params)
@@ -1476,9 +1464,10 @@ void ScriptDebugPanel::applyUpdate(const QVariantMap &params)
     if (!paused)
         return;
     // 暂停位置
-    auto *pos = new QTreeWidgetItem(m_debugTree, {QStringLiteral("⏸ 暂停"),
-        QStringLiteral("%1:%2").arg(params.value(QStringLiteral("name")).toString(),
-                                    QString::number(params.value(QStringLiteral("line")).toInt()))});
+    auto *pos = new QTreeWidgetItem(
+        m_debugTree, {QStringLiteral("⏸ 暂停"),
+                      QStringLiteral("%1:%2").arg(params.value(QStringLiteral("name")).toString(),
+                                                  QString::number(params.value(QStringLiteral("line")).toInt()))});
     pos->setFirstColumnSpanned(true);
     // 调用栈
     auto *stackRoot = new QTreeWidgetItem(m_debugTree, {QStringLiteral("调用栈"), QString()});
@@ -1534,6 +1523,6 @@ QWidget *createScriptDebugPanel(AppContext &app, IIntentExecutor &ex, QWidget *p
 
 } // namespace nextpilot::plotscope::script
 
-// A2c：PS_REGISTER_PANEL_TI 自注册已删——4 点由 ScriptViewFactories 装配
+// A2c：工厂表自注册已删——4 点由 ScriptViewFactories 装配
 // （views 声明 + provider 登记，owner "script"，声明先于注册同 TU 完成）。
 // 工厂函数本体保留，声明见 ScriptPanels.h 尾部。

@@ -9,7 +9,6 @@
 #include "GridPickPopup.h"
 #include "IIntentExecutor.h"
 #include "InstrumentView.h"
-#include "PanelFactoryHub.h"
 #include "AxesView.h"
 #include "PlaybackEngine.h"
 #include "playback/PlaybackController.h"
@@ -91,35 +90,40 @@ void PlotWorkspace::registerPlaybackActions()
                                     m_playback->engine()->togglePlay();
                                     return QVariant(m_playback->engine()->isPlaying());
                                 });
-    m_appCtx.interactions().registerViewAction(QStringLiteral("playback.seek"),
-                                [this](const QVariantMap &params) -> Result<QVariant> {
-                                    if (!m_playback) return QVariant(false);
-                                    m_playback->engine()->setCurrentTime(params.value(QStringLiteral("t")).toDouble());
-                                    return QVariant(m_playback->engine()->currentTime());
-                                });
-    m_appCtx.interactions().registerViewAction(QStringLiteral("playback.rate"),
-                                [this](const QVariantMap &params) -> Result<QVariant> {
-                                    if (!m_playback) return QVariant(false);
-                                    m_playback->engine()->setRate(params.value(QStringLiteral("rate")).toDouble());
-                                    return QVariant(m_playback->engine()->rate());
-                                });
-    m_appCtx.interactions().registerViewAction(QStringLiteral("playback.loop"),
-                                [this](const QVariantMap &params) -> Result<QVariant> {
-                                    if (!m_playback) return QVariant(false);
-                                    const bool on = params.contains(QStringLiteral("on"))
-                                        ? params.value(QStringLiteral("on")).toBool() : !m_playback->engine()->isLooping();
-                                    m_playback->engine()->setLooping(on);
-                                    return QVariant(m_playback->engine()->isLooping());
-                                });
-    m_appCtx.interactions().registerViewAction(QStringLiteral("playback.step"),
-                                [this](const QVariantMap &params) -> Result<QVariant> {
-                                    if (!m_playback) return QVariant(false);
-                                    bool dirOk = false;
-                                    const int dir = params.value(QStringLiteral("dir")).toInt(&dirOk);
-                                    const int stepDir = dirOk ? dir : 1;
-                                    m_playback->engine()->setCurrentTime(m_playback->engine()->currentTime() + stepDir * m_playback->engine()->step());
-                                    return QVariant(m_playback->engine()->currentTime());
-                                });
+    m_appCtx.interactions().registerViewAction(
+        QStringLiteral("playback.seek"), [this](const QVariantMap &params) -> Result<QVariant> {
+            if (!m_playback)
+                return QVariant(false);
+            m_playback->engine()->setCurrentTime(params.value(QStringLiteral("t")).toDouble());
+            return QVariant(m_playback->engine()->currentTime());
+        });
+    m_appCtx.interactions().registerViewAction(
+        QStringLiteral("playback.rate"), [this](const QVariantMap &params) -> Result<QVariant> {
+            if (!m_playback)
+                return QVariant(false);
+            m_playback->engine()->setRate(params.value(QStringLiteral("rate")).toDouble());
+            return QVariant(m_playback->engine()->rate());
+        });
+    m_appCtx.interactions().registerViewAction(
+        QStringLiteral("playback.loop"), [this](const QVariantMap &params) -> Result<QVariant> {
+            if (!m_playback)
+                return QVariant(false);
+            const bool on = params.contains(QStringLiteral("on")) ? params.value(QStringLiteral("on")).toBool()
+                                                                  : !m_playback->engine()->isLooping();
+            m_playback->engine()->setLooping(on);
+            return QVariant(m_playback->engine()->isLooping());
+        });
+    m_appCtx.interactions().registerViewAction(
+        QStringLiteral("playback.step"), [this](const QVariantMap &params) -> Result<QVariant> {
+            if (!m_playback)
+                return QVariant(false);
+            bool dirOk = false;
+            const int dir = params.value(QStringLiteral("dir")).toInt(&dirOk);
+            const int stepDir = dirOk ? dir : 1;
+            m_playback->engine()->setCurrentTime(m_playback->engine()->currentTime() +
+                                                 stepDir * m_playback->engine()->step());
+            return QVariant(m_playback->engine()->currentTime());
+        });
     m_appCtx.interactions().registerViewAction(QStringLiteral("playback.state"),
                                 [this](const QVariantMap &) -> Result<QVariant> {
                                     if (!m_playback) return QVariant(false);

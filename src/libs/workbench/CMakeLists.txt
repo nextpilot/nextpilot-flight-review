@@ -16,7 +16,7 @@ target_include_directories(ps_workbench INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/in
 # INTERFACE 库只允许 INTERFACE 属性，依赖关键字必须用 INTERFACE（写 PUBLIC 会报
 # "INTERFACE library can only have INTERFACE properties"）。
 target_link_libraries(ps_workbench INTERFACE
-    ps_instantiation ps_dataset ps_intent ps_recording ps_context ps_module ps_foundation Qt6::Core)
+    ps_instantiation ps_dataset ps_intent ps_recording ps_context ps_module ps_registry ps_foundation Qt6::Core)
 # 不编译就没有 CXX_STANDARD 可设（INTERFACE 库上 set_target_properties 的 CXX_STANDARD
 # 会被静默忽略），C++17 要求改由 compile_features 透传给消费者。
 target_compile_features(ps_workbench INTERFACE cxx_std_17)
