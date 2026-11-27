@@ -11,7 +11,7 @@ git fetch origin
 git rebase origin/main
 ```
 
-CI 的 `push` 事件用 `github.event.before`（取不到退 `HEAD~1`）。本地不 rebase，两边基准不一致，就会出现"本地过、推上去红"。不允许在旧 base 上推。
+CI 与本地同一口径：特性分支和手动触发取 `merge-base(origin/main, HEAD)`，合入 `main` 的推送取 `event.before`（不可达退 `HEAD~1`）。解析集中在 `tools/ci/resolve-base.sh`，`format` / `markdown` / `python` / `tidy` 共用。本地不 rebase，两边基准不一致，仍然会出现"本地过、推上去红"。
 
 ## 命令
 

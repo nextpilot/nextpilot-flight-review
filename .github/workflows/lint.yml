@@ -120,17 +120,9 @@ jobs:
       - name: Format changed lines only
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="origin/${{ github.base_ref }}"
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            # 手动触发没有 base_ref：以 main 为准，校验整条分支的改动。
-            # 否则会退到 HEAD~1，只比最后一个提交，往往空跑。
-            BASE="origin/main"
-          else
-            BASE="${{ github.event.before }}"
-            # Force-push can leave an unreachable "before"; fall back to the parent.
-            git cat-file -e "${BASE}^{commit}" 2>/dev/null || BASE="$(git rev-parse HEAD~1)"
-          fi
+          BASE="$(tools/ci/resolve-base.sh \
+            "${{ github.event_name }}" "${{ github.base_ref }}" \
+            "${{ github.event.before }}" "${GITHUB_REF_NAME}")"
           echo "base = $BASE"
           echo "base=$BASE" >> "$GITHUB_OUTPUT"
           mapfile -t FILES < <(git diff --name-only --diff-filter=d "$BASE"...HEAD -- '*.cpp' '*.h' '*.hpp' \
@@ -171,15 +163,10 @@ jobs:
         id: base
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            B="origin/${{ github.base_ref }}"
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            B="origin/main"
-          else
-            B="${{ github.event.before }}"
-            git cat-file -e "${B}^{commit}" 2>/dev/null || B="$(git rev-parse HEAD~1)"
-          fi
-          echo "base=$B" >> "$GITHUB_OUTPUT"
+          BASE="$(tools/ci/resolve-base.sh \
+            "${{ github.event_name }}" "${{ github.base_ref }}" \
+            "${{ github.event.before }}" "${GITHUB_REF_NAME}")"
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
 
       - name: prettier --check (changed markdown)
         run: tools/format.sh --check "${{ steps.base.outputs.base }}" --only md
@@ -219,15 +206,10 @@ jobs:
         id: base
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            B="origin/${{ github.base_ref }}"
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            B="origin/main"
-          else
-            B="${{ github.event.before }}"
-            git cat-file -e "${B}^{commit}" 2>/dev/null || B="$(git rev-parse HEAD~1)"
-          fi
-          echo "base=$B" >> "$GITHUB_OUTPUT"
+          BASE="$(tools/ci/resolve-base.sh \
+            "${{ github.event_name }}" "${{ github.base_ref }}" \
+            "${{ github.event.before }}" "${GITHUB_REF_NAME}")"
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
 
       - name: ruff (changed python)
         run: tools/format.sh --check "${{ steps.base.outputs.base }}" --only py
@@ -289,14 +271,9 @@ jobs:
         id: changed
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "pull_request" ]; then
-            BASE="origin/${{ github.base_ref }}"
-          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            BASE="origin/main"
-          else
-            BASE="${{ github.event.before }}"
-            git cat-file -e "${BASE}^{commit}" 2>/dev/null || BASE="$(git rev-parse HEAD~1)"
-          fi
+          BASE="$(tools/ci/resolve-base.sh \
+            "${{ github.event_name }}" "${{ github.base_ref }}" \
+            "${{ github.event.before }}" "${GITHUB_REF_NAME}")"
           echo "base = $BASE"
           # 必须写进 outputs：clang-tidy 增量门禁靠 base 算新增行，缺了这个通道值
           # 它就是空串，`git diff ""...HEAD` 直接非法 ref，每个 C++ PR 的 tidy 都会红。
