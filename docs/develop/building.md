@@ -67,9 +67,11 @@ PS_JOBS=2 cmake --build --preset default
 used previously`）。缓存本身仍然有效，Ninja 下 ccache 增量命中实测 100%，
 > 数据与机制见 `build-performance.md` §9。
 
-`~/.ps-deps` 不完整时 configure 会报找不到 Qt6，先跑 `tools/ubuntu-setup.sh --install-qt`。
+`~/.ps-deps` 不完整时 configure 会**自动补装**（Qt 走 `--install-qt`、工具链走 `--install-toolchain`），补完复查；自动化失败才报错并给出手动命令。
 
-非交互 shell（agent、CI 里的一次性 `bash -c`、IDE 的外部工具）不读 `~/.bashrc`，所以 `PATH` 里常常没有 `$PS_DEPS_ROOT/toolchain/ccache/bin`。`--install` 会落一份 `$PS_DEPS_ROOT/env.sh`，这类进程先 `. "$PS_DEPS_ROOT/env.sh"` 再 configure。`tools/ubuntu-setup.sh --check` 只检查工具实际安装路径是否存在、版本是否达标；它不判断当前 shell 的 PATH（`--check` 可能不在编译终端里），也不做编译验证。但 **`ubuntu-setup.sh --check` 通过不等于 CMake 这份环境能用 ccache**：configure 会独立检查当前进程里的 `CCACHE_DIR` 是否存在可写、`CCACHE_DISABLE` 是否被打开，并用 `CMAKE_C_COMPILER` 实编两次验证命中；Linux 本地任一不满足直接 `FATAL_ERROR`（`PS_REQUIRE_CCACHE` 默认 ON）。干净 shell 先 `. "$PS_DEPS_ROOT/env.sh"` 再 configure，或直接用 `cmake --preset default`；确认不用缓存时显式 `-DPS_USE_CCACHE=OFF`。判断缓存是否真的挂上，也可以看 configure 的 `[ccache] 当前 CMake 环境实测命中：…` 行。
+环境根目录默认 `~/.ps-deps`，可用环境变量 `PS_DEPS_ROOT` 覆盖（`tools/ubuntu-setup.sh` 与 env.sh 遵守同一变量）。
+
+非交互 shell（agent、CI 里的一次性 `bash -c`、IDE 的外部工具）不读 `~/.bashrc`，所以 `PATH` 里常常没有 `$PS_DEPS_ROOT/toolchain/ccache/bin`——不需要手动 source：configure 会自动加载 `$PS_DEPS_ROOT/env.sh` 并导入变量（已 source 过的终端零噪音跳过）。`tools/ubuntu-setup.sh --check` 只检查工具实际安装路径是否存在、版本是否达标；它不判断当前 shell 的 PATH（`--check` 可能不在编译终端里），也不做编译验证。但 **`ubuntu-setup.sh --check` 通过不等于 CMake 这份环境能用 ccache**：configure 会独立检查当前进程里的 `CCACHE_DIR` 是否存在可写、`CCACHE_DISABLE` 是否被打开，并用 `CMAKE_C_COMPILER` 实编两次验证命中；Linux 本地任一不满足直接 `FATAL_ERROR`（`PS_REQUIRE_CCACHE` 默认 ON）。确认不用缓存时显式 `-DPS_USE_CCACHE=OFF`。判断缓存是否真的挂上，也可以看 configure 的 `[ccache] 当前 CMake 环境实测命中：…` 行。
 Lua 由仓库内 `src/3rdparty/lua-5.4` 源码编静态库，不依赖系统 Lua。
 
 ## 格式化（C/C++ 变更行、Markdown、Python）
@@ -125,7 +127,7 @@ hook 只格式暂存区的内容并把结果重新暂存（不会改动未暂存
 四个容易踩的边界：
 
 - **版本必须对齐**：clang-format `23.1.5`、prettier `3.10.1`、markdownlint-cli2 `0.19.1`、ruff `0.14.6`。任何一个版本漂移，都会出现"本地已格式化、CI 仍报 diff"的来回拉扯。prettier/markdownlint 走 `npx` 固定版本，不引入 `package.json` 与 `node_modules`。
-- **临时绕过**：`git commit --no-verify` 只跳过这一次；要彻底关掉用 `git config --unset core.hooksPath`（恢复用 `tools/ubuntu-setup.sh --install-hooks`）。绕过不改变 CI 的判定——对应 job 照样会拦；注意 CMake configure 会检查 hook 注册，卸载后再配置会被直接拒绝。
+- **临时绕过**：`git commit --no-verify` 只跳过这一次；要彻底关掉用 `git config --unset core.hooksPath`（恢复用 `tools/ubuntu-setup.sh --install-hooks`）。绕过不改变 CI 的判定——对应 job 照样会拦；注意 CMake configure 会自动重新注册 hook（卸载后再配置会被自动装回，除非删掉 `.githooks`）。
 - **hook 只看已暂存内容**：`git add` 之后又改了文件，hook 处理的是改之前的那版；提交前请重新 `add`，或直接跑一次 `--staged`。
 - **hook 不跑 clang-tidy**：tidy 只在 CI 的 `lint.yml` 里以 report-only 方式跑（见该 workflow 的 `tidy` job），本地想提前看结果需自行执行 `clang-tidy -p build <file>`。
 

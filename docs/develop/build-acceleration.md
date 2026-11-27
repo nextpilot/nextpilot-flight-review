@@ -86,19 +86,21 @@ ccache 的配置**不要堆在 shell 环境变量里**。环境变量优先级�
 一旦 `~/.bashrc` 里 export 了策略项，就只有 source 过脚本的终端生效，IDE / CI /
 直接调 `ccache` 的场景会用另一套值。按下面三层放，所有入口读同一份：
 
-| 配置项                                                 | 放哪里                                                                                                           | 理由                                                                                                                |
-| ------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| `CCACHE_DIR`                                           | `CMakePresets.json` 的 `environment`（`$env{HOME}/.ps-deps/caches/ccache`）+ `.bashrc` / `--print-env`（脚本写） | 决定缓存物理位置；**preset 注入保证干净 shell / IDE / CI 也能读到 `ccache.conf`**，shell 那份只服务手动 `ccache -s` |
-| `max_size` / `depend_mode` / `hash_dir` / `sloppiness` | `$CCACHE_DIR/ccache.conf`（脚本生成）                                                                            | 纯策略、与路径无关；持久、团队一致、CI 也认                                                                         |
-| `CCACHE_BASEDIR`                                       | `CMakePresets.json` 的 `environment`（`${sourceDir}`）                                                           | 与仓库绝对路径绑定，必须随仓库版本化；IDE / CI / `cmake --preset` 都读                                              |
+| 配置项                                                 | 放哪里                                                                                              | 理由                                                                                                                                      |
+| ------------------------------------------------------ | --------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `CCACHE_DIR`                                           | `$CCACHE_DIR/ccache.conf` 的 `cache_dir`（configure 自动钉入）+ `.bashrc` / `--print-env`（脚本写） | 决定缓存物理位置；**configure 自动加载 env.sh 并把 `cache_dir` 钉进 ccache.conf**，干净 shell / IDE / CI / 直接调 ccache 都落到同一份缓存 |
+| `max_size` / `depend_mode` / `hash_dir` / `sloppiness` | `$CCACHE_DIR/ccache.conf`（脚本生成）                                                               | 纯策略、与路径无关；持久、团队一致、CI 也认                                                                                               |
+| `CCACHE_BASEDIR`                                       | `CMakePresets.json` 的 `environment`（`${sourceDir}`）                                              | 与仓库绝对路径绑定，必须随仓库版本化；IDE / CI / `cmake --preset` 都读                                                                    |
 
-**为什么 `CCACHE_DIR` 也要进 preset**：`ccache.conf` 只在 `CCACHE_DIR` 指向该目录时
-才会被读取。干净 shell（CI、从 IDE 直接调 `cmake --preset`、未 source 脚本的终端）
-不读 `.bashrc`，若 `CCACHE_DIR` 只写在 shell 里，ccache 会退回默认 `~/.cache/ccache`，
-上面那份策略（尤其 `sloppiness=pch_defines`）全部失效——与 PCH 共存时实测会把
-所有编译判为 Uncacheable。preset 里用 `$env{HOME}/.ps-deps/caches/ccache` 注入，
-既覆盖干净环境，又不写死绝对路径（换用户/换机器均可用）；自定义了 `PS_DEPS_ROOT`
-的用户仍可在 shell export `CCACHE_DIR`（`--print-env` 会输出）覆盖为实际路径。
+**为什么 `cache_dir` 要钉进 ccache.conf（而不是 preset 注入 `CCACHE_DIR`）**：
+`ccache.conf` 只在 `CCACHE_DIR` 指向该目录时才会被读取；而构建期 shell
+（`cmake --build`、IDE 编译按钮）往往没 source env.sh，`CCACHE_DIR` 读不到，
+ccache 会退回默认 `~/.cache/ccache`，上面那份策略（尤其 `sloppiness=pch_defines`）
+全部失效——与 PCH 共存时实测会把所有编译判为 Uncacheable。ccache 的取值顺序是
+**env 优先、conf 兜底**：configure 自动加载 env.sh 覆盖当前进程的 `CCACHE_DIR`
+（根路径由 `PS_DEPS_ROOT` 决定，默认 `~/.ps-deps`，不写死），同时把 `cache_dir`
+钉进 conf——无论 shell 环境如何都落到统一缓存并读到同一份策略。preset 因此不再
+注入 `CCACHE_DIR`（避免硬编码根路径破坏自定义 `PS_DEPS_ROOT` 的用户）。
 
 **两层校验，别混为一谈：**`tools/ubuntu-setup.sh --check` 只检查工具实际安装路径是否存在、
 版本是否达标；它不判断当前 shell 的 PATH（`--check` 可能不在编译终端里），也不做编译验证。

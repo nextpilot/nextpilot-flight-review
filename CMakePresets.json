@@ -8,12 +8,9 @@
       "binaryDir": "${sourceDir}/build",
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
-        "PS_DEPS_FETCH": "ON",
-        "CMAKE_PREFIX_PATH": "$env{PS_QT_DIR}"
+        "PS_DEPS_FETCH": "ON"
       },
       "environment": {
-        "PATH": "$env{HOME}/.ps-deps/toolchain/ccache/bin:$penv{PATH}",
-        "CCACHE_DIR": "$env{HOME}/.ps-deps/caches/ccache",
         "CCACHE_BASEDIR": "${sourceDir}"
       }
     },
